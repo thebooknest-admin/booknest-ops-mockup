@@ -1,37 +1,50 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-
+import AppLayout from "./components/AppLayout";
+import Dashboard from "./pages/Dashboard";
+import PickingPage from "./pages/PickingPage";
+import ShippingPage from "./pages/ShippingPage";
+import ShipBundlePage from "./pages/ShipBundlePage";
+import LabelsPage from "./pages/LabelsPage";
+import InventoryPage from "./pages/InventoryPage";
+import ReceivePage from "./pages/ReceivePage";
+import ReturnsPage from "./pages/ReturnsPage";
+import MembersPage from "./pages/MembersPage";
+import DonationIntakePage from "./pages/DonationIntakePage";
+import DonationLogPage from "./pages/DonationLogPage";
+import NotFound from "./pages/NotFound";
 
 function Router() {
   return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+    <AppLayout>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/picking" component={PickingPage} />
+        <Route path="/shipping" component={ShippingPage} />
+        <Route path="/ship/:id" component={ShipBundlePage} />
+        <Route path="/labels" component={LabelsPage} />
+        <Route path="/inventory" component={InventoryPage} />
+        <Route path="/receive" component={ReceivePage} />
+        <Route path="/returns" component={ReturnsPage} />
+        <Route path="/members" component={MembersPage} />
+        <Route path="/donations/intake" component={DonationIntakePage} />
+        <Route path="/donations/log" component={DonationLogPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </AppLayout>
   );
 }
-
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
+          <Toaster position="bottom-right" richColors />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
