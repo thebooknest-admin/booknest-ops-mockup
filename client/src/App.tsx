@@ -17,6 +17,7 @@ import MembersPage from "./pages/MembersPage";
 import DonationIntakePage from "./pages/DonationIntakePage";
 import DonationLogPage from "./pages/DonationLogPage";
 import SignupPage from "./pages/SignupPage";
+import WelcomePage from "./pages/WelcomePage";
 import NotFound from "./pages/NotFound";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
@@ -50,6 +51,8 @@ function Router() {
     <Switch>
       {/* Public-facing sign-up form — completely isolated */}
       <Route path="/signup" component={SignupPage} />
+      {/* Public welcome form for new members — no PIN gate */}
+      <Route path="/welcome" component={WelcomePage} />
       {/* Everything else goes through the ops dashboard layout */}
       <Route component={DashboardRouter} />
     </Switch>

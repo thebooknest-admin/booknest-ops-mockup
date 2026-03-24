@@ -331,6 +331,96 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Welcome Form ─────────────────────────────────────────────────────────
+  welcome: router({
+    // Look up a member by email to pre-fill the form
+    getByEmail: publicProcedure
+      .input(z.object({ email: z.string().email() }))
+      .query(async ({ input }) => {
+        const res = await sbFetch(`/members?email=eq.${encodeURIComponent(input.email)}&limit=1`);
+        const data: any[] = await res.json();
+        if (!data[0]) return null;
+        const m = data[0];
+        return {
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          age_group: m.age_group,
+          interests: m.interests ?? [],
+          topics_to_avoid: m.topics_to_avoid ?? [],
+          welcome_form_completed: m.welcome_form_completed ?? false,
+        };
+      }),
+
+    // Submit welcome form — updates existing member record by email
+    submit: publicProcedure
+      .input(
+        z.object({
+          parent_name: z.string(),
+          parent_email: z.string().email(),
+          child_name: z.string(),
+          child_birthday: z.string().optional(),
+          age_group: z.string(),
+          interests: z.array(z.string()),
+          topics_to_avoid: z.array(z.string()),
+          additional_notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        // Find member by email
+        const findRes = await sbFetch(
+          `/members?email=eq.${encodeURIComponent(input.parent_email)}&limit=1`
+        );
+        const existing: any[] = await findRes.json();
+
+        const profileData = {
+          age_group: input.age_group,
+          interests: input.interests,
+          topics_to_avoid: input.topics_to_avoid,
+          welcome_form_completed: true,
+          welcome_form: "completed",
+          updated_at: new Date().toISOString(),
+          ...(input.child_name ? { child_name: input.child_name } : {}),
+          ...(input.child_birthday ? { child_birthday: input.child_birthday } : {}),
+          ...(input.additional_notes ? { notes: input.additional_notes } : {}),
+        };
+
+        if (existing.length > 0) {
+          // Update existing member record
+          const updateRes = await sbFetch(
+            `/members?id=eq.${existing[0].id}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify(profileData),
+              headers: { Prefer: "return=minimal" },
+            }
+          );
+          if (!updateRes.ok) {
+            const errText = await updateRes.text();
+            throw new Error(`Failed to update member: ${errText}`);
+          }
+          return { success: true, member_id: existing[0].id, created: false };
+        } else {
+          // Create a new waitlist member record
+          const createRes = await sbFetch("/members", {
+            method: "POST",
+            body: JSON.stringify({
+              name: input.parent_name,
+              email: input.parent_email,
+              subscription_status: "waitlist",
+              ...profileData,
+            }),
+          });
+          if (!createRes.ok) {
+            const errText = await createRes.text();
+            throw new Error(`Failed to create member: ${errText}`);
+          }
+          const created: any[] = await createRes.json();
+          return { success: true, member_id: created[0]?.id, created: true };
+        }
+      }),
+  }),
+
   // ─── Event Sign-Ups ─────────────────────────────────────────────────────────
   signups: router({
     list: publicProcedure.query(async () => {

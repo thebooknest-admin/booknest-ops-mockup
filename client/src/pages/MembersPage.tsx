@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Users, Search, UserCheck, ChevronDown, RefreshCw, CheckCircle2, Clock } from "lucide-react";
+import { Users, Search, UserCheck, ChevronDown, RefreshCw, CheckCircle2, Clock, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TIER_LABELS: Record<string, string> = {
@@ -236,7 +236,38 @@ export default function MembersPage() {
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Welcome Form</p>
-                          <p className="text-sm text-foreground">{member.welcome_form_completed ? "✅ Completed" : "⏳ Pending"}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
+                              member.welcome_form_completed
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              {member.welcome_form_completed ? (
+                                <><CheckCircle2 className="w-3 h-3" /> Completed</>
+                              ) : (
+                                <><Clock className="w-3 h-3" /> Pending</>
+                              )}
+                            </span>
+                            {!member.welcome_form_completed && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const link = `${window.location.origin}/welcome?email=${encodeURIComponent(member.email)}`;
+                                  navigator.clipboard.writeText(link).then(() => {
+                                    toast.success("Welcome link copied! Send it to " + member.name.split(" ")[0] + ".");
+                                  }).catch(() => {
+                                    toast.info("Welcome link: " + link);
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors hover:bg-muted"
+                                style={{ borderColor: "oklch(0.42 0.11 155)", color: "oklch(0.42 0.11 155)" }}
+                              >
+                                <Link2 className="w-3 h-3" />
+                                Copy Welcome Link
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {member.topics_to_avoid && member.topics_to_avoid.length > 0 && (
                           <div className="col-span-2 md:col-span-4">

@@ -33,3 +33,10 @@
 ## Security
 - [x] Add PIN gate lock screen to protect the ops dashboard
 - [x] Add Monthly/Annually toggle to sign-up form subscription section
+
+## Welcome Form (New Member Onboarding)
+- [x] Build public WelcomePage at /welcome (no sidebar, no PIN gate)
+- [x] Add tRPC procedures: welcome.submit (save profile) and welcome.getByEmail (lookup member)
+- [x] Connect WelcomePage to Supabase — update members table with profile data + mark welcome_form_completed
+- [x] Add "Send Welcome Link" button to Members page expanded row
+- [x] Update Members page to show welcome form status badge
