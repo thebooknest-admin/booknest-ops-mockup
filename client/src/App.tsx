@@ -16,7 +16,6 @@ import MembersPage from "./pages/MembersPage";
 import DonationIntakePage from "./pages/DonationIntakePage";
 import DonationLogPage from "./pages/DonationLogPage";
 import SignupPage from "./pages/SignupPage";
-import SignupControlPage from "./pages/SignupControlPage";
 import NotFound from "./pages/NotFound";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
@@ -36,7 +35,6 @@ function DashboardRouter() {
         <Route path="/members" component={MembersPage} />
         <Route path="/donations/intake" component={DonationIntakePage} />
         <Route path="/donations/log" component={DonationLogPage} />
-        <Route path="/event-signup" component={SignupControlPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
