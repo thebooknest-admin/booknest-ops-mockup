@@ -40,9 +40,9 @@ function DashboardRouter() {
     </AppLayout>
   );
 }
-
 // Top-level router — /signup is OUTSIDE AppLayout (no sidebar, no nav)
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       {/* Public-facing sign-up form — completely isolated */}
