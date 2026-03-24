@@ -1,17 +1,21 @@
-// BookNest Ops — Receive Books (multi-step wizard with live ISBN lookup + smart tag matching)
+// BookNest Ops — Receive Books (multi-step wizard with live ISBN lookup + smart tag matching + age inference)
 // Design: Warm Linen Artisan Light — forest green primary, warm linen bg
 
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X
+  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   TAG_TAXONOMY, autoAssignTags, getCategoryForTag, buildBinName,
   type BinCategory, type TagCategory
 } from "@/lib/tags";
+import {
+  inferAgeGroup, AGE_GROUP_INFO,
+  type AgeGroupKey, type AgeInferenceResult
+} from "@/lib/ageInference";
 
 const STEPS = ["Scan ISBN", "Confirm Details", "Age Group", "Tags & Bin", "Confirm"];
 
@@ -21,6 +25,12 @@ const AGE_EMOJIS: Record<string, string> = {
   "Fledglings (3-5)": "🐦",
   "Soarers (6-8)": "🦅",
   "Sky Readers (9-12)": "🌟",
+};
+
+const CONFIDENCE_COLORS = {
+  high:   { bg: "oklch(0.96 0.04 155)", border: "oklch(0.82 0.09 155)", text: "oklch(0.30 0.12 155)", badge: "oklch(0.42 0.11 155)" },
+  medium: { bg: "oklch(0.97 0.05 80)",  border: "oklch(0.84 0.10 80)",  text: "oklch(0.38 0.12 75)",  badge: "oklch(0.55 0.14 75)"  },
+  low:    { bg: "oklch(0.97 0.02 260)", border: "oklch(0.85 0.05 260)", text: "oklch(0.38 0.08 260)", badge: "oklch(0.52 0.12 260)" },
 };
 
 interface BookData {
@@ -316,6 +326,7 @@ export default function ReceivePage() {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [book, setBook] = useState<BookData | null>(null);
   const [ageGroup, setAgeGroup] = useState("");
+  const [ageInference, setAgeInference] = useState<AgeInferenceResult | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [autoTags, setAutoTags] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<BinCategory>("LIFE");
@@ -352,6 +363,20 @@ export default function ReceivePage() {
     }
   };
 
+  // Run age inference when we arrive at step 2
+  useEffect(() => {
+    if (step === 2 && book) {
+      const result = inferAgeGroup({
+        subjects: book.subjects,
+        title: book.title,
+        author: book.author,
+        publisher: book.publisher,
+        pages: book.pages,
+      });
+      setAgeInference(result);
+    }
+  }, [step, book]);
+
   const handleAgeGroup = (ag: string) => {
     setAgeGroup(ag);
     // Run auto-tag matching when age group is selected
@@ -383,6 +408,7 @@ export default function ReceivePage() {
     setSelectedTags([]);
     setAutoTags([]);
     setLookupError(null);
+    setAgeInference(null);
   };
 
   const handleReset = () => {
@@ -393,6 +419,7 @@ export default function ReceivePage() {
     setSelectedTags([]);
     setAutoTags([]);
     setLookupError(null);
+    setAgeInference(null);
   };
 
   const currentBin = buildBinName(ageGroup || "Fledglings (3-5)", selectedCategory);
@@ -561,23 +588,135 @@ export default function ReceivePage() {
 
       {/* ── STEP 2: Age Group ── */}
       {step === 2 && (
-        <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+        <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <div>
             <h2 className="font-semibold text-foreground">Select Age Group</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               Tags will be auto-matched after you select the nest for <strong>{book?.title}</strong>
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {AGE_GROUPS.map(ag => (
-              <button key={ag} onClick={() => handleAgeGroup(ag)}
-                className="p-4 rounded-xl border-2 text-left transition-all hover:shadow-sm border-border hover:border-primary/40">
-                <span className="text-2xl mb-1 block">{AGE_EMOJIS[ag]}</span>
-                <p className="font-semibold text-sm text-foreground">{ag.split(" (")[0]}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{ag.match(/\(.*\)/)?.[0]}</p>
-              </button>
-            ))}
+
+          {/* ── AI Recommendation Card ── */}
+          {ageInference && (() => {
+            const rec = AGE_GROUP_INFO.find(g => g.key === ageInference.recommended)!;
+            const colors = CONFIDENCE_COLORS[ageInference.confidence];
+            return (
+              <div className="rounded-xl border-2 p-4 space-y-3"
+                style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
+                {/* Header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 shrink-0" style={{ color: colors.badge }} />
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: colors.text }}>
+                      Smart Recommendation
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide text-white"
+                    style={{ backgroundColor: colors.badge }}>
+                    {ageInference.confidence} confidence
+                  </span>
+                </div>
+
+                {/* Recommended tier */}
+                <div className="flex items-center gap-3">
+                  <span className="text-4xl">{rec.emoji}</span>
+                  <div>
+                    <p className="font-bold text-lg leading-tight" style={{ color: colors.text }}>
+                      {rec.label}
+                    </p>
+                    <p className="text-sm" style={{ color: colors.text, opacity: 0.75 }}>Ages {rec.range}</p>
+                  </div>
+                  {/* Confidence bar */}
+                  <div className="ml-auto text-right">
+                    <p className="text-2xl font-bold" style={{ color: colors.badge }}>
+                      {ageInference.confidencePct}%
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wide" style={{ color: colors.text, opacity: 0.6 }}>match</p>
+                  </div>
+                </div>
+
+                {/* Score bars for all tiers */}
+                <div className="space-y-1.5">
+                  {AGE_GROUP_INFO.map(g => {
+                    const score = ageInference.scores[g.key];
+                    const maxScore = Math.max(...Object.values(ageInference.scores), 1);
+                    const pct = Math.round((score / maxScore) * 100);
+                    const isTop = g.key === ageInference.recommended;
+                    return (
+                      <div key={g.key} className="flex items-center gap-2">
+                        <span className="text-sm w-4">{g.emoji}</span>
+                        <span className="text-xs w-20 shrink-0" style={{ color: colors.text, fontWeight: isTop ? 700 : 400 }}>
+                          {g.label}
+                        </span>
+                        <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: "oklch(0.88 0.02 80)" }}>
+                          <div className="h-1.5 rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: isTop ? colors.badge : "oklch(0.75 0.04 80)",
+                            }} />
+                        </div>
+                        <span className="text-[10px] w-6 text-right" style={{ color: colors.text, opacity: 0.6 }}>{score}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Reasons */}
+                {ageInference.reasons.length > 0 && (
+                  <div className="pt-1 border-t" style={{ borderColor: colors.border }}>
+                    <div className="flex items-start gap-1.5">
+                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: colors.badge }} />
+                      <ul className="space-y-0.5">
+                        {ageInference.reasons.map((r, i) => (
+                          <li key={i} className="text-xs" style={{ color: colors.text, opacity: 0.85 }}>{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* One-click accept button */}
+                <button
+                  onClick={() => handleAgeGroup(rec.displayLabel)}
+                  className="w-full py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90"
+                  style={{ backgroundColor: colors.badge }}>
+                  <Check className="w-4 h-4" />
+                  Use {rec.emoji} {rec.label} — Accept Recommendation
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Manual override grid */}
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2.5">
+              {ageInference ? "Or choose manually:" : "Select a nest tier:"}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {AGE_GROUPS.map(ag => {
+                const info = AGE_GROUP_INFO.find(g => g.displayLabel === ag)!;
+                const isRecommended = ageInference?.recommended === info?.key;
+                return (
+                  <button key={ag} onClick={() => handleAgeGroup(ag)}
+                    className={cn(
+                      "p-4 rounded-xl border-2 text-left transition-all hover:shadow-sm",
+                      isRecommended ? "border-primary/40" : "border-border hover:border-primary/30"
+                    )}>
+                    <div className="flex items-start justify-between">
+                      <span className="text-2xl mb-1 block">{AGE_EMOJIS[ag]}</span>
+                      {isRecommended && (
+                        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>AI Pick</span>
+                      )}
+                    </div>
+                    <p className="font-semibold text-sm text-foreground">{ag.split(" (")[0]}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{ag.match(/\(.*\)/)?.[0]}</p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
           <button onClick={() => setStep(1)}
             className="w-full py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
             ← Back
