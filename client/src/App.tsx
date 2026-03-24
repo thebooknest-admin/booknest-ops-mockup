@@ -4,6 +4,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import AppLayout from "./components/AppLayout";
+import PinGate from "./components/PinGate";
 import Dashboard from "./pages/Dashboard";
 import PickingPage from "./pages/PickingPage";
 import ShippingPage from "./pages/ShippingPage";
@@ -21,6 +22,7 @@ import NotFound from "./pages/NotFound";
 // Routes that render INSIDE the ops dashboard (with sidebar)
 function DashboardRouter() {
   return (
+    <PinGate>
     <AppLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
@@ -38,6 +40,7 @@ function DashboardRouter() {
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
+    </PinGate>
   );
 }
 // Top-level router — /signup is OUTSIDE AppLayout (no sidebar, no nav)

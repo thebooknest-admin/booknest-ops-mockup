@@ -29,3 +29,6 @@
 - [x] ISBN lookup (Open Library API)
 - [x] Subscription tiers (Little Nest / Cozy Nest / Story Nest)
 - [x] Event sign-up overlay from sidebar
+
+## Security
+- [x] Add PIN gate lock screen to protect the ops dashboard
