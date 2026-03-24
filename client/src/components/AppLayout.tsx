@@ -6,7 +6,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Package, Truck, Tag, Archive, BookOpen,
   RotateCcw, Users, Gift, BookMarked, Bell, ChevronDown,
-  ChevronRight, Menu, X, LogOut, Settings
+  ChevronRight, Menu, X, LogOut, Settings, CalendarCheck
 } from "lucide-react";
 import { notifications } from "@/lib/data";
 import { cn } from "@/lib/utils";
@@ -60,6 +60,7 @@ const navItems: NavItem[] = [
     ],
   },
   { label: "Members", href: "/members", icon: Users },
+  { label: "Event Sign-Up", href: "/event-signup", icon: CalendarCheck },
 ];
 
 function NotificationPanel() {

@@ -15,9 +15,12 @@ import ReturnsPage from "./pages/ReturnsPage";
 import MembersPage from "./pages/MembersPage";
 import DonationIntakePage from "./pages/DonationIntakePage";
 import DonationLogPage from "./pages/DonationLogPage";
+import SignupPage from "./pages/SignupPage";
+import SignupControlPage from "./pages/SignupControlPage";
 import NotFound from "./pages/NotFound";
 
-function Router() {
+// Routes that render INSIDE the ops dashboard (with sidebar)
+function DashboardRouter() {
   return (
     <AppLayout>
       <Switch>
@@ -33,9 +36,22 @@ function Router() {
         <Route path="/members" component={MembersPage} />
         <Route path="/donations/intake" component={DonationIntakePage} />
         <Route path="/donations/log" component={DonationLogPage} />
+        <Route path="/event-signup" component={SignupControlPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
+  );
+}
+
+// Top-level router — /signup is OUTSIDE AppLayout (no sidebar, no nav)
+function Router() {
+  return (
+    <Switch>
+      {/* Public-facing sign-up form — completely isolated */}
+      <Route path="/signup" component={SignupPage} />
+      {/* Everything else goes through the ops dashboard layout */}
+      <Route component={DashboardRouter} />
+    </Switch>
   );
 }
 
