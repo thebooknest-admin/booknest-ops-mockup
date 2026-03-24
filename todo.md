@@ -32,3 +32,4 @@
 
 ## Security
 - [x] Add PIN gate lock screen to protect the ops dashboard
+- [x] Add Monthly/Annually toggle to sign-up form subscription section

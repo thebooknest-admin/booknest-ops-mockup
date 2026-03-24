@@ -59,6 +59,9 @@ const SUBSCRIPTION_TIERS = [
   {
     value: "little_nest",
     label: "Little Nest",
+    monthlyPrice: "$20",
+    annualPrice: "$216",
+    annualMonthly: "$18",
     price: "$20",
     books: "4 books per bundle",
     popular: false,
@@ -72,6 +75,9 @@ const SUBSCRIPTION_TIERS = [
   {
     value: "cozy_nest",
     label: "Cozy Nest",
+    monthlyPrice: "$25",
+    annualPrice: "$270",
+    annualMonthly: "$22.50",
     price: "$25",
     books: "6 books per bundle",
     popular: true,
@@ -86,6 +92,9 @@ const SUBSCRIPTION_TIERS = [
   {
     value: "story_nest",
     label: "Story Nest",
+    monthlyPrice: "$35",
+    annualPrice: "$378",
+    annualMonthly: "$31.50",
     price: "$35",
     books: "8 books per bundle",
     popular: false,
@@ -421,6 +430,7 @@ export default function SignupPage() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
 
   if (!formOpen) return <ClosedState />;
   if (submitted) return <SuccessState childName={form.childName} parentName={form.parentName.split(" ")[0]} />;
@@ -715,6 +725,39 @@ export default function SignupPage() {
             title="Which Nest Fits Your Family?"
             subtitle="All plans include unlimited swaps — you keep the same books as long as you want, then swap for a new bundle whenever you're ready. Checkout is handled through our Shopify store."
           />
+
+          {/* Billing cycle toggle */}
+          <div className="flex items-center justify-center gap-1 p-1 rounded-xl border border-border bg-muted/40 w-fit mx-auto">
+            <button
+              type="button"
+              onClick={() => setBillingCycle("monthly")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition-all",
+                billingCycle === "monthly"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingCycle("annual")}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5",
+                billingCycle === "annual"
+                  ? "bg-card shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Annually
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ backgroundColor: "oklch(0.92 0.08 155)", color: "oklch(0.35 0.12 155)" }}>
+                Save 10%
+              </span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {SUBSCRIPTION_TIERS.map(tier => {
               const isSelected = form.subscriptionTier === tier.value;
@@ -746,9 +789,16 @@ export default function SignupPage() {
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{tier.label}</p>
                       <div className="flex items-baseline gap-1 mt-0.5">
-                        <span className="text-2xl font-bold text-foreground">{tier.price}</span>
+                        <span className="text-2xl font-bold text-foreground">
+                          {billingCycle === "annual" ? tier.annualMonthly : tier.monthlyPrice}
+                        </span>
                         <span className="text-xs text-muted-foreground">/mo</span>
                       </div>
+                      {billingCycle === "annual" && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {tier.annualPrice}/year · billed annually
+                        </p>
+                      )}
                     </div>
                     {isSelected && (
                       <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
