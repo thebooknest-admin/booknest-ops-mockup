@@ -40,3 +40,6 @@
 - [x] Connect WelcomePage to Supabase — update members table with profile data + mark welcome_form_completed
 - [x] Add "Send Welcome Link" button to Members page expanded row
 - [x] Update Members page to show welcome form status badge
+
+## Bug Fixes
+- [x] Fix Inventory Snapshot page stuck on "Loading inventory..." — books never appear (URL overflow: 463 UUIDs exceeded Node HTTP header limit; fixed with batched fetching in groups of 50)

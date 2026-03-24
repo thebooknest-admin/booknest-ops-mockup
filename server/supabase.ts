@@ -311,12 +311,24 @@ export async function getBookTitlesWithCopies(params?: {
     return { data: [], total: 0 };
   }
 
-  // Fetch all copies for these titles
+  // Fetch all copies in batches of 50 IDs to avoid URL length overflow
+  // (463 UUIDs in a single query string exceeds Node's header size limit)
   const titleIds = titlesResult.data.map((t) => t.id);
-  const copiesRes = await sbFetch(
-    `/book_copies?book_title_id=in.(${titleIds.join(",")})&select=book_title_id,status,bin_id&limit=2000`
-  );
-  const copies: { book_title_id: string; status: string; bin_id: string | null }[] = await copiesRes.json();
+  const BATCH_SIZE = 50;
+  const allCopies: { book_title_id: string; status: string; bin_id: string | null }[] = [];
+
+  for (let i = 0; i < titleIds.length; i += BATCH_SIZE) {
+    const batch = titleIds.slice(i, i + BATCH_SIZE);
+    const copiesRes = await sbFetch(
+      `/book_copies?book_title_id=in.(${batch.join(",")})&select=book_title_id,status,bin_id&limit=2000`
+    );
+    if (copiesRes.ok) {
+      const batchCopies: { book_title_id: string; status: string; bin_id: string | null }[] = await copiesRes.json();
+      allCopies.push(...batchCopies);
+    }
+  }
+
+  const copies = allCopies;
 
   // Build a map of title_id -> copy counts
   const copyMap: Record<string, { total: number; in_house: number; bin_id: string | null }> = {};
