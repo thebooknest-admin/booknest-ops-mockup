@@ -43,3 +43,9 @@
 
 ## Bug Fixes
 - [x] Fix Inventory Snapshot page stuck on "Loading inventory..." — books never appear (URL overflow: 463 UUIDs exceeded Node HTTP header limit; fixed with batched fetching in groups of 50)
+
+## Inventory & Labels Improvements
+- [x] Remove "Needs Restocking" section from Inventory Snapshot page
+- [x] Add SKU column to inventory table and allow searching by SKU
+- [x] Add inline edit capability for inventory (title, author, age group, bin, etc.)
+- [x] Diagnose and fix the label queue not working (was using hardcoded mock data; rewired to live labels.pending tRPC query)

@@ -106,6 +106,42 @@ export const appRouter = router({
     bins: publicProcedure.query(async () => {
       return getBinConfigs();
     }),
+
+    updateBookTitle: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          title: z.string().optional(),
+          author: z.string().optional(),
+          age_group: z.string().optional(),
+          bin_id: z.string().optional(),
+          isbn: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...fields } = input;
+        const updateFields: Record<string, string> = {};
+        if (fields.title !== undefined) updateFields.title = fields.title;
+        if (fields.author !== undefined) updateFields.author = fields.author;
+        if (fields.age_group !== undefined) updateFields.age_group = fields.age_group;
+        if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
+        const res = await sbFetch(`/book_titles?id=eq.${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...updateFields, updated_at: new Date().toISOString() }),
+          headers: { Prefer: "return=representation" },
+        });
+        if (!res.ok) throw new Error("Failed to update book title");
+        // If bin_id is being updated, update all in_house copies for this title
+        if (fields.bin_id !== undefined) {
+          await sbFetch(`/book_copies?book_title_id=eq.${id}&status=eq.in_house`, {
+            method: "PATCH",
+            body: JSON.stringify({ bin_id: fields.bin_id, updated_at: new Date().toISOString() }),
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+        const data = await res.json();
+        return { success: true, book: data[0] };
+      }),
   }),
 
   // ─── Shipments / Orders ─────────────────────────────────────────────────────
