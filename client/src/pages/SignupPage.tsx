@@ -56,10 +56,48 @@ const READING_LEVELS = [
 ];
 
 const SUBSCRIPTION_TIERS = [
-  { value: "nest_starter",  label: "Nest Starter",  desc: "1 book/month · Perfect for trying it out" },
-  { value: "nest_classic",  label: "Nest Classic",  desc: "2 books/month · Our most popular" },
-  { value: "nest_premium",  label: "Nest Premium",  desc: "3 books/month · For the voracious reader" },
-  { value: "not_sure",      label: "Not sure yet",  desc: "We'll help you choose at checkout" },
+  {
+    value: "little_nest",
+    label: "Little Nest",
+    price: "$20",
+    books: "4 books per bundle",
+    popular: false,
+    perks: [
+      "4 books at a time",
+      "Unlimited swaps — swap when ready",
+      "BookNest branding in every shipment",
+    ],
+    tagline: "A light, simple start.",
+  },
+  {
+    value: "cozy_nest",
+    label: "Cozy Nest",
+    price: "$25",
+    books: "6 books per bundle",
+    popular: true,
+    perks: [
+      "6 books at a time",
+      "Unlimited swaps — swap when ready",
+      "1 complimentary book to keep each year",
+      "Occasional BookNest swag",
+    ],
+    tagline: "Most common family choice.",
+  },
+  {
+    value: "story_nest",
+    label: "Story Nest",
+    price: "$35",
+    books: "8 books per bundle",
+    popular: false,
+    perks: [
+      "8 books at a time",
+      "Unlimited swaps — swap when ready",
+      "1 complimentary book to keep every 6 months",
+      "More frequent BookNest swag",
+      "Reader moments (birthdays + milestones)",
+    ],
+    tagline: "Best for big readers or multi-kid homes.",
+  },
 ];
 
 const HOW_HEARD_OPTIONS = [
@@ -674,33 +712,82 @@ export default function SignupPage() {
         <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-5">
           <SectionHeader
             icon={<BookMarked className="w-4 h-4" />}
-            title="Subscription Preference"
-            subtitle="How many books per month? You can always change this later."
+            title="Which Nest Fits Your Family?"
+            subtitle="All plans include unlimited swaps — you keep the same books as long as you want, then swap for a new bundle whenever you're ready. Checkout is handled through our Shopify store."
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {SUBSCRIPTION_TIERS.map(tier => {
               const isSelected = form.subscriptionTier === tier.value;
               return (
                 <button key={tier.value} type="button"
                   onClick={() => set("subscriptionTier", tier.value)}
                   className={cn(
-                    "p-4 rounded-xl border-2 text-left transition-all",
-                    isSelected ? "border-primary shadow-sm" : "border-border hover:border-primary/40"
+                    "relative p-5 rounded-2xl border-2 text-left transition-all flex flex-col gap-3",
+                    isSelected
+                      ? "border-primary shadow-md"
+                      : tier.popular
+                        ? "border-amber-300 hover:border-primary/50"
+                        : "border-border hover:border-primary/40"
                   )}
-                  style={isSelected ? { backgroundColor: "oklch(0.96 0.04 155)" } : {}}>
-                  <div className="flex items-start justify-between">
-                    <p className="font-semibold text-sm text-foreground">{tier.label}</p>
+                  style={isSelected ? { backgroundColor: "oklch(0.96 0.04 155)" } : tier.popular ? { backgroundColor: "oklch(0.99 0.015 80)" } : {}}>
+
+                  {/* Most Popular badge */}
+                  {tier.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                        style={{ backgroundColor: "oklch(0.975 0.008 80)", borderColor: "oklch(0.72 0.10 80)", color: "oklch(0.45 0.09 80)" }}>
+                        Most Popular
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Tier name + check */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{tier.label}</p>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-2xl font-bold text-foreground">{tier.price}</span>
+                        <span className="text-xs text-muted-foreground">/mo</span>
+                      </div>
+                    </div>
                     {isSelected && (
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
                         style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
                         <Check className="w-3 h-3 text-white" />
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{tier.desc}</p>
+
+                  {/* Tagline */}
+                  <p className="text-xs text-muted-foreground -mt-1">{tier.tagline}</p>
+
+                  {/* Books per bundle highlight */}
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-semibold text-center"
+                    style={{ backgroundColor: "oklch(0.92 0.05 155)", color: "oklch(0.35 0.10 155)" }}>
+                    {tier.books}
+                  </div>
+
+                  {/* Perks list */}
+                  <ul className="space-y-1.5">
+                    {tier.perks.map((perk, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                        <span className="mt-0.5 shrink-0" style={{ color: "oklch(0.42 0.11 155)" }}>✓</span>
+                        <span>{perk}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </button>
               );
             })}
+          </div>
+
+          {/* Shopify checkout note */}
+          <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-border bg-muted/30">
+            <span className="text-base shrink-0">🛒</span>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-semibold text-foreground">Checkout is through our Shopify store.</span>{" "}
+              After submitting this form, you'll receive a link to complete your subscription. Your preference here helps us prepare your first bundle before you even check out.
+            </p>
           </div>
         </div>
 
