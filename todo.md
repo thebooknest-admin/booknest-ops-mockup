@@ -70,3 +70,7 @@
 
 ## Sidebar Enhancements
 - [x] Add pending label count badge to Labels nav item in sidebar (amber pill, auto-refreshes every 60s, group badge shows on Orders when collapsed)
+
+## Returns Audit Trail
+- [x] Wire processReturn to also write a record to the returns table (audit trail)
+- [x] Add a return history log to the Process Returns page showing recent returns

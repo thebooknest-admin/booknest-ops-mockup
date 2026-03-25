@@ -491,7 +491,15 @@ export const appRouter = router({
         // Fetch title info
         const titleRes = await sbFetch(`/book_titles?id=eq.${copy.book_title_id}&limit=1&select=id,title,author`);
         const titles: any[] = titleRes.ok ? await titleRes.json() : [];
-        return { ...copy, book_title: titles[0] ?? null };
+        // Find the most recent shipment this copy was sent out in (for audit linkage)
+        const sbRes = await sbFetch(`/shipment_books?book_copy_id=eq.${copy.id}&order=created_at.desc&limit=1&select=shipment_id,id`);
+        const sbRows: any[] = sbRes.ok ? await sbRes.json() : [];
+        return {
+          ...copy,
+          book_title: titles[0] ?? null,
+          last_shipment_id: sbRows[0]?.shipment_id ?? null,
+          last_shipment_book_id: sbRows[0]?.id ?? null,
+        };
       }),
 
     processReturn: publicProcedure
@@ -500,21 +508,115 @@ export const appRouter = router({
           copy_id: z.string(),
           condition: z.string().optional(),
           notes: z.string().optional(),
+          last_shipment_id: z.string().nullable().optional(),
+          last_shipment_book_id: z.string().nullable().optional(),
+          sku: z.string().optional(),
+          title: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        const patch: Record<string, any> = {
-          status: "in_house",
-          updated_at: new Date().toISOString(),
-        };
+        const now = new Date().toISOString();
+
+        // 1. Update book_copies status back to in_house
+        const patch: Record<string, any> = { status: "in_house", updated_at: now };
         if (input.condition) patch.condition = input.condition;
-        const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+        const copyRes = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify(patch),
           headers: { Prefer: "return=minimal" },
         });
-        if (!res.ok) throw new Error(`Failed to process return: ${await res.text()}`);
-        return { success: true };
+        if (!copyRes.ok) throw new Error(`Failed to update book copy: ${await copyRes.text()}`);
+
+        // 2. Generate a human-readable return number (RET-YYYYMMDD-XXXXX)
+        const datePart = now.slice(0, 10).replace(/-/g, "");
+        const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
+        const returnNumber = `RET-${datePart}-${randPart}`;
+
+        // 3. Create a returns record for the audit trail
+        const returnRes = await sbFetch("/returns", {
+          method: "POST",
+          body: JSON.stringify({
+            return_number: returnNumber,
+            original_shipment_id: input.last_shipment_id ?? null,
+            status: "received",
+            return_type: "standard",
+            actual_return_date: now.slice(0, 10),
+            processed_at: now,
+            notes: input.notes ?? null,
+            created_at: now,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=representation" },
+        });
+        if (!returnRes.ok) throw new Error(`Failed to create return record: ${await returnRes.text()}`);
+        const returnRows: any[] = await returnRes.json();
+        const returnId = returnRows[0]?.id;
+
+        // 4. Create a return_books record linking this copy to the return
+        if (returnId) {
+          await sbFetch("/return_books", {
+            method: "POST",
+            body: JSON.stringify({
+              return_id: returnId,
+              book_copy_id: input.copy_id,
+              shipment_book_id: input.last_shipment_book_id ?? null,
+              received: true,
+              condition_on_return: input.condition ?? "good",
+              condition_notes: input.notes ?? null,
+              action: "restock",
+              processed_at: now,
+              created_at: now,
+            }),
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        return { success: true, return_number: returnNumber, return_id: returnId ?? null };
+      }),
+
+    // Recent return history for the audit log panel
+    history: publicProcedure
+      .input(z.object({ limit: z.number().optional() }))
+      .query(async ({ input }) => {
+        const limit = input.limit ?? 20;
+        // Fetch recent returns with their return_books
+        const res = await sbFetch(
+          `/returns?order=processed_at.desc&limit=${limit}&select=id,return_number,status,return_type,actual_return_date,processed_at,notes,original_shipment_id`
+        );
+        if (!res.ok) return [];
+        const returns: any[] = await res.json();
+        if (!returns.length) return [];
+
+        // Fetch the return_books for these returns
+        const returnIds = returns.map((r: any) => r.id).join(",");
+        const rbRes = await sbFetch(
+          `/return_books?return_id=in.(${returnIds})&select=return_id,book_copy_id,condition_on_return,condition_notes,action,processed_at`
+        );
+        const returnBooks: any[] = rbRes.ok ? await rbRes.json() : [];
+
+        // Fetch copy + title info for each return_book
+        const copyIds = Array.from(new Set(returnBooks.map((rb: any) => rb.book_copy_id))).join(",");
+        let copies: any[] = [];
+        if (copyIds) {
+          const copyRes = await sbFetch(`/book_copies?id=in.(${copyIds})&select=id,sku,bin_id,book_title_id`);
+          copies = copyRes.ok ? await copyRes.json() : [];
+        }
+        const titleIds = Array.from(new Set(copies.map((c: any) => c.book_title_id))).join(",");
+        let titles: any[] = [];
+        if (titleIds) {
+          const titleRes = await sbFetch(`/book_titles?id=in.(${titleIds})&select=id,title,author`);
+          titles = titleRes.ok ? await titleRes.json() : [];
+        }
+
+        const titleMap = Object.fromEntries(titles.map((t: any) => [t.id, t]));
+        const copyMap = Object.fromEntries(copies.map((c: any) => [c.id, { ...c, book_title: titleMap[c.book_title_id] ?? null }]));
+        const rbByReturn: Record<string, any[]> = {};
+        for (const rb of returnBooks) {
+          if (!rbByReturn[rb.return_id]) rbByReturn[rb.return_id] = [];
+          rbByReturn[rb.return_id].push({ ...rb, copy: copyMap[rb.book_copy_id] ?? null });
+        }
+
+        return returns.map((r: any) => ({ ...r, books: rbByReturn[r.id] ?? [] }));
       }),
   }),
 
