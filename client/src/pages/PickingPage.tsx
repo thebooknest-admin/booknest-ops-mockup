@@ -371,31 +371,45 @@ export default function PickingPage() {
           </p>
 
           <div className="space-y-3">
-            {pickListData.bins.map((bin) => (
-              <div key={bin.bin_id} className="bg-background rounded-lg border border-border overflow-hidden">
-                <div className="px-4 py-2 bg-muted/30 border-b border-border/50 flex items-center justify-between">
-                  <span className="text-xs font-bold text-foreground font-mono">{bin.bin_id}</span>
-                  <span className="text-xs text-muted-foreground">{bin.items.length} book{bin.items.length !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="divide-y divide-border/30">
-                  {bin.items.map((item, i) => (
-                    <div key={i} className="px-4 py-2.5 flex items-center gap-3">
-                      <Package className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-foreground truncate block">{item.title}</span>
-                        <span className="text-xs text-muted-foreground">{item.author}</span>
-                      </div>
-                      {item.sku && (
-                        <span className="text-xs font-mono text-muted-foreground shrink-0">{item.sku}</span>
-                      )}
-                      <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.42 0.11 155)" }}>
-                        → {item.member_name}
-                      </span>
+                {pickListData.bins.map((bin) => (
+                  <div key={bin.bin_id} className="bg-background rounded-lg border border-border overflow-hidden">
+                    <div className="px-4 py-2.5 bg-muted/30 border-b border-border/50 flex items-center justify-between">
+                      <span className="text-sm font-bold text-foreground font-mono tracking-wide">{bin.bin_id}</span>
+                      <span className="text-xs text-muted-foreground">{bin.items.length} book{bin.items.length !== 1 ? "s" : ""}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                    <div className="divide-y divide-border/30">
+                      {bin.items.map((item, i) => (
+                        <div key={i} className="px-4 py-3 flex items-center gap-3">
+                          {/* Cover thumbnail */}
+                          {item.cover_url ? (
+                            <img
+                              src={item.cover_url}
+                              alt={item.title}
+                              className="w-9 h-12 object-cover rounded shadow-sm shrink-0 border border-border/40"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-9 h-12 bg-muted rounded shrink-0 flex items-center justify-center border border-border/40">
+                              <BookOpen className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-foreground truncate block">{item.title}</span>
+                            <span className="text-xs text-muted-foreground">{item.author}</span>
+                          </div>
+                          {item.sku && (
+                            <span className="text-xs font-mono text-muted-foreground shrink-0 bg-muted px-1.5 py-0.5 rounded">{item.sku}</span>
+                          )}
+                          <span className="text-xs font-semibold shrink-0 px-2 py-1 rounded-full" style={{ color: "oklch(0.42 0.11 155)", backgroundColor: "oklch(0.95 0.03 155)" }}>
+                            → {item.member_name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
           </div>
         </div>
       )}

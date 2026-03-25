@@ -433,7 +433,7 @@ export const pickingRouter = router({
         for (let i = 0; i < titleIds.length; i += 50) {
           const batch = titleIds.slice(i, i + 50);
           const tr = await sbFetch(
-            `/book_titles?id=in.(${batch.join(",")})&select=id,title,author,bin_id&limit=200`
+            `/book_titles?id=in.(${batch.join(",")})&select=id,title,author,bin_id,cover_url&limit=200`
           );
           const titles: any[] = await tr.json();
           for (const t of titles) titleMap[t.id] = t;
@@ -486,6 +486,7 @@ export const pickingRouter = router({
           sku: copyMap[sb.book_copy_id]?.sku ?? null,
           title: title.title,
           author: title.author,
+          cover_url: title.cover_url ?? null,
           shipment_id: sb.shipment_id,
           member_name: shipmentMemberMap[sb.shipment_id] ?? "Unknown",
         });

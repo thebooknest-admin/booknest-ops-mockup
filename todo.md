@@ -82,3 +82,6 @@
 - [x] Rebuild Picking page: daily batch view showing all pending orders with per-member book suggestions
 - [x] Add "Confirm All Picks" flow: lock in book assignments across all orders at once
 - [x] Wire Ship Bundle page to the confirmed picks (bundle → print label → mark shipped)
+
+## Pick List Enhancements
+- [x] Add book cover thumbnails to the bin-sorted pick list for visual verification
