@@ -67,3 +67,6 @@
 - [x] Wire Process Returns — lookupBySku and processReturn procedures added; page rewritten to use live data
 - [x] Wire Event Sign-Up form — already wired to trpc.signups.add.useMutation
 - [x] Wire Event Sign-Up control page — shows live submissions, expand details, Convert to Member button
+
+## Sidebar Enhancements
+- [x] Add pending label count badge to Labels nav item in sidebar (amber pill, auto-refreshes every 60s, group badge shows on Orders when collapsed)

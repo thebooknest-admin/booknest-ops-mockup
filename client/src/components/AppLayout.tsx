@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import SignupPage from "@/pages/SignupPage";
+import { trpc } from "@/lib/trpc";
 
 // ─── Nav structure (Event Sign-Up is NOT a route — it's an overlay trigger) ──
 
@@ -27,10 +28,11 @@ interface NavItem {
   href?: string;
   icon: React.ComponentType<{ className?: string }>;
   overlay?: boolean; // if true, clicking opens the overlay instead of navigating
-  children?: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }[];
+  badge?: number;    // optional count badge shown next to the label
+  children?: { label: string; href: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[];
 }
 
-const navItems: NavItem[] = [
+const buildNavItems = (pendingLabelCount: number): NavItem[] => [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
     label: "Orders",
@@ -38,7 +40,7 @@ const navItems: NavItem[] = [
     children: [
       { label: "Picking Queue", href: "/picking", icon: Package },
       { label: "Shipping Queue", href: "/shipping", icon: Truck },
-      { label: "Label Queue", href: "/labels", icon: Tag },
+      { label: "Label Queue", href: "/labels", icon: Tag, badge: pendingLabelCount > 0 ? pendingLabelCount : undefined },
     ],
   },
   {
@@ -143,6 +145,9 @@ function SidebarNavItem({
     ? location === item.href || (item.href === "/dashboard" && location === "/")
     : item.children?.some(c => location === c.href || location.startsWith(c.href));
 
+  // Total badge count for a group (sum of children badges)
+  const groupBadge = item.children?.reduce((sum, c) => sum + (c.badge ?? 0), 0) ?? 0;
+
   // Overlay trigger button (Event Sign-Up)
   if (item.overlay) {
     return (
@@ -179,8 +184,25 @@ function SidebarNavItem({
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
         )}>
           <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-white" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80")} />
-          {!collapsed && <span className="text-sm truncate">{item.label}</span>}
-          {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />}
+          {!collapsed && (
+            <>
+              <span className="text-sm truncate flex-1">{item.label}</span>
+              {item.badge !== undefined && item.badge > 0 && (
+                <span className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                  style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+                  {item.badge > 99 ? "99+" : item.badge}
+                </span>
+              )}
+              {(!item.badge || item.badge === 0) && isActive && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />
+              )}
+            </>
+          )}
+          {/* Collapsed mode: show badge as dot on icon */}
+          {collapsed && item.badge !== undefined && item.badge > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full"
+              style={{ backgroundColor: "oklch(0.75 0.18 75)" }} />
+          )}
         </div>
       </Link>
     );
@@ -202,6 +224,13 @@ function SidebarNavItem({
         {!collapsed && (
           <>
             <span className="text-sm truncate flex-1 text-left">{item.label}</span>
+            {/* Show group badge when collapsed */}
+            {!open && groupBadge > 0 && (
+              <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+                {groupBadge > 99 ? "99+" : groupBadge}
+              </span>
+            )}
             {open ? <ChevronDown className="w-3.5 h-3.5 text-sidebar-foreground/40" /> : <ChevronRight className="w-3.5 h-3.5 text-sidebar-foreground/40" />}
           </>
         )}
@@ -219,7 +248,13 @@ function SidebarNavItem({
                     : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
                 )}>
                   <child.icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{child.label}</span>
+                  <span className="truncate flex-1">{child.label}</span>
+                  {child.badge !== undefined && child.badge > 0 && (
+                    <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                      style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+                      {child.badge > 99 ? "99+" : child.badge}
+                    </span>
+                  )}
                 </div>
               </Link>
             );
@@ -329,7 +364,15 @@ function SignupOverlay({ onClose }: { onClose: () => void }) {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [signupOverlayOpen, setSignupOverlayOpen] = useState(false);
-  const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Fetch pending label count — refreshes every 60 seconds
+  const { data: labelData } = trpc.labels.pending.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const pendingLabelCount = labelData?.length ?? 0;
+
+  const navItems = buildNavItems(pendingLabelCount);
 
   return (
     <>
