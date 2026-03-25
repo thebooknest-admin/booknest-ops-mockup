@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
+import { pickingRouter } from "./routers/picking";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
@@ -38,6 +39,7 @@ async function sbFetch(path: string, options: RequestInit = {}): Promise<Respons
 
 export const appRouter = router({
   system: systemRouter,
+  picking: pickingRouter,
 
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),

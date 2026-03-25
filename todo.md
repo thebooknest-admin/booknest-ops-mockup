@@ -74,3 +74,11 @@
 ## Returns Audit Trail
 - [x] Wire processReturn to also write a record to the returns table (audit trail)
 - [x] Add a return history log to the Process Returns page showing recent returns
+
+## Batch Picking Rebuild (Pharmacy-Style)
+- [x] Audit Supabase: shipments, members, book_copies, shipment_books, member interests/exclusions
+- [x] Build backend: smart book suggestion engine (age group + interests + exclusions + not-sent-before)
+- [x] Build backend: batch picking procedures (generate daily order list, confirm picks, create shipment_books)
+- [x] Rebuild Picking page: daily batch view showing all pending orders with per-member book suggestions
+- [x] Add "Confirm All Picks" flow: lock in book assignments across all orders at once
+- [x] Wire Ship Bundle page to the confirmed picks (bundle → print label → mark shipped)

@@ -111,13 +111,17 @@ export default function ShipBundlePage() {
     ? new Date(shipment.scheduled_ship_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : "—";
 
+  // Determine back destination: picking-status shipments come from the batch picking page
+  const backHref = shipment.status === "picking" ? "/picking" : "/shipping";
+  const backLabel = shipment.status === "picking" ? "Back to Picking" : "Back to Shipping";
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/shipping">
+        <Link href={backHref}>
           <button className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="w-4 h-4" />
-            Back to Shipping
+            {backLabel}
           </button>
         </Link>
       </div>
