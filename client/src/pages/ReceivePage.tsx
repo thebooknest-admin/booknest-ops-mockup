@@ -8,6 +8,7 @@ import {
   ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 import {
   TAG_TAXONOMY, autoAssignTags, getCategoryForTag, buildBinName,
   type BinCategory, type TagCategory
@@ -336,7 +337,27 @@ export default function ReceivePage() {
     IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
   });
   const [receivedCount, setReceivedCount] = useState(0);
+  const [lastSku, setLastSku] = useState<string | null>(null);
   const isbnInputRef = useRef<HTMLInputElement>(null);
+
+  const addBookMutation = trpc.receive.addBook.useMutation({
+    onSuccess: (data) => {
+      setLastSku(data.sku);
+      toast.success(`✓ Book received — SKU: ${data.sku}`, { duration: 5000 });
+      setReceivedCount(c => c + 1);
+      setStep(0);
+      setIsbn("");
+      setBook(null);
+      setAgeGroup("");
+      setSelectedTags([]);
+      setAutoTags([]);
+      setLookupError(null);
+      setAgeInference(null);
+    },
+    onError: (err) => {
+      toast.error("Failed to save: " + err.message);
+    },
+  });
 
   useEffect(() => {
     if (step === 0 && isbnInputRef.current) isbnInputRef.current.focus();
@@ -398,17 +419,22 @@ export default function ReceivePage() {
   };
 
   const handleConfirm = () => {
+    if (!book) return;
     const bin = buildBinName(ageGroup, selectedCategory);
-    toast.success(`✓ ${book?.title} → ${bin}`, { duration: 4000 });
-    setReceivedCount(c => c + 1);
-    setStep(0);
-    setIsbn("");
-    setBook(null);
-    setAgeGroup("");
-    setSelectedTags([]);
-    setAutoTags([]);
-    setLookupError(null);
-    setAgeInference(null);
+    addBookMutation.mutate({
+      isbn: book.isbn,
+      title: book.title,
+      author: book.author,
+      cover_url: book.coverUrl ?? undefined,
+      publisher: book.publisher !== "Unknown" ? book.publisher : undefined,
+      published_date: book.publishYear !== "—" ? book.publishYear : undefined,
+      page_count: book.pages !== "—" ? parseInt(book.pages, 10) || undefined : undefined,
+      subjects: book.subjects,
+      age_group: ageGroup,
+      bin_id: bin,
+      condition: "good",
+      tags: selectedTags,
+    });
   };
 
   const handleReset = () => {
@@ -433,10 +459,15 @@ export default function ReceivePage() {
           <p className="page-subtitle">ISBN auto-fills details · subjects auto-match to your tag taxonomy</p>
         </div>
         {receivedCount > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
-            style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
-            <Check className="w-3.5 h-3.5" />
-            {receivedCount} received today
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
+              style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
+              <Check className="w-3.5 h-3.5" />
+              {receivedCount} received today
+            </div>
+            {lastSku && (
+              <p className="text-xs text-muted-foreground font-mono">Last SKU: {lastSku}</p>
+            )}
           </div>
         )}
       </div>
@@ -841,10 +872,12 @@ export default function ReceivePage() {
               ← Back
             </button>
             <button onClick={handleConfirm}
-              className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+              disabled={addBookMutation.isPending}
+              className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
-              <Check className="w-4 h-4" />
-              Confirm Receipt
+              {addBookMutation.isPending
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                : <><Check className="w-4 h-4" /> Confirm Receipt</>}
             </button>
           </div>
         </div>

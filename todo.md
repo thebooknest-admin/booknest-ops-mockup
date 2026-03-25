@@ -49,3 +49,9 @@
 - [x] Add SKU column to inventory table and allow searching by SKU
 - [x] Add inline edit capability for inventory (title, author, age group, bin, etc.)
 - [x] Diagnose and fix the label queue not working (was using hardcoded mock data; rewired to live labels.pending tRPC query)
+
+## Inventory Table & SKU Fixes
+- [x] Fix duplicate age group filter buttons on Inventory Snapshot page
+- [x] Add SKU column to Inventory Snapshot table (currently missing from display)
+- [x] Fix Receive Books SKU assignment: use last number in that age category (not total count)
+- [x] Wire Receive Books Confirm button to real tRPC receive.addBook mutation (was UI mockup only — books were never saved)

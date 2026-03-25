@@ -303,19 +303,38 @@ export const appRouter = router({
           const newTitle: any[] = await newTitleRes.json();
           titleId = newTitle[0].id;
         }
-        const agePrefix = input.age_group.toUpperCase().slice(0, 4);
-        const countRes = await sbFetch(`/book_copies?age_group=ilike.${input.age_group}&select=id`, {
-          headers: { Prefer: "count=exact" },
-        });
-        const count = parseInt(countRes.headers.get("content-range")?.split("/")[1] ?? "0", 10);
-        const sku = `BN-${agePrefix}-${String(count + 1).padStart(4, "0")}`;
+        // Normalize age group to DB key format (e.g. "Sky Readers (9-12)" -> "sky_readers")
+        const normalizeAgeGroup = (ag: string): string => {
+          const lower = ag.toLowerCase().replace(/\s*\(.*\)\s*/, "").trim();
+          return lower.replace(/\s+/g, "_");
+        };
+        const ageGroupKey = normalizeAgeGroup(input.age_group);
+        // Build SKU prefix: hatchlings->HATCH, fledglings->FLED, soarers->SOAR, sky_readers->SKY
+        const SKU_PREFIX_MAP: Record<string, string> = {
+          hatchlings: "HATCH",
+          fledglings: "FLED",
+          soarers: "SOAR",
+          sky_readers: "SKY",
+        };
+        const agePrefix = SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
+        // Use MAX(sku) to find the last number used — safer than COUNT which breaks on deletions
+        const maxSkuRes = await sbFetch(
+          `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.desc&limit=1`
+        );
+        const maxSkuData: { sku: string }[] = await maxSkuRes.json();
+        let nextNum = 1;
+        if (maxSkuData.length > 0 && maxSkuData[0].sku) {
+          const match = maxSkuData[0].sku.match(/(\d+)$/);
+          if (match) nextNum = parseInt(match[1], 10) + 1;
+        }
+        const sku = `BN-${agePrefix}-${String(nextNum).padStart(4, "0")}`;
         const copyRes = await sbFetch("/book_copies", {
           method: "POST",
           body: JSON.stringify({
             sku,
             book_title_id: titleId,
             isbn: input.isbn,
-            age_group: input.age_group.toLowerCase(),
+            age_group: ageGroupKey,
             bin_id: input.bin_id,
             status: "in_house",
             condition: input.condition,

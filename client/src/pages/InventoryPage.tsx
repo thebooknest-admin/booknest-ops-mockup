@@ -43,9 +43,17 @@ export default function InventoryPage() {
 
   const books = data?.data ?? [];
 
-  const ageGroups = Array.from(
-    new Set(books.map((b) => b.age_group).filter(Boolean) as string[])
-  ).sort();
+  // Static age group list — avoids duplicates from mixed casing in DB
+  const AGE_FILTER_OPTIONS = [
+    { label: "Hatchlings", value: "hatchlings" },
+    { label: "Fledglings", value: "fledglings" },
+    { label: "Sky Readers", value: "sky_readers" },
+    { label: "Soarers", value: "soarers" },
+  ];
+
+  // Normalize age group for comparison (handles both "Sky Readers" and "sky_readers")
+  const normalizeAge = (ag: string | null | undefined) =>
+    (ag ?? "").toLowerCase().replace(/\s+/g, "_");
 
   const filtered = books.filter((b) => {
     const q = search.toLowerCase();
@@ -54,8 +62,10 @@ export default function InventoryPage() {
       b.title?.toLowerCase().includes(q) ||
       b.author?.toLowerCase().includes(q) ||
       b.isbn?.includes(search) ||
-      b.bin_id?.toLowerCase().includes(q);
-    const matchesAge = ageFilter === "all" || b.age_group === ageFilter;
+      b.bin_id?.toLowerCase().includes(q) ||
+      b.sku_min?.toLowerCase().includes(q) ||
+      b.sku_max?.toLowerCase().includes(q);
+    const matchesAge = ageFilter === "all" || normalizeAge(b.age_group) === ageFilter;
     return matchesSearch && matchesAge;
   });
 
@@ -166,18 +176,18 @@ export default function InventoryPage() {
           >
             All Ages
           </button>
-          {ageGroups.map((age) => (
+          {AGE_FILTER_OPTIONS.map((opt) => (
             <button
-              key={age}
-              onClick={() => setAgeFilter(age)}
+              key={opt.value}
+              onClick={() => setAgeFilter(opt.value)}
               className={cn(
-                "px-3 py-2 text-xs font-medium rounded-lg border transition-colors capitalize",
-                ageFilter === age
+                "px-3 py-2 text-xs font-medium rounded-lg border transition-colors",
+                ageFilter === opt.value
                   ? "border-primary text-primary bg-primary/5"
                   : "border-border text-muted-foreground hover:bg-muted"
               )}
             >
-              {age}
+              {opt.label}
             </button>
           ))}
         </div>
@@ -201,11 +211,11 @@ export default function InventoryPage() {
             <div className="grid grid-cols-12 px-5 py-3 bg-muted/30 border-b border-border">
               <span className="col-span-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</span>
               <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Author</span>
-              <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Age Group</span>
+              <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Age</span>
               <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Bin</span>
               <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Copies</span>
-              <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">ISBN</span>
-              <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-right">Edit</span>
+              <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">SKU(s)</span>
+              <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Edit</span>
             </div>
 
             <div className="divide-y divide-border/50">
@@ -232,11 +242,11 @@ export default function InventoryPage() {
                         />
                       </div>
                       {/* Age Group */}
-                      <div className="col-span-2">
+                      <div className="col-span-1">
                         <select
                           value={editState.age_group}
                           onChange={(e) => setEditState({ ...editState, age_group: e.target.value })}
-                          className="w-full text-sm px-2 py-1 border border-primary/40 rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary capitalize"
+                          className="w-full text-xs px-1 py-1 border border-primary/40 rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary capitalize"
                         >
                           <option value="">—</option>
                           {AGE_GROUP_OPTIONS.map((ag) => (
@@ -257,13 +267,11 @@ export default function InventoryPage() {
                       <div className="col-span-1 text-center">
                         <span className="text-sm font-bold text-foreground">{book.copy_count ?? 0}</span>
                       </div>
-                      {/* ISBN */}
-                      <div className="col-span-1">
-                        <input
-                          value={editState.isbn}
-                          onChange={(e) => setEditState({ ...editState, isbn: e.target.value })}
-                          className="w-full text-xs px-2 py-1 border border-primary/40 rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                        />
+                      {/* SKU (read-only in edit — SKUs live on copies) */}
+                      <div className="col-span-2">
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {book.sku_min ?? "—"}
+                        </span>
                       </div>
                       {/* Save / Cancel */}
                       <div className="col-span-1 flex justify-end gap-1">
@@ -287,34 +295,45 @@ export default function InventoryPage() {
                     </div>
                   );
                 }
-
                 return (
-                  <div
-                    key={book.id}
-                    className="grid grid-cols-12 px-5 py-3 items-center hover:bg-muted/20 transition-colors"
-                  >
-                    <div className="col-span-3 min-w-0">
+                  <div key={book.id} className="grid grid-cols-12 px-5 py-3 items-center hover:bg-muted/20 transition-colors">
+                    {/* Title */}
+                    <div className="col-span-3 min-w-0 pr-2">
                       <p className="text-sm font-medium text-foreground truncate">{book.title}</p>
                     </div>
-                    <div className="col-span-2 min-w-0">
-                      <p className="text-sm text-muted-foreground truncate">{book.author || "—"}</p>
+                    {/* Author */}
+                    <div className="col-span-2 min-w-0 pr-2">
+                      <p className="text-sm text-muted-foreground truncate">{book.author}</p>
                     </div>
+                    {/* Age Group */}
+                    <div className="col-span-1">
+                      <span className="text-xs text-foreground capitalize">{book.age_group?.replace("_", " ") ?? "—"}</span>
+                    </div>
+                    {/* Bin */}
                     <div className="col-span-2">
-                      <span className="text-xs text-foreground capitalize">{book.age_group || "—"}</span>
+                      <span className="text-xs font-mono text-foreground">{book.bin_id ?? "—"}</span>
                     </div>
-                    <div className="col-span-2">
-                      <span className="text-xs text-muted-foreground font-mono">{book.bin_id || "—"}</span>
-                    </div>
+                    {/* Copies */}
                     <div className="col-span-1 text-center">
                       <span className="text-sm font-bold text-foreground">{book.copy_count ?? 0}</span>
                     </div>
-                    <div className="col-span-1">
-                      <p className="text-xs text-muted-foreground font-mono truncate">{book.isbn || "—"}</p>
+                    {/* SKU(s) */}
+                    <div className="col-span-2 min-w-0">
+                      {book.sku_min ? (
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {book.sku_max && book.sku_max !== book.sku_min
+                            ? `${book.sku_min} – ${book.sku_max.replace(/^.*-/, "")}`
+                            : book.sku_min}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">—</span>
+                      )}
                     </div>
+                    {/* Edit */}
                     <div className="col-span-1 flex justify-end">
                       <button
                         onClick={() => startEdit(book)}
-                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground"
                         title="Edit book"
                       >
                         <Pencil className="w-3.5 h-3.5" />

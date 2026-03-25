@@ -296,6 +296,8 @@ export interface BookTitleWithCopies extends BookTitle {
   copy_count: number;
   in_house_count: number;
   bin_id: string | null;
+  sku_min: string | null;
+  sku_max: string | null;
 }
 
 export async function getBookTitlesWithCopies(params?: {
@@ -315,26 +317,26 @@ export async function getBookTitlesWithCopies(params?: {
   // (463 UUIDs in a single query string exceeds Node's header size limit)
   const titleIds = titlesResult.data.map((t) => t.id);
   const BATCH_SIZE = 50;
-  const allCopies: { book_title_id: string; status: string; bin_id: string | null }[] = [];
+  const allCopies: { book_title_id: string; status: string; bin_id: string | null; sku: string | null }[] = [];
 
   for (let i = 0; i < titleIds.length; i += BATCH_SIZE) {
     const batch = titleIds.slice(i, i + BATCH_SIZE);
     const copiesRes = await sbFetch(
-      `/book_copies?book_title_id=in.(${batch.join(",")})&select=book_title_id,status,bin_id&limit=2000`
+      `/book_copies?book_title_id=in.(${batch.join(",")})&select=book_title_id,status,bin_id,sku&limit=2000`
     );
     if (copiesRes.ok) {
-      const batchCopies: { book_title_id: string; status: string; bin_id: string | null }[] = await copiesRes.json();
+      const batchCopies: { book_title_id: string; status: string; bin_id: string | null; sku: string | null }[] = await copiesRes.json();
       allCopies.push(...batchCopies);
     }
   }
 
   const copies = allCopies;
 
-  // Build a map of title_id -> copy counts
-  const copyMap: Record<string, { total: number; in_house: number; bin_id: string | null }> = {};
+  // Build a map of title_id -> copy counts + SKU range
+  const copyMap: Record<string, { total: number; in_house: number; bin_id: string | null; skus: string[] }> = {};
   for (const copy of copies) {
     if (!copyMap[copy.book_title_id]) {
-      copyMap[copy.book_title_id] = { total: 0, in_house: 0, bin_id: null };
+      copyMap[copy.book_title_id] = { total: 0, in_house: 0, bin_id: null, skus: [] };
     }
     copyMap[copy.book_title_id].total++;
     if (copy.status === "in_house") {
@@ -343,14 +345,23 @@ export async function getBookTitlesWithCopies(params?: {
     if (copy.bin_id && !copyMap[copy.book_title_id].bin_id) {
       copyMap[copy.book_title_id].bin_id = copy.bin_id;
     }
+    if (copy.sku) {
+      copyMap[copy.book_title_id].skus.push(copy.sku);
+    }
   }
 
-  const data: BookTitleWithCopies[] = titlesResult.data.map((title) => ({
-    ...title,
-    copy_count: copyMap[title.id]?.total ?? 0,
-    in_house_count: copyMap[title.id]?.in_house ?? 0,
-    bin_id: copyMap[title.id]?.bin_id ?? null,
-  }));
+  const data: BookTitleWithCopies[] = titlesResult.data.map((title) => {
+    const entry = copyMap[title.id];
+    const skus = entry?.skus.sort() ?? [];
+    return {
+      ...title,
+      copy_count: entry?.total ?? 0,
+      in_house_count: entry?.in_house ?? 0,
+      bin_id: entry?.bin_id ?? null,
+      sku_min: skus.length > 0 ? skus[0] : null,
+      sku_max: skus.length > 1 ? skus[skus.length - 1] : null,
+    };
+  });
 
   return { data, total: titlesResult.total };
 }
