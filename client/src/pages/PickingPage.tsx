@@ -22,6 +22,7 @@ import {
   ClipboardList,
   ArrowRight,
   Package,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -301,6 +302,124 @@ export default function PickingPage() {
     return memberPicks.filter(Boolean).length >= o.books_needed;
   });
 
+  const handlePrintPickList = () => {
+    if (!pickListData) return;
+    const date = dailyData?.date
+      ? new Date(dailyData.date + "T12:00:00").toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+    const binsHtml = pickListData.bins
+      .map(
+        (bin) => `
+        <div class="bin-section">
+          <div class="bin-header">
+            <span class="bin-id">${bin.bin_id}</span>
+            <span class="bin-count">${bin.items.length} book${bin.items.length !== 1 ? "s" : ""}</span>
+          </div>
+          <table class="book-table">
+            <thead>
+              <tr>
+                <th class="col-cover"></th>
+                <th class="col-title">Title / Author</th>
+                <th class="col-sku">SKU</th>
+                <th class="col-member">Member</th>
+                <th class="col-check">✓</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bin.items
+                .map(
+                  (item) => `
+                <tr>
+                  <td class="col-cover">
+                    ${item.cover_url
+                      ? `<img src="${item.cover_url}" alt="" class="cover-img" onerror="this.style.display='none'" />`
+                      : `<div class="cover-placeholder"></div>`
+                    }
+                  </td>
+                  <td class="col-title">
+                    <strong>${item.title}</strong><br/>
+                    <span class="author">${item.author}</span>
+                  </td>
+                  <td class="col-sku">${item.sku ?? "—"}</td>
+                  <td class="col-member">${item.member_name}</td>
+                  <td class="col-check"><div class="checkbox"></div></td>
+                </tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>`
+      )
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BookNest Pick List — ${date}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; padding: 16px 20px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #2d6a4f; padding-bottom: 10px; margin-bottom: 16px; }
+    .page-header h1 { font-size: 18px; font-weight: 700; color: #2d6a4f; }
+    .page-header .meta { font-size: 10px; color: #666; text-align: right; line-height: 1.6; }
+    .summary { font-size: 10px; color: #555; margin-bottom: 14px; }
+    .bin-section { margin-bottom: 14px; break-inside: avoid; }
+    .bin-header { display: flex; justify-content: space-between; align-items: center; background: #f0f7f4; border: 1px solid #b7d9c8; border-radius: 4px 4px 0 0; padding: 5px 10px; }
+    .bin-id { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; color: #1a3d2b; letter-spacing: 0.05em; }
+    .bin-count { font-size: 10px; color: #555; }
+    .book-table { width: 100%; border-collapse: collapse; border: 1px solid #d4e8dc; border-top: none; border-radius: 0 0 4px 4px; overflow: hidden; }
+    .book-table thead tr { background: #f8fdf9; }
+    .book-table th { padding: 4px 8px; text-align: left; font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #d4e8dc; }
+    .book-table td { padding: 6px 8px; vertical-align: middle; border-bottom: 1px solid #eaf3ee; }
+    .book-table tr:last-child td { border-bottom: none; }
+    .book-table tr:nth-child(even) { background: #fafffe; }
+    .col-cover { width: 40px; }
+    .col-title { width: auto; }
+    .col-sku { width: 130px; font-family: 'Courier New', monospace; font-size: 10px; color: #444; white-space: nowrap; }
+    .col-member { width: 130px; font-weight: 600; color: #2d6a4f; }
+    .col-check { width: 28px; text-align: center; }
+    .cover-img { width: 28px; height: 38px; object-fit: cover; border-radius: 2px; border: 1px solid #ddd; display: block; }
+    .cover-placeholder { width: 28px; height: 38px; background: #e8f4ee; border-radius: 2px; border: 1px solid #cce0d4; }
+    .author { color: #666; font-size: 10px; }
+    .checkbox { width: 14px; height: 14px; border: 1.5px solid #999; border-radius: 2px; margin: 0 auto; }
+    @media print {
+      body { padding: 8px 12px; }
+      .bin-section { break-inside: avoid; }
+      @page { margin: 12mm 10mm; size: letter portrait; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <div>
+      <h1>📚 BookNest Pick List</h1>
+      <div style="font-size:11px;color:#555;margin-top:3px">${date}</div>
+    </div>
+    <div class="meta">
+      ${pickListData.total_books} books &nbsp;·&nbsp; ${pickListData.bins.length} bins<br/>
+      Printed: ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+    </div>
+  </div>
+  ${binsHtml}
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
+    }
+  };
+
   const handleConfirmAll = () => {
     const pickList = orders
       .filter((o) => !confirmedMemberIds.has(o.member_id))
@@ -357,13 +476,23 @@ export default function PickingPage() {
                 Warehouse Pick List — {pickListData.total_books} books across {pickListData.bins.length} bins
               </h2>
             </div>
-            <button
-              onClick={() => navigate("/shipping")}
-              className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors"
-              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-            >
-              Go to Shipping <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrintPickList}
+                className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border transition-colors"
+                style={{ borderColor: "oklch(0.75 0.12 155)", color: "oklch(0.42 0.11 155)", backgroundColor: "oklch(0.99 0.01 155)" }}
+              >
+                <Printer className="w-4 h-4" />
+                Print Pick List
+              </button>
+              <button
+                onClick={() => navigate("/shipping")}
+                className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors"
+                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+              >
+                Go to Shipping <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <p className="text-sm text-muted-foreground">

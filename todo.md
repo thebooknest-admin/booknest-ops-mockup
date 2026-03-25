@@ -85,3 +85,6 @@
 
 ## Pick List Enhancements
 - [x] Add book cover thumbnails to the bin-sorted pick list for visual verification
+
+## Printable Pick List
+- [x] Add "Print Pick List" button to Picking page with print-optimised layout (covers, SKUs, member names)
