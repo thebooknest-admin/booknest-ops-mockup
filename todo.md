@@ -59,3 +59,11 @@
 ## Receive Books → Label Queue Integration
 - [x] After confirming receipt, show a "Go to Label Queue" shortcut with pending label count
 - [x] Show a running pending-label count badge in the Receive Books header during a session
+
+## Full Supabase Wiring (All Remaining Pages)
+- [x] Wire Picking page — already reading from Supabase (no writes needed on Picking list itself)
+- [x] Wire Shipping/ShipBundle page — Mark as Packed and Mark as Shipped both write to Supabase shipments table
+- [x] Wire Donation Intake — already fully wired to trpc.donations.add.useMutation
+- [x] Wire Process Returns — lookupBySku and processReturn procedures added; page rewritten to use live data
+- [x] Wire Event Sign-Up form — already wired to trpc.signups.add.useMutation
+- [x] Wire Event Sign-Up control page — shows live submissions, expand details, Convert to Member button

@@ -476,6 +476,48 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Returns ──────────────────────────────────────────────────────────────────
+  returns: router({
+    lookupBySku: publicProcedure
+      .input(z.object({ sku: z.string() }))
+      .query(async ({ input }) => {
+        const res = await sbFetch(
+          `/book_copies?sku=ilike.${encodeURIComponent(input.sku)}&limit=1&select=id,sku,isbn,age_group,bin_id,status,condition,book_title_id`
+        );
+        if (!res.ok) return null;
+        const copies: any[] = await res.json();
+        if (!copies[0]) return null;
+        const copy = copies[0];
+        // Fetch title info
+        const titleRes = await sbFetch(`/book_titles?id=eq.${copy.book_title_id}&limit=1&select=id,title,author`);
+        const titles: any[] = titleRes.ok ? await titleRes.json() : [];
+        return { ...copy, book_title: titles[0] ?? null };
+      }),
+
+    processReturn: publicProcedure
+      .input(
+        z.object({
+          copy_id: z.string(),
+          condition: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const patch: Record<string, any> = {
+          status: "in_house",
+          updated_at: new Date().toISOString(),
+        };
+        if (input.condition) patch.condition = input.condition;
+        const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error(`Failed to process return: ${await res.text()}`);
+        return { success: true };
+      }),
+  }),
+
   // ─── Event Sign-Ups ─────────────────────────────────────────────────────────
   signups: router({
     list: publicProcedure.query(async () => {
@@ -518,6 +560,66 @@ export const appRouter = router({
         if (!res.ok) throw new Error(`Failed to save sign-up: ${await res.text()}`);
         const data = await res.json();
         return { success: true, id: data[0]?.id };
+      }),
+
+    convertToMember: publicProcedure
+      .input(z.object({ signup_id: z.string() }))
+      .mutation(async ({ input }) => {
+        // Fetch the signup
+        const signupRes = await sbFetch(`/event_signups?id=eq.${input.signup_id}&limit=1`);
+        if (!signupRes.ok) throw new Error("Signup not found");
+        const signups: any[] = await signupRes.json();
+        const s = signups[0];
+        if (!s) throw new Error("Signup not found");
+
+        // Create the member
+        const memberRes = await sbFetch("/members", {
+          method: "POST",
+          body: JSON.stringify({
+            name: s.parent_name,
+            email: s.parent_email,
+            child_name: s.child_name,
+            child_birthday: s.child_birthday ?? null,
+            age_group: s.reading_level ?? null,
+            tier: s.subscription_tier ?? null,
+            status: "active",
+            interests: s.interests ?? [],
+            topics_to_avoid: s.topics_to_avoid ?? [],
+            additional_notes: s.additional_notes ?? null,
+            created_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=representation" },
+        });
+        if (!memberRes.ok) throw new Error(`Failed to create member: ${await memberRes.text()}`);
+        const members: any[] = await memberRes.json();
+        const member = members[0];
+
+        // Save address if present
+        if (s.street && s.city && s.state && s.zip) {
+          await sbFetch("/member_addresses", {
+            method: "POST",
+            body: JSON.stringify({
+              member_id: member.id,
+              street: s.street,
+              street2: s.street2 ?? null,
+              city: s.city,
+              state: s.state,
+              zip: s.zip,
+              is_primary: true,
+              created_at: new Date().toISOString(),
+            }),
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        // Mark signup as converted
+        await sbFetch(`/event_signups?id=eq.${input.signup_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ converted_to_member: true, member_id: member.id }),
+          headers: { Prefer: "return=minimal" },
+        });
+
+        return { success: true, member_id: member.id };
       }),
   }),
 });
