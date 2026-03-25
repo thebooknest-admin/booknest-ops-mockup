@@ -55,3 +55,7 @@
 - [x] Add SKU column to Inventory Snapshot table (currently missing from display)
 - [x] Fix Receive Books SKU assignment: use last number in that age category (not total count)
 - [x] Wire Receive Books Confirm button to real tRPC receive.addBook mutation (was UI mockup only — books were never saved)
+
+## Receive Books → Label Queue Integration
+- [x] After confirming receipt, show a "Go to Label Queue" shortcut with pending label count
+- [x] Show a running pending-label count badge in the Receive Books header during a session

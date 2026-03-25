@@ -5,10 +5,11 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info
+  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 import {
   TAG_TAXONOMY, autoAssignTags, getCategoryForTag, buildBinName,
   type BinCategory, type TagCategory
@@ -338,7 +339,15 @@ export default function ReceivePage() {
   });
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
+  const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
+
+  // Live pending label count — refetched after each book is received
+  const { data: pendingLabels, refetch: refetchPendingCount } = trpc.labels.pending.useQuery(
+    undefined,
+    { refetchOnWindowFocus: false }
+  );
+  const pendingCount = pendingLabels?.length ?? 0;
 
   const addBookMutation = trpc.receive.addBook.useMutation({
     onSuccess: (data) => {
@@ -353,6 +362,8 @@ export default function ReceivePage() {
       setAutoTags([]);
       setLookupError(null);
       setAgeInference(null);
+      // Refresh pending label count so the banner stays accurate
+      refetchPendingCount();
     },
     onError: (err) => {
       toast.error("Failed to save: " + err.message);
@@ -458,18 +469,30 @@ export default function ReceivePage() {
           <h1 className="page-title">Receive Books</h1>
           <p className="page-subtitle">ISBN auto-fills details · subjects auto-match to your tag taxonomy</p>
         </div>
-        {receivedCount > 0 && (
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
-              style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
-              <Check className="w-3.5 h-3.5" />
-              {receivedCount} received today
-            </div>
-            {lastSku && (
-              <p className="text-xs text-muted-foreground font-mono">Last SKU: {lastSku}</p>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {receivedCount > 0 && (
+            <>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
+                style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
+                <Check className="w-3.5 h-3.5" />
+                {receivedCount} received today
+              </div>
+              {lastSku && (
+                <p className="text-xs text-muted-foreground font-mono">Last SKU: {lastSku}</p>
+              )}
+            </>
+          )}
+          {pendingCount > 0 && (
+            <button
+              onClick={() => navigate("/labels")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80"
+              style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)", color: "oklch(0.38 0.12 75)" }}
+            >
+              <Tag className="w-3 h-3" />
+              {pendingCount} label{pendingCount !== 1 ? "s" : ""} pending
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Step Indicator */}
@@ -887,6 +910,34 @@ export default function ReceivePage() {
         <p className="text-center text-xs text-muted-foreground">
           After each book is received, the scanner auto-resets for fast batch processing.
         </p>
+      )}
+
+      {/* Label Queue shortcut — shown at step 0 once books have been received this session */}
+      {step === 0 && receivedCount > 0 && pendingCount > 0 && (
+        <div className="rounded-xl border p-4 flex items-center justify-between gap-4"
+          style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
+              <Tag className="w-4 h-4" style={{ color: "oklch(0.45 0.14 75)" }} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "oklch(0.32 0.10 75)" }}>
+                {pendingCount} label{pendingCount !== 1 ? "s" : ""} waiting to print
+              </p>
+              <p className="text-xs" style={{ color: "oklch(0.50 0.10 75)" }}>
+                Including {receivedCount} just received this session
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/labels")}
+            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            style={{ backgroundColor: "oklch(0.55 0.14 75)" }}
+          >
+            Go to Label Queue →
+          </button>
+        </div>
       )}
     </div>
   );
