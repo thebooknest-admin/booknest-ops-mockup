@@ -7,12 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CheckCircle, XCircle, BookOpen, ClipboardCheck, ChevronDown, ChevronUp } from "lucide-react";
 
-const CONDITION_OPTIONS = [
-  { value: "good", label: "Good", description: "Clean, no damage, all pages intact", color: "bg-green-100 text-green-800 border-green-200" },
-  { value: "fair", label: "Fair", description: "Minor wear, small marks, fully readable", color: "bg-amber-100 text-amber-800 border-amber-200" },
-  { value: "poor", label: "Poor", description: "Significant wear — donate to LFL", color: "bg-red-100 text-red-800 border-red-200" },
-];
-
 type QCItem = {
   id: string;
   sku: string;
@@ -26,12 +20,11 @@ type QCItem = {
 
 function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   const [expanded, setExpanded] = useState(false);
-  const [condition, setCondition] = useState<string>("good");
   const [notes, setNotes] = useState("");
 
   const passMutation = trpc.qc.pass.useMutation({
     onSuccess: () => {
-      toast.success(`${item.sku} moved to Stock Queue`);
+      toast.success(`${item.sku} accepted — moving to Stock Queue`);
       onDone();
     },
     onError: (e) => toast.error(e.message),
@@ -39,7 +32,7 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
 
   const failMutation = trpc.qc.fail.useMutation({
     onSuccess: () => {
-      toast.success(`${item.sku} marked for LFL donation`);
+      toast.success(`${item.sku} rejected — marked for LFL donation`);
       onDone();
     },
     onError: (e) => toast.error(e.message),
@@ -50,11 +43,8 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   return (
     <Card className="border border-border overflow-hidden">
       <CardContent className="p-0">
-        {/* Header row */}
-        <button
-          className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors"
-          onClick={() => setExpanded((v) => !v)}
-        >
+        {/* Header row — always visible */}
+        <div className="flex items-center gap-3 p-4">
           {/* Cover */}
           <div className="w-10 h-14 rounded overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
             {item.book_title?.cover_url ? (
@@ -63,6 +53,7 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
               <BookOpen className="w-5 h-5 text-muted-foreground" />
             )}
           </div>
+
           {/* Info */}
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-foreground truncate">
@@ -75,72 +66,51 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
               <span className="text-xs text-muted-foreground">{item.bin_id}</span>
             </div>
           </div>
-          {/* Expand toggle */}
-          <div className="flex-shrink-0 text-muted-foreground">
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+
+          {/* Quick action buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
+              disabled={isBusy}
+              onClick={() => passMutation.mutate({ copy_id: item.id, condition: "good", notes: notes || undefined })}
+            >
+              <CheckCircle className="w-3.5 h-3.5 mr-1" />
+              {passMutation.isPending ? "…" : "Accept"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-300 text-red-700 hover:bg-red-50 text-xs px-3"
+              disabled={isBusy}
+              onClick={() => failMutation.mutate({ copy_id: item.id, notes: notes || undefined })}
+            >
+              <XCircle className="w-3.5 h-3.5 mr-1" />
+              {failMutation.isPending ? "…" : "Reject"}
+            </Button>
+            {/* Notes toggle */}
+            <button
+              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              onClick={() => setExpanded((v) => !v)}
+              title="Add note"
+            >
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
           </div>
-        </button>
+        </div>
 
-        {/* Expanded QC panel */}
+        {/* Optional notes panel */}
         {expanded && (
-          <div className="border-t border-border p-4 space-y-4 bg-muted/10">
-            {/* Condition selector */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Condition</p>
-              <div className="grid grid-cols-3 gap-2">
-                {CONDITION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setCondition(opt.value)}
-                    className={`rounded-lg border-2 p-2 text-left transition-all ${
-                      condition === opt.value
-                        ? `${opt.color} border-current font-semibold`
-                        : "border-border bg-background hover:bg-muted/40"
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{opt.label}</p>
-                    <p className="text-xs opacity-75 leading-tight mt-0.5">{opt.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Notes (optional)</p>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Torn cover, missing pages, water damage…"
-                className="text-sm resize-none h-20"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <Button
-                className="flex-1 bg-green-700 hover:bg-green-800 text-white"
-                disabled={isBusy || condition === "poor"}
-                onClick={() => passMutation.mutate({ copy_id: item.id, condition, notes: notes || undefined })}
-              >
-                <CheckCircle className="w-4 h-4 mr-1.5" />
-                {passMutation.isPending ? "Passing…" : "Pass — Move to Stock"}
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 border-red-300 text-red-700 hover:bg-red-50"
-                disabled={isBusy}
-                onClick={() => failMutation.mutate({ copy_id: item.id, notes: notes || undefined })}
-              >
-                <XCircle className="w-4 h-4 mr-1.5" />
-                {failMutation.isPending ? "Failing…" : "Fail — Donate to LFL"}
-              </Button>
-            </div>
-            {condition === "poor" && (
-              <p className="text-xs text-red-600 text-center">
-                Condition is Poor — this book should be donated to LFL, not stocked.
-              </p>
-            )}
+          <div className="border-t border-border p-4 bg-muted/10 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Note (optional — shown on rejection)
+            </p>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Torn cover, missing pages, water damage…"
+              className="text-sm resize-none h-20"
+            />
           </div>
         )}
       </CardContent>
@@ -151,10 +121,6 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
 export default function QCQueuePage() {
   const { data: items = [], refetch, isLoading } = trpc.qc.queue.useQuery();
 
-  const handleDone = () => {
-    refetch();
-  };
-
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       {/* Header */}
@@ -162,7 +128,7 @@ export default function QCQueuePage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">QC Queue</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Inspect, clean, and grade each book before it goes to stock.
+            Inspect and clean each book — accept it into stock or reject it for LFL donation.
           </p>
         </div>
         <Badge
@@ -173,7 +139,7 @@ export default function QCQueuePage() {
         </Badge>
       </div>
 
-      {/* Empty state */}
+      {/* Loading */}
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
           <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -181,6 +147,7 @@ export default function QCQueuePage() {
         </div>
       )}
 
+      {/* Empty state */}
       {!isLoading && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
           <ClipboardCheck className="w-12 h-12 opacity-30" />
@@ -192,7 +159,7 @@ export default function QCQueuePage() {
       {/* Queue list */}
       <div className="space-y-3">
         {items.map((item) => (
-          <QCCard key={item.id} item={item} onDone={handleDone} />
+          <QCCard key={item.id} item={item} onDone={() => refetch()} />
         ))}
       </div>
     </div>

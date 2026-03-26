@@ -98,3 +98,6 @@
 - [x] Add QC Queue and Stock Queue to sidebar under Inventory with count badges
 - [x] Update sidebar badge counts for QC and Stock queues (auto-refresh every 60s)
 - [x] Add Go to QC Queue shortcut card in Receive Books post-session area
+
+## QC Simplification
+- [x] Remove condition rating from QC Queue — replace with simple Accept / Reject buttons
