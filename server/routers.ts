@@ -113,17 +113,27 @@ export const appRouter = router({
     getBookDetail: publicProcedure
       .input(z.object({ id: z.string() }))
       .query(async ({ input }) => {
+        // Use a safe minimal select — only columns that are guaranteed to exist
         const titleRes = await sbFetch(
-          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,bin_id,cover_url,publisher,published_date,page_count,subjects,tags,created_at,updated_at`
+          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,cover_url,publisher,published_date,page_count,created_at,updated_at`
         );
-        if (!titleRes.ok) throw new Error("Failed to fetch book title");
+        if (!titleRes.ok) {
+          const errText = await titleRes.text();
+          console.error("[getBookDetail] Supabase error:", errText);
+          throw new Error("Failed to fetch book title: " + errText);
+        }
         const titles: any[] = await titleRes.json();
         if (!titles[0]) return null;
         const title = titles[0];
 
+        // Safe copy select — only columns known to exist
         const copiesRes = await sbFetch(
-          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,qc_notes,stocked_at,created_at,updated_at`
+          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,created_at,updated_at`
         );
+        if (!copiesRes.ok) {
+          const errText = await copiesRes.text();
+          console.error("[getBookDetail] Supabase copies error:", errText);
+        }
         const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
 
         return { ...title, copies };
@@ -138,7 +148,7 @@ export const appRouter = router({
           bin_id: z.string().optional(),
           status: z.string().optional(),
           condition: z.string().optional(),
-          qc_notes: z.string().optional(),
+          notes: z.string().optional(),
           age_group: z.string().optional(),
         })
       )
@@ -149,7 +159,7 @@ export const appRouter = router({
         if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
         if (fields.status !== undefined) patch.status = fields.status;
         if (fields.condition !== undefined) patch.condition = fields.condition;
-        if (fields.qc_notes !== undefined) patch.qc_notes = fields.qc_notes;
+        if (fields.notes !== undefined) patch.notes = fields.notes;
         if (fields.age_group !== undefined) patch.age_group = fields.age_group;
         const res = await sbFetch(`/book_copies?id=eq.${id}`, {
           method: "PATCH",

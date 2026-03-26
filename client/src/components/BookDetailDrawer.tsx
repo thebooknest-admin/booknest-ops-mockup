@@ -23,8 +23,7 @@ type BookCopy = {
   condition: string | null;
   label_status: string | null;
   received_at: string | null;
-  qc_notes: string | null;
-  stocked_at: string | null;
+  notes: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -40,8 +39,6 @@ type BookDetail = {
   publisher: string | null;
   published_date: string | null;
   page_count: number | null;
-  subjects: string[] | null;
-  tags: string[] | null;
   copies: BookCopy[];
 };
 
@@ -84,7 +81,7 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
   const [bin, setBin] = useState(copy.bin_id);
   const [status, setStatus] = useState(copy.status);
   const [condition, setCondition] = useState(copy.condition ?? "");
-  const [notes, setNotes] = useState(copy.qc_notes ?? "");
+  const [notes, setNotes] = useState(copy.notes ?? "");
 
   const updateCopy = trpc.inventory.updateCopy.useMutation({
     onSuccess: () => {
@@ -102,7 +99,7 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
       bin_id: bin !== copy.bin_id ? bin : undefined,
       status: status !== copy.status ? status : undefined,
       condition: condition !== (copy.condition ?? "") ? condition : undefined,
-      qc_notes: notes !== (copy.qc_notes ?? "") ? notes : undefined,
+      notes: notes !== (copy.notes ?? "") ? notes : undefined,
     });
   };
 
@@ -111,7 +108,7 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
     setBin(copy.bin_id);
     setStatus(copy.status);
     setCondition(copy.condition ?? "");
-    setNotes(copy.qc_notes ?? "");
+    setNotes(copy.notes ?? "");
     setEditing(false);
   };
 
@@ -134,8 +131,8 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
             <span className="text-xs text-muted-foreground capitalize shrink-0">{copy.condition}</span>
           )}
           {/* QC notes */}
-          {copy.qc_notes && (
-            <span className="text-xs text-muted-foreground truncate flex-1 italic">"{copy.qc_notes}"</span>
+          {copy.notes && (
+            <span className="text-xs text-muted-foreground truncate flex-1 italic">"{copy.notes}"</span>
           )}
           <div className="flex-1" />
           {/* Received date */}
