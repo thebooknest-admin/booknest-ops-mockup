@@ -107,3 +107,6 @@
 - [x] Build BookDetailDrawer slide-over: edit title/author/age group/ISBN/cover URL, list all copies with status + bin + SKU
 - [x] Per-copy actions in drawer: change status (in_house, pending_qc, pending_stock, donated_lfl, etc.), edit bin/SKU
 - [x] Wire drawer to Inventory Snapshot — clicking any row opens the drawer
+
+## Send to QC Quick Action
+- [x] Add one-click "Send to QC" button per copy row in BookDetailDrawer (sets status to pending_qc instantly, no edit form needed)

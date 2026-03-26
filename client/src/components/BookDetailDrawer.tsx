@@ -8,7 +8,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { X, BookOpen, Save, Loader2, ChevronDown, ExternalLink } from "lucide-react";
+import { X, BookOpen, Save, Loader2, ChevronDown, ExternalLink, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -92,6 +92,14 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
     onError: (e) => toast.error(e.message),
   });
 
+  const sendToQC = trpc.inventory.updateCopy.useMutation({
+    onSuccess: () => {
+      toast.success(`${copy.sku} sent to QC queue`);
+      onSaved();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const save = () => {
     updateCopy.mutate({
       id: copy.id,
@@ -140,6 +148,20 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
             <span className="text-xs text-muted-foreground/60 shrink-0">
               {new Date(copy.received_at).toLocaleDateString()}
             </span>
+          )}
+          {/* Send to QC button — only shown when not already pending_qc */}
+          {copy.status !== "pending_qc" && (
+            <button
+              onClick={() => sendToQC.mutate({ id: copy.id, status: "pending_qc" })}
+              disabled={sendToQC.isPending}
+              title="Send to QC queue"
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 shrink-0"
+            >
+              {sendToQC.isPending
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <FlaskConical className="w-3 h-3" />}
+              QC
+            </button>
           )}
           {/* Edit button */}
           <button
