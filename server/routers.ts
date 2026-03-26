@@ -338,7 +338,7 @@ export const appRouter = router({
             isbn: input.isbn,
             age_group: ageGroupKey,
             bin_id: input.bin_id,
-            status: "in_house",
+            status: "pending_qc",
             condition: input.condition,
             label_status: "pending",
             received_at: new Date().toISOString(),
@@ -349,7 +349,123 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Donations ──────────────────────────────────────────────────────────────
+  // ─── QC Queue ────────────────────────────────────────────────────────────────
+  qc: router({
+    queue: publicProcedure.query(async () => {
+      const res = await sbFetch(
+        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=200"
+      );
+      if (!res.ok) return [];
+      const data: any[] = await res.json();
+      return data.map((c) => ({
+        id: c.id as string,
+        sku: c.sku as string,
+        isbn: c.isbn as string | null,
+        age_group: c.age_group as string,
+        bin_id: c.bin_id as string,
+        status: c.status as string,
+        condition: c.condition as string | null,
+        received_at: c.received_at as string,
+        book_title_id: c.book_title_id as string,
+        book_title: c.book_titles as { id: string; title: string; author: string; cover_url: string | null } | null,
+      }));
+    }),
+    count: publicProcedure.query(async () => {
+      const res = await sbFetch("/book_copies?status=eq.pending_qc&select=id", {
+        headers: { Prefer: "count=exact", Range: "0-0" },
+      });
+      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      return { count: total };
+    }),
+    pass: publicProcedure
+      .input(z.object({ copy_id: z.string(), condition: z.string(), notes: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "pending_stock",
+            condition: input.condition,
+            qc_notes: input.notes ?? null,
+            qc_passed_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        return { success: true };
+      }),
+    fail: publicProcedure
+      .input(z.object({ copy_id: z.string(), notes: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "donated_lfl",
+            qc_notes: input.notes ?? null,
+            qc_failed_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Stock Queue ─────────────────────────────────────────────────────────────
+  stock: router({
+    queue: publicProcedure.query(async () => {
+      const res = await sbFetch(
+        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=200"
+      );
+      if (!res.ok) return [];
+      const data: any[] = await res.json();
+      return data.map((c) => ({
+        id: c.id as string,
+        sku: c.sku as string,
+        isbn: c.isbn as string | null,
+        age_group: c.age_group as string,
+        bin_id: c.bin_id as string,
+        status: c.status as string,
+        condition: c.condition as string | null,
+        received_at: c.received_at as string,
+        book_title_id: c.book_title_id as string,
+        book_title: c.book_titles as { id: string; title: string; author: string; cover_url: string | null } | null,
+      }));
+    }),
+    count: publicProcedure.query(async () => {
+      const res = await sbFetch("/book_copies?status=eq.pending_stock&select=id", {
+        headers: { Prefer: "count=exact", Range: "0-0" },
+      });
+      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      return { count: total };
+    }),
+    confirmPlaced: publicProcedure
+      .input(z.object({ copy_id: z.string() }))
+      .mutation(async ({ input }) => {
+        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "in_house",
+            stocked_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        return { success: true };
+      }),
+    confirmAll: publicProcedure
+      .input(z.object({ copy_ids: z.array(z.string()) }))
+      .mutation(async ({ input }) => {
+        if (input.copy_ids.length === 0) return { success: true, count: 0 };
+        const now = new Date().toISOString();
+        // Batch update using Supabase IN filter
+        const idList = input.copy_ids.map((id) => `"${id}"`).join(",");
+        await sbFetch(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "in_house", stocked_at: now }),
+          headers: { Prefer: "return=minimal" },
+        });
+        return { success: true, count: input.copy_ids.length };
+      }),
+  }),
+
+  // ─── Donationss ──────────────────────────────────────────────────────────────
   donations: router({
     list: publicProcedure.query(async () => {
       const res = await sbFetch("/donations?order=created_at.desc&limit=200", {

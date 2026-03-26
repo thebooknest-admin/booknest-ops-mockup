@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Package, Truck, Tag, Archive, BookOpen,
   RotateCcw, Users, Gift, BookMarked, Bell, ChevronDown,
   ChevronRight, Menu, X, CalendarCheck, ExternalLink,
-  ToggleLeft, ToggleRight
+  ToggleLeft, ToggleRight, ClipboardCheck, Layers
 } from "lucide-react";
 import { notifications } from "@/lib/data";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ interface NavItem {
   children?: { label: string; href: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[];
 }
 
-const buildNavItems = (pendingLabelCount: number): NavItem[] => [
+const buildNavItems = (pendingLabelCount: number, qcCount: number, stockCount: number): NavItem[] => [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
     label: "Orders",
@@ -49,6 +49,8 @@ const buildNavItems = (pendingLabelCount: number): NavItem[] => [
     children: [
       { label: "Snapshot", href: "/inventory", icon: Archive },
       { label: "Receive Books", href: "/receive", icon: BookOpen },
+      { label: "QC Queue", href: "/qc", icon: ClipboardCheck, badge: qcCount > 0 ? qcCount : undefined },
+      { label: "Stock Queue", href: "/stock", icon: Layers, badge: stockCount > 0 ? stockCount : undefined },
       { label: "Process Returns", href: "/returns", icon: RotateCcw },
     ],
   },
@@ -372,7 +374,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const pendingLabelCount = labelData?.length ?? 0;
 
-  const navItems = buildNavItems(pendingLabelCount);
+  // Fetch QC and Stock queue counts — refreshes every 60 seconds
+  const { data: qcData } = trpc.qc.count.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const { data: stockData } = trpc.stock.count.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const qcCount = qcData?.count ?? 0;
+  const stockCount = stockData?.count ?? 0;
+
+  const navItems = buildNavItems(pendingLabelCount, qcCount, stockCount);
 
   return (
     <>

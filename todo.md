@@ -88,3 +88,13 @@
 
 ## Printable Pick List
 - [x] Add "Print Pick List" button to Picking page with print-optimised layout (covers, SKUs, member names)
+
+## Intake Pipeline (Receive → QC → Stock)
+- [x] Update Receive Books to set initial copy status to pending_qc (instead of in_house)
+- [x] Add backend procedures: qc.queue (list pending_qc), qc.pass (→ pending_stock), qc.fail (→ donated_lfl)
+- [x] Add backend procedures: stock.queue (list pending_stock), stock.confirmPlaced (→ in_house), stock.confirmAll
+- [x] Build QC Queue page: list pending copies, condition rating, cleaning note, Pass/Fail actions
+- [x] Build Stock Queue page: list pending_stock copies with bin, batch confirm placed
+- [x] Add QC Queue and Stock Queue to sidebar under Inventory with count badges
+- [x] Update sidebar badge counts for QC and Stock queues (auto-refresh every 60s)
+- [x] Add Go to QC Queue shortcut card in Receive Books post-session area

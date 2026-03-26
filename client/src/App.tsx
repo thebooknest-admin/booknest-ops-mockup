@@ -18,6 +18,8 @@ import DonationIntakePage from "./pages/DonationIntakePage";
 import DonationLogPage from "./pages/DonationLogPage";
 import SignupPage from "./pages/SignupPage";
 import WelcomePage from "./pages/WelcomePage";
+import QCQueuePage from "./pages/QCQueuePage";
+import StockQueuePage from "./pages/StockQueuePage";
 import NotFound from "./pages/NotFound";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
@@ -35,6 +37,8 @@ function DashboardRouter() {
         <Route path="/inventory" component={InventoryPage} />
         <Route path="/receive" component={ReceivePage} />
         <Route path="/returns" component={ReturnsPage} />
+        <Route path="/qc" component={QCQueuePage} />
+        <Route path="/stock" component={StockQueuePage} />
         <Route path="/members" component={MembersPage} />
         <Route path="/donations/intake" component={DonationIntakePage} />
         <Route path="/donations/log" component={DonationLogPage} />

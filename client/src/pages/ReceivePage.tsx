@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag
+  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -936,6 +936,34 @@ export default function ReceivePage() {
             style={{ backgroundColor: "oklch(0.55 0.14 75)" }}
           >
             Go to Label Queue →
+          </button>
+        </div>
+      )}
+
+      {/* QC Queue shortcut — shown when books have been received this session */}
+      {receivedCount > 0 && (
+        <div
+          className="flex items-center gap-4 p-4 rounded-xl border"
+          style={{ backgroundColor: "oklch(0.96 0.02 155)", borderColor: "oklch(0.85 0.05 155)" }}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
+            <ClipboardCheck className="w-4 h-4" style={{ color: "oklch(0.38 0.12 155)" }} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold" style={{ color: "oklch(0.28 0.10 155)" }}>
+              {receivedCount} book{receivedCount !== 1 ? "s" : ""} waiting for QC
+            </p>
+            <p className="text-xs" style={{ color: "oklch(0.45 0.08 155)" }}>
+              Inspect, clean, and grade before shelving
+            </p>
+          </div>
+          <button
+            onClick={() => navigate("/qc")}
+            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+          >
+            Go to QC Queue →
           </button>
         </div>
       )}
