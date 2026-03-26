@@ -109,6 +109,57 @@ export const appRouter = router({
       return getBinConfigs();
     }),
 
+    // Fetch a single book title with all its copies
+    getBookDetail: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .query(async ({ input }) => {
+        const titleRes = await sbFetch(
+          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,bin_id,cover_url,publisher,published_date,page_count,subjects,tags,created_at,updated_at`
+        );
+        if (!titleRes.ok) throw new Error("Failed to fetch book title");
+        const titles: any[] = await titleRes.json();
+        if (!titles[0]) return null;
+        const title = titles[0];
+
+        const copiesRes = await sbFetch(
+          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,qc_notes,stocked_at,created_at,updated_at`
+        );
+        const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
+
+        return { ...title, copies };
+      }),
+
+    // Update a single book copy (bin, sku, status, condition, notes, etc.)
+    updateCopy: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          sku: z.string().optional(),
+          bin_id: z.string().optional(),
+          status: z.string().optional(),
+          condition: z.string().optional(),
+          qc_notes: z.string().optional(),
+          age_group: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...fields } = input;
+        const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (fields.sku !== undefined) patch.sku = fields.sku;
+        if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
+        if (fields.status !== undefined) patch.status = fields.status;
+        if (fields.condition !== undefined) patch.condition = fields.condition;
+        if (fields.qc_notes !== undefined) patch.qc_notes = fields.qc_notes;
+        if (fields.age_group !== undefined) patch.age_group = fields.age_group;
+        const res = await sbFetch(`/book_copies?id=eq.${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
+        return { success: true };
+      }),
+
     updateBookTitle: publicProcedure
       .input(
         z.object({
@@ -118,22 +169,29 @@ export const appRouter = router({
           age_group: z.string().optional(),
           bin_id: z.string().optional(),
           isbn: z.string().optional(),
+          cover_url: z.string().optional(),
+          publisher: z.string().optional(),
+          published_date: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...fields } = input;
-        const updateFields: Record<string, string> = {};
+        const updateFields: Record<string, any> = {};
         if (fields.title !== undefined) updateFields.title = fields.title;
         if (fields.author !== undefined) updateFields.author = fields.author;
         if (fields.age_group !== undefined) updateFields.age_group = fields.age_group;
         if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
+        if (fields.cover_url !== undefined) updateFields.cover_url = fields.cover_url;
+        if (fields.publisher !== undefined) updateFields.publisher = fields.publisher;
+        if (fields.published_date !== undefined) updateFields.published_date = fields.published_date;
+        if (fields.bin_id !== undefined) updateFields.bin_id = fields.bin_id;
         const res = await sbFetch(`/book_titles?id=eq.${id}`, {
           method: "PATCH",
           body: JSON.stringify({ ...updateFields, updated_at: new Date().toISOString() }),
           headers: { Prefer: "return=representation" },
         });
         if (!res.ok) throw new Error("Failed to update book title");
-        // If bin_id is being updated, update all in_house copies for this title
+        // If bin_id is being updated, also propagate to all in_house copies for this title
         if (fields.bin_id !== undefined) {
           await sbFetch(`/book_copies?book_title_id=eq.${id}&status=eq.in_house`, {
             method: "PATCH",

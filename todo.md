@@ -101,3 +101,9 @@
 
 ## QC Simplification
 - [x] Remove condition rating from QC Queue — replace with simple Accept / Reject buttons
+
+## Inventory Detail Drawer
+- [x] Add tRPC procedures: inventory.getBookDetail (title + all copies), inventory.updateBookTitle, inventory.updateCopy, inventory.setCopyStatus
+- [x] Build BookDetailDrawer slide-over: edit title/author/age group/ISBN/cover URL, list all copies with status + bin + SKU
+- [x] Per-copy actions in drawer: change status (in_house, pending_qc, pending_stock, donated_lfl, etc.), edit bin/SKU
+- [x] Wire drawer to Inventory Snapshot — clicking any row opens the drawer
