@@ -23,8 +23,12 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   const [notes, setNotes] = useState("");
 
   const passMutation = trpc.qc.pass.useMutation({
-    onSuccess: () => {
-      toast.success(`${item.sku} accepted — moving to Stock Queue`);
+    onSuccess: (data) => {
+      if (data.next_status === "pending_label") {
+        toast.success(`${item.sku} accepted — moved to Label Queue`);
+      } else {
+        toast.success(`${item.sku} accepted — moving to Stock Queue`);
+      }
       onDone();
     },
     onError: (e) => toast.error(e.message),
@@ -39,6 +43,15 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   });
 
   const isBusy = passMutation.isPending || failMutation.isPending;
+  const handleAccept = () => {
+    const shouldReprint = window.confirm("Reprint label for this book?\n\nOK = Yes (move to Label Queue)\nCancel = No (move to Stock Queue)");
+    passMutation.mutate({
+      copy_id: item.id,
+      condition: "good",
+      notes: notes || undefined,
+      reprint_label: shouldReprint,
+    });
+  };
 
   return (
     <Card className="border border-border overflow-hidden">
@@ -73,7 +86,7 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
               size="sm"
               className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
               disabled={isBusy}
-              onClick={() => passMutation.mutate({ copy_id: item.id, condition: "good", notes: notes || undefined })}
+              onClick={handleAccept}
             >
               <CheckCircle className="w-3.5 h-3.5 mr-1" />
               {passMutation.isPending ? "…" : "Accept"}
