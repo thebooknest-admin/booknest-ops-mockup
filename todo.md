@@ -110,3 +110,7 @@
 
 ## Send to QC Quick Action
 - [x] Add one-click "Send to QC" button per copy row in BookDetailDrawer (sets status to pending_qc instantly, no edit form needed)
+
+## Status Constraint Fix
+- [x] Discover allowed status values from Supabase book_copies_status_check constraint
+- [x] Align all status values in the app to only use allowed values (migration run in Supabase)
