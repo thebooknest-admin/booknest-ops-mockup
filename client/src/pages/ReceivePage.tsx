@@ -327,6 +327,7 @@ export default function ReceivePage() {
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [book, setBook] = useState<BookData | null>(null);
+  const [isManualEntry, setIsManualEntry] = useState(false);
   const [ageGroup, setAgeGroup] = useState("");
   const [ageInference, setAgeInference] = useState<AgeInferenceResult | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -432,14 +433,15 @@ export default function ReceivePage() {
   const handleConfirm = () => {
     if (!book) return;
     const bin = buildBinName(ageGroup, selectedCategory);
+    const bookIsbn = book.isbn.trim() || `MANUAL-${Date.now()}`;
     addBookMutation.mutate({
-      isbn: book.isbn,
+      isbn: bookIsbn,
       title: book.title,
       author: book.author,
       cover_url: book.coverUrl ?? undefined,
-      publisher: book.publisher !== "Unknown" ? book.publisher : undefined,
-      published_date: book.publishYear !== "—" ? book.publishYear : undefined,
-      page_count: book.pages !== "—" ? parseInt(book.pages, 10) || undefined : undefined,
+      publisher: book.publisher && book.publisher !== "Unknown" ? book.publisher : undefined,
+      published_date: book.publishYear && book.publishYear !== "—" ? book.publishYear : undefined,
+      page_count: book.pages && book.pages !== "—" ? parseInt(book.pages, 10) || undefined : undefined,
       subjects: book.subjects,
       age_group: ageGroup,
       bin_id: bin,
@@ -457,6 +459,24 @@ export default function ReceivePage() {
     setAutoTags([]);
     setLookupError(null);
     setAgeInference(null);
+    setIsManualEntry(false);
+  };
+
+  const handleManualEntry = () => {
+    setIsManualEntry(true);
+    setBook({
+      title: "",
+      author: "",
+      isbn: isbn.trim().replace(/[^0-9X]/gi, ""),
+      publisher: "",
+      publishYear: "",
+      pages: "",
+      coverUrl: null,
+      subjects: [],
+      openLibraryUrl: null,
+    });
+    setLookupError(null);
+    setStep(1);
   };
 
   const currentBin = buildBinName(ageGroup || "Fledglings (3-5)", selectedCategory);
@@ -543,7 +563,17 @@ export default function ReceivePage() {
               <div className="flex items-start gap-2.5 p-3 rounded-lg border"
                 style={{ backgroundColor: "oklch(0.97 0.04 25)", borderColor: "oklch(0.88 0.08 25)", color: "oklch(0.40 0.18 25)" }}>
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                <p className="text-xs leading-relaxed">{lookupError}</p>
+                <div className="flex-1">
+                  <p className="text-xs leading-relaxed">{lookupError}</p>
+                  <button
+                    type="button"
+                    onClick={handleManualEntry}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border"
+                    style={{ backgroundColor: "oklch(0.97 0.03 75)", borderColor: "oklch(0.84 0.08 75)", color: "oklch(0.35 0.10 75)" }}>
+                    <Pencil className="w-3 h-3" />
+                    Enter Details Manually
+                  </button>
+                </div>
               </div>
             )}
             <button type="submit" disabled={loading || !isbn.trim()}
@@ -558,11 +588,21 @@ export default function ReceivePage() {
               className="underline underline-offset-2 hover:text-foreground">Open Library</a>
             {" "}— title, author, cover, and subjects auto-fill.
           </p>
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleManualEntry}
+              className="text-xs font-medium transition-colors hover:opacity-80 inline-flex items-center gap-1"
+              style={{ color: "oklch(0.42 0.11 155)" }}>
+              <Pencil className="w-3 h-3" />
+              No ISBN? Enter details manually
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── STEP 1: Confirm Details ── */}
-      {step === 1 && book && (
+      {step === 1 && book && !isManualEntry && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <h2 className="font-semibold text-foreground">Confirm Book Details</h2>
           <div className="flex gap-5">
@@ -635,6 +675,83 @@ export default function ReceivePage() {
               className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
               Confirm & Continue →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 1: Manual Entry ── */}
+      {step === 1 && book && isManualEntry && (
+        <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: "oklch(0.92 0.04 155)" }}>
+              <Pencil className="w-4 h-4" style={{ color: "oklch(0.42 0.11 155)" }} />
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground">Enter Book Details</h2>
+              <p className="text-xs text-muted-foreground">Title and author are required</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Title *</label>
+              <input type="text" value={book.title}
+                onChange={e => setBook({ ...book, title: e.target.value })}
+                placeholder="e.g. Where the Wild Things Are"
+                className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Author *</label>
+              <input type="text" value={book.author}
+                onChange={e => setBook({ ...book, author: e.target.value })}
+                placeholder="e.g. Maurice Sendak"
+                className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">ISBN</label>
+              <input type="text" value={book.isbn}
+                onChange={e => setBook({ ...book, isbn: e.target.value.replace(/[^0-9X]/gi, "") })}
+                placeholder="Optional — enter if available"
+                className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Publisher</label>
+                <input type="text" value={book.publisher}
+                  onChange={e => setBook({ ...book, publisher: e.target.value })}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Pages</label>
+                <input type="text" value={book.pages}
+                  onChange={e => setBook({ ...book, pages: e.target.value.replace(/\D/g, "") })}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5 p-3 rounded-lg border"
+            style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
+            <Info className="w-4 h-4 mt-0.5 shrink-0" />
+            <p className="text-xs leading-relaxed">
+              Without an ISBN lookup, tags won't be auto-suggested — you'll pick them manually in the next steps.
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={handleReset}
+              className="flex items-center gap-1.5 flex-1 justify-center py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
+              <RotateCcw className="w-3.5 h-3.5" />Start Over
+            </button>
+            <button onClick={() => setStep(2)}
+              disabled={!book.title.trim() || !book.author.trim()}
+              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-40"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
+              Continue →
             </button>
           </div>
         </div>
