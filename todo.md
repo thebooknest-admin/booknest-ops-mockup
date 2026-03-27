@@ -114,3 +114,7 @@
 ## Status Constraint Fix
 - [x] Discover allowed status values from Supabase book_copies_status_check constraint
 - [x] Align all status values in the app to only use allowed values (migration run in Supabase)
+
+## Label Queue & Label Design
+- [x] Add ISBN to label queue list display
+- [x] Redesign printed label: title, ISBN, SKU, bin_code, QR code (value = SKU)

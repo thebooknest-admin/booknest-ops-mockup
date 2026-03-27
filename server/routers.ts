@@ -287,19 +287,24 @@ export const appRouter = router({
   labels: router({
     pending: publicProcedure.query(async () => {
       const res = await sbFetch(
-        "/book_copies?label_status=eq.pending&status=eq.in_house&select=id,sku,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
+        "/book_copies?label_status=eq.pending&status=eq.in_house&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
       );
       const copies: any[] = await res.json();
       const titleIds = Array.from(new Set(copies.map((c) => c.book_title_id).filter(Boolean)));
-      let titleMap: Record<string, { title: string; author: string }> = {};
+      let titleMap: Record<string, { title: string; author: string; isbn: string | null }> = {};
       if (titleIds.length > 0) {
         const tr = await sbFetch(
-          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author&limit=300`
+          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn&limit=300`
         );
-        const titles: { id: string; title: string; author: string }[] = await tr.json();
+        const titles: { id: string; title: string; author: string; isbn: string | null }[] = await tr.json();
         titleMap = Object.fromEntries(titles.map((t) => [t.id, t]));
       }
-      return copies.map((c) => ({ ...c, book_title: titleMap[c.book_title_id] ?? null }));
+      return copies.map((c) => ({
+        ...c,
+        // Prefer copy-level ISBN, fall back to title-level ISBN
+        isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as string | null,
+        book_title: titleMap[c.book_title_id] ?? null,
+      }));
     }),
 
     markPrinted: publicProcedure
