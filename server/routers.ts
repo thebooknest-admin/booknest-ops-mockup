@@ -287,7 +287,7 @@ export const appRouter = router({
   labels: router({
     pending: publicProcedure.query(async () => {
       const res = await sbFetch(
-        "/book_copies?label_status=eq.pending&status=eq.in_house&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
+        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
       );
       const copies: any[] = await res.json();
       const titleIds = Array.from(new Set(copies.map((c) => c.book_title_id).filter(Boolean)));
@@ -310,12 +310,22 @@ export const appRouter = router({
     markPrinted: publicProcedure
       .input(z.object({ ids: z.array(z.string()) }))
       .mutation(async ({ input }) => {
+        const now = new Date().toISOString();
         await sbFetch(`/book_copies?id=in.(${input.ids.join(",")})`, {
           method: "PATCH",
           body: JSON.stringify({
             label_status: "printed",
-            label_printed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            label_printed_at: now,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        // Items sent from QC for re-labeling should enter stock queue after printing.
+        await sbFetch(`/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "pending_stock",
+            updated_at: now,
           }),
           headers: { Prefer: "return=minimal" },
         });
@@ -451,19 +461,28 @@ export const appRouter = router({
       return { count: total };
     }),
     pass: publicProcedure
-      .input(z.object({ copy_id: z.string(), condition: z.string(), notes: z.string().optional() }))
+      .input(
+        z.object({
+          copy_id: z.string(),
+          condition: z.string(),
+          notes: z.string().optional(),
+          reprint_label: z.boolean().optional(),
+        })
+      )
       .mutation(async ({ input }) => {
+        const nextStatus = input.reprint_label ? "pending_label" : "pending_stock";
         await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: "pending_stock",
+            status: nextStatus,
             condition: input.condition,
             qc_notes: input.notes ?? null,
             qc_passed_at: new Date().toISOString(),
+            ...(input.reprint_label ? { label_status: "pending" } : {}),
           }),
           headers: { Prefer: "return=minimal" },
         });
-        return { success: true };
+        return { success: true, next_status: nextStatus };
       }),
     fail: publicProcedure
       .input(z.object({ copy_id: z.string(), notes: z.string().optional() }))

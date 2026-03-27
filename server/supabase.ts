@@ -154,6 +154,7 @@ export async function getInventorySummary(): Promise<{
     headers: { Prefer: "count=exact" },
   });
   const copies: { status: string; age_group: string; bin_id: string | null }[] = await res.json();
+  const nonInventoryStatuses = new Set(["donated", "donated_lfl", "lost", "withdrawn"]);
 
   const summary = {
     total: copies.length,
@@ -173,7 +174,7 @@ export async function getInventorySummary(): Promise<{
     if (c.age_group) {
       summary.by_age[c.age_group] = (summary.by_age[c.age_group] ?? 0) + 1;
     }
-    if (c.bin_id) {
+    if (c.bin_id && !nonInventoryStatuses.has(c.status)) {
       summary.by_bin[c.bin_id] = (summary.by_bin[c.bin_id] ?? 0) + 1;
     }
   }
@@ -331,10 +332,14 @@ export async function getBookTitlesWithCopies(params?: {
   }
 
   const copies = allCopies;
+  const nonInventoryStatuses = new Set(["donated", "donated_lfl", "lost", "withdrawn"]);
 
   // Build a map of title_id -> copy counts + SKU range
   const copyMap: Record<string, { total: number; in_house: number; bin_id: string | null; skus: string[] }> = {};
   for (const copy of copies) {
+    if (nonInventoryStatuses.has(copy.status)) {
+      continue;
+    }
     if (!copyMap[copy.book_title_id]) {
       copyMap[copy.book_title_id] = { total: 0, in_house: 0, bin_id: null, skus: [] };
     }
