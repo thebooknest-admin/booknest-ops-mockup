@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,7 +133,14 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
 }
 
 export default function QCQueuePage() {
-  const { data: items = [], refetch, isLoading } = trpc.qc.queue.useQuery();
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading } = trpc.qc.queue.useQuery();
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: [["qc"]] });
+    queryClient.invalidateQueries({ queryKey: [["labels"]] });
+    queryClient.invalidateQueries({ queryKey: [["stock"]] });
+  };
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -172,7 +180,7 @@ export default function QCQueuePage() {
       {/* Queue list */}
       <div className="space-y-3">
         {items.map((item) => (
-          <QCCard key={item.id} item={item} onDone={() => refetch()} />
+          <QCCard key={item.id} item={item} onDone={invalidateAll} />
         ))}
       </div>
     </div>
