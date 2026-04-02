@@ -622,12 +622,20 @@ export default function ReceivePage() {
             </div>
             <div className="flex-1 min-w-0 space-y-3">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</p>
-                <p className="font-bold text-foreground text-base leading-tight mt-0.5">{book.title}</p>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</label>
+                <input
+                  value={book.title}
+                  onChange={e => setBook(prev => prev && ({ ...prev, title: e.target.value }))}
+                  className="w-full font-bold text-foreground text-base leading-tight mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
+                />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</p>
-                <p className="font-medium text-foreground text-sm mt-0.5">{book.author}</p>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</label>
+                <input
+                  value={book.author}
+                  onChange={e => setBook(prev => prev && ({ ...prev, author: e.target.value }))}
+                  className="w-full font-medium text-foreground text-sm mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
+                />
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div>
@@ -649,16 +657,28 @@ export default function ReceivePage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</p>
-                  <p className="text-sm text-foreground mt-0.5">{book.pages}</p>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</label>
+                  <input
+                    value={book.pages}
+                    onChange={e => setBook(prev => prev && ({ ...prev, pages: e.target.value }))}
+                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Publisher</p>
-                  <p className="text-xs text-foreground mt-0.5 truncate">{book.publisher}</p>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Publisher</label>
+                  <input
+                    value={book.publisher}
+                    onChange={e => setBook(prev => prev && ({ ...prev, publisher: e.target.value }))}
+                    className="w-full text-xs text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</p>
-                  <p className="text-sm text-foreground mt-0.5">{book.publishYear}</p>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</label>
+                  <input
+                    value={book.publishYear}
+                    onChange={e => setBook(prev => prev && ({ ...prev, publishYear: e.target.value }))}
+                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
+                  />
                 </div>
               </div>
             </div>
