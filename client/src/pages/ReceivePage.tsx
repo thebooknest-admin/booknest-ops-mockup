@@ -226,12 +226,16 @@ function BinOverride({
   selectedCategory,
   onSelectCategory,
   categoryScores,
+  isManualOverride,
+  onResetToAuto,
 }: {
   ageGroup: string;
   suggestedCategory: BinCategory;
   selectedCategory: BinCategory;
   onSelectCategory: (cat: BinCategory) => void;
   categoryScores: Record<BinCategory, number>;
+  isManualOverride: boolean;
+  onResetToAuto: () => void;
 }) {
   const [overriding, setOverriding] = useState(false);
   const maxScore = Math.max(...Object.values(categoryScores), 1);
@@ -242,12 +246,22 @@ function BinOverride({
       <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "oklch(0.97 0.03 155)" }}>
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Assigned Bin</p>
-          <button onClick={() => setOverriding(!overriding)}
-            className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
-            style={{ color: "oklch(0.42 0.11 155)" }}>
-            <Pencil className="w-3 h-3" />
-            {overriding ? "Close" : "Override"}
-          </button>
+          <div className="flex items-center gap-2">
+            {isManualOverride && (
+              <button onClick={() => { onResetToAuto(); setOverriding(false); }}
+                className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
+                style={{ color: "oklch(0.52 0.12 260)" }}>
+                <RotateCcw className="w-3 h-3" />
+                Reset to auto
+              </button>
+            )}
+            <button onClick={() => setOverriding(!overriding)}
+              className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
+              style={{ color: "oklch(0.42 0.11 155)" }}>
+              <Pencil className="w-3 h-3" />
+              {overriding ? "Close" : "Override"}
+            </button>
+          </div>
         </div>
         <p className="text-2xl font-bold font-mono" style={{ color: "oklch(0.32 0.10 155)" }}>
           {buildBinName(ageGroup, selectedCategory)}
@@ -262,11 +276,11 @@ function BinOverride({
               </span>
             ) : null;
           })()}
-          {selectedCategory !== suggestedCategory && (
+          {isManualOverride && (
             <span className="text-xs text-muted-foreground italic">(manually overridden)</span>
           )}
-          {selectedCategory === suggestedCategory && (
-            <span className="text-xs" style={{ color: "oklch(0.42 0.11 155)" }}>✓ auto-suggested</span>
+          {!isManualOverride && (
+            <span className="text-xs" style={{ color: "oklch(0.42 0.11 155)" }}>✓ updates with tags</span>
           )}
         </div>
       </div>
@@ -334,6 +348,7 @@ export default function ReceivePage() {
   const [autoTags, setAutoTags] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<BinCategory>("LIFE");
   const [suggestedCategory, setSuggestedCategory] = useState<BinCategory>("LIFE");
+  const [isManualCategoryOverride, setIsManualCategoryOverride] = useState(false);
   const [categoryScores, setCategoryScores] = useState<Record<BinCategory, number>>({
     ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
     IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
@@ -364,6 +379,7 @@ export default function ReceivePage() {
       setAutoTags([]);
       setLookupError(null);
       setAgeInference(null);
+      setIsManualCategoryOverride(false);
       // Refresh pending label count so the banner stays accurate
       refetchPendingCount();
     },
@@ -413,6 +429,7 @@ export default function ReceivePage() {
 
   const handleAgeGroup = (ag: string) => {
     setAgeGroup(ag);
+    setIsManualCategoryOverride(false);
     // Run auto-tag matching when age group is selected
     if (book) {
       const result = autoAssignTags(book.subjects, book.title, book.author);
@@ -430,6 +447,25 @@ export default function ReceivePage() {
       prev.includes(tag) ? prev.filter(t => t !== tag) : prev.length < 4 ? [...prev, tag] : prev
     );
   };
+
+  // Recompute bin recommendation whenever selected tags change
+  useEffect(() => {
+    if (selectedTags.length === 0) return;
+    const catVotes: Record<BinCategory, number> = {
+      ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
+      IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
+    };
+    for (const tag of selectedTags) {
+      const cat = getCategoryForTag(tag);
+      if (cat) catVotes[cat.id] += 1;
+    }
+    const dominant = (Object.entries(catVotes)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || "LIFE") as BinCategory;
+    setSuggestedCategory(dominant);
+    if (!isManualCategoryOverride) {
+      setSelectedCategory(dominant);
+    }
+  }, [selectedTags, isManualCategoryOverride]);
 
   const handleConfirm = () => {
     if (!book) return;
@@ -461,6 +497,7 @@ export default function ReceivePage() {
     setLookupError(null);
     setAgeInference(null);
     setIsManualEntry(false);
+    setIsManualCategoryOverride(false);
   };
 
   const handleManualEntry = () => {
@@ -953,8 +990,10 @@ export default function ReceivePage() {
               ageGroup={ageGroup}
               suggestedCategory={suggestedCategory}
               selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
+              onSelectCategory={(cat) => { setSelectedCategory(cat); setIsManualCategoryOverride(true); }}
               categoryScores={categoryScores}
+              isManualOverride={isManualCategoryOverride}
+              onResetToAuto={() => setIsManualCategoryOverride(false)}
             />
           </div>
 

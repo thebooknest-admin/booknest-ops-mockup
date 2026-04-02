@@ -1,10 +1,10 @@
 // BookNest Ops — Donation Intake (wired to real Supabase data)
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Heart, Search, CheckCircle2, RefreshCw, AlertTriangle, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { autoAssignTags, TAG_TAXONOMY } from "@/lib/tags";
+import { autoAssignTags, getCategoryForTag, TAG_TAXONOMY, type BinCategory } from "@/lib/tags";
 import { inferAgeGroup } from "@/lib/ageInference";
 
 type Step = "scan" | "condition" | "donor" | "age_tags" | "confirm";
@@ -47,6 +47,23 @@ export default function DonationIntakePage() {
   const [suggestedBin, setSuggestedBin] = useState("");
   const [notes, setNotes] = useState("");
   const [donationCount, setDonationCount] = useState(0);
+
+  // Recompute suggested bin whenever selected tags or age group change
+  useEffect(() => {
+    if (!ageGroup || selectedTags.length === 0) return;
+    const catVotes: Record<BinCategory, number> = {
+      ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
+      IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
+    };
+    for (const tag of selectedTags) {
+      const cat = getCategoryForTag(tag);
+      if (cat) catVotes[cat.id] += 1;
+    }
+    const dominant = (Object.entries(catVotes)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || "LIFE") as BinCategory;
+    const prefix = ageGroup === "hatchlings" ? "HATC" : ageGroup === "fledglings" ? "FLED" : ageGroup === "soarers" ? "SOAR" : "SKY";
+    setSuggestedBin(`${prefix}-${dominant}-01`);
+  }, [selectedTags, ageGroup]);
 
   const createDonation = trpc.donations.add.useMutation({
     onSuccess: () => {
