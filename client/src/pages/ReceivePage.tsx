@@ -607,7 +607,7 @@ export default function ReceivePage() {
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <h2 className="font-semibold text-foreground">Confirm Book Details</h2>
           <div className="flex gap-5">
-            <div className="shrink-0">
+            <div className="shrink-0 space-y-2">
               {book.coverUrl ? (
                 <img src={book.coverUrl} alt={book.title}
                   className="w-24 h-32 object-cover rounded-lg shadow-md border border-border"
@@ -619,21 +619,34 @@ export default function ReceivePage() {
                   <span className="text-[10px] text-muted-foreground text-center px-1">No cover</span>
                 </div>
               )}
+              <input
+                type="text"
+                value={book.coverUrl ?? ""}
+                onChange={e => setBook({ ...book, coverUrl: e.target.value || null })}
+                placeholder="Cover URL"
+                className="w-24 text-[10px] px-2 py-1 rounded border border-border bg-background text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary truncate"
+              />
             </div>
             <div className="flex-1 min-w-0 space-y-3">
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</p>
-                <p className="font-bold text-foreground text-base leading-tight mt-0.5">{book.title}</p>
+                <input type="text" value={book.title}
+                  onChange={e => setBook({ ...book, title: e.target.value })}
+                  className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 font-bold text-foreground text-base leading-tight mt-0.5 transition-colors" />
               </div>
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</p>
-                <p className="font-medium text-foreground text-sm mt-0.5">{book.author}</p>
+                <input type="text" value={book.author}
+                  onChange={e => setBook({ ...book, author: e.target.value })}
+                  className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 font-medium text-foreground text-sm mt-0.5 transition-colors" />
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">ISBN</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <p className="font-mono text-xs text-foreground">{book.isbn}</p>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <input type="text" value={book.isbn}
+                      onChange={e => setBook({ ...book, isbn: e.target.value.replace(/[^0-9X]/gi, "") })}
+                      className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 font-mono text-xs text-foreground transition-colors" />
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(book.isbn);
@@ -650,15 +663,21 @@ export default function ReceivePage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</p>
-                  <p className="text-sm text-foreground mt-0.5">{book.pages}</p>
+                  <input type="text" value={book.pages}
+                    onChange={e => setBook({ ...book, pages: e.target.value.replace(/\D/g, "") })}
+                    className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 text-sm text-foreground mt-0.5 transition-colors" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Publisher</p>
-                  <p className="text-xs text-foreground mt-0.5 truncate">{book.publisher}</p>
+                  <input type="text" value={book.publisher}
+                    onChange={e => setBook({ ...book, publisher: e.target.value })}
+                    className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 text-xs text-foreground mt-0.5 transition-colors" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</p>
-                  <p className="text-sm text-foreground mt-0.5">{book.publishYear}</p>
+                  <input type="text" value={book.publishYear}
+                    onChange={e => setBook({ ...book, publishYear: e.target.value })}
+                    className="w-full px-2 py-0.5 -mx-2 rounded border border-transparent hover:border-border focus:border-primary bg-transparent hover:bg-muted/30 focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary/30 text-sm text-foreground mt-0.5 transition-colors" />
                 </div>
               </div>
             </div>
