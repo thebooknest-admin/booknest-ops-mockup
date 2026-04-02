@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck
+  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck, Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -340,6 +340,7 @@ export default function ReceivePage() {
   });
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
+  const [isbnCopied, setIsbnCopied] = useState(false);
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
 
@@ -631,7 +632,21 @@ export default function ReceivePage() {
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">ISBN</p>
-                  <p className="font-mono text-xs text-foreground mt-0.5">{book.isbn}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="font-mono text-xs text-foreground">{book.isbn}</p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(book.isbn);
+                        setIsbnCopied(true);
+                        setTimeout(() => setIsbnCopied(false), 1500);
+                      }}
+                      title="Copy ISBN"
+                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                      {isbnCopied
+                        ? <Check className="w-3 h-3 text-green-600" />
+                        : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</p>
