@@ -963,7 +963,7 @@ export default function ReceivePage() {
               className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
               ← Back
             </button>
-            <button onClick={() => setStep(4)} disabled={selectedTags.length === 0}
+            <button onClick={() => setStep(4)}
               className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-40 transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
               Continue →
