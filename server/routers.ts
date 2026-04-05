@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { pickingRouter } from "./routers/picking";
+import { shippingRouter } from "./routers/shipping";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
@@ -40,6 +41,7 @@ async function sbFetch(path: string, options: RequestInit = {}): Promise<Respons
 export const appRouter = router({
   system: systemRouter,
   picking: pickingRouter,
+  shipping: shippingRouter,
 
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
@@ -109,11 +111,9 @@ export const appRouter = router({
       return getBinConfigs();
     }),
 
-    // Fetch a single book title with all its copies
     getBookDetail: publicProcedure
       .input(z.object({ id: z.string() }))
       .query(async ({ input }) => {
-        // Use a safe minimal select — only columns that are guaranteed to exist
         const titleRes = await sbFetch(
           `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,cover_url,publisher,published_date,page_count,created_at,updated_at`
         );
@@ -126,7 +126,6 @@ export const appRouter = router({
         if (!titles[0]) return null;
         const title = titles[0];
 
-        // Safe copy select — only columns known to exist
         const copiesRes = await sbFetch(
           `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,created_at,updated_at`
         );
@@ -139,7 +138,6 @@ export const appRouter = router({
         return { ...title, copies };
       }),
 
-    // Update a single book copy (bin, sku, status, condition, notes, etc.)
     updateCopy: publicProcedure
       .input(
         z.object({
@@ -201,7 +199,6 @@ export const appRouter = router({
           headers: { Prefer: "return=representation" },
         });
         if (!res.ok) throw new Error("Failed to update book title");
-        // If bin_id is being updated, also propagate to all in_house copies for this title
         if (fields.bin_id !== undefined) {
           await sbFetch(`/book_copies?book_title_id=eq.${id}&status=eq.in_house`, {
             method: "PATCH",
@@ -301,7 +298,6 @@ export const appRouter = router({
       }
       return copies.map((c) => ({
         ...c,
-        // Prefer copy-level ISBN, fall back to title-level ISBN
         isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as string | null,
         book_title: titleMap[c.book_title_id] ?? null,
       }));
@@ -320,7 +316,6 @@ export const appRouter = router({
           }),
           headers: { Prefer: "return=minimal" },
         });
-        // Items sent from QC for re-labeling should enter stock queue after printing.
         await sbFetch(`/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -388,13 +383,11 @@ export const appRouter = router({
           const newTitle: any[] = await newTitleRes.json();
           titleId = newTitle[0].id;
         }
-        // Normalize age group to DB key format (e.g. "Sky Readers (9-12)" -> "sky_readers")
         const normalizeAgeGroup = (ag: string): string => {
           const lower = ag.toLowerCase().replace(/\s*\(.*\)\s*/, "").trim();
           return lower.replace(/\s+/g, "_");
         };
         const ageGroupKey = normalizeAgeGroup(input.age_group);
-        // Build SKU prefix: hatchlings->HATCH, fledglings->FLED, soarers->SOAR, sky_readers->SKY
         const SKU_PREFIX_MAP: Record<string, string> = {
           hatchlings: "HATCH",
           fledglings: "FLED",
@@ -402,7 +395,6 @@ export const appRouter = router({
           sky_readers: "SKY",
         };
         const agePrefix = SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
-        // Use MAX(sku) to find the last number used — safer than COUNT which breaks on deletions
         const maxSkuRes = await sbFetch(
           `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.desc&limit=1`
         );
@@ -546,8 +538,6 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         if (input.copy_ids.length === 0) return { success: true, count: 0 };
         const now = new Date().toISOString();
-        // Batch update using Supabase IN filter
-        const idList = input.copy_ids.map((id) => `"${id}"`).join(",");
         await sbFetch(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
           method: "PATCH",
           body: JSON.stringify({ status: "in_house", stocked_at: now }),
@@ -557,7 +547,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Donationss ──────────────────────────────────────────────────────────────
+  // ─── Donations ──────────────────────────────────────────────────────────────
   donations: router({
     list: publicProcedure.query(async () => {
       const res = await sbFetch("/donations?order=created_at.desc&limit=200", {
@@ -598,7 +588,6 @@ export const appRouter = router({
 
   // ─── Welcome Form ─────────────────────────────────────────────────────────
   welcome: router({
-    // Look up a member by email to pre-fill the form
     getByEmail: publicProcedure
       .input(z.object({ email: z.string().email() }))
       .query(async ({ input }) => {
@@ -617,7 +606,6 @@ export const appRouter = router({
         };
       }),
 
-    // Submit welcome form — updates existing member record by email
     submit: publicProcedure
       .input(
         z.object({
@@ -632,7 +620,6 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        // Find member by email
         const findRes = await sbFetch(
           `/members?email=eq.${encodeURIComponent(input.parent_email)}&limit=1`
         );
@@ -651,22 +638,17 @@ export const appRouter = router({
         };
 
         if (existing.length > 0) {
-          // Update existing member record
-          const updateRes = await sbFetch(
-            `/members?id=eq.${existing[0].id}`,
-            {
-              method: "PATCH",
-              body: JSON.stringify(profileData),
-              headers: { Prefer: "return=minimal" },
-            }
-          );
+          const updateRes = await sbFetch(`/members?id=eq.${existing[0].id}`, {
+            method: "PATCH",
+            body: JSON.stringify(profileData),
+            headers: { Prefer: "return=minimal" },
+          });
           if (!updateRes.ok) {
             const errText = await updateRes.text();
             throw new Error(`Failed to update member: ${errText}`);
           }
           return { success: true, member_id: existing[0].id, created: false };
         } else {
-          // Create a new waitlist member record
           const createRes = await sbFetch("/members", {
             method: "POST",
             body: JSON.stringify({
@@ -686,7 +668,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Returns ──────────────────────────────────────────────────────────────────
+  // ─── Returns ────────────────────────────────────────────────────────────────
   returns: router({
     lookupBySku: publicProcedure
       .input(z.object({ sku: z.string() }))
@@ -698,10 +680,8 @@ export const appRouter = router({
         const copies: any[] = await res.json();
         if (!copies[0]) return null;
         const copy = copies[0];
-        // Fetch title info
         const titleRes = await sbFetch(`/book_titles?id=eq.${copy.book_title_id}&limit=1&select=id,title,author`);
         const titles: any[] = titleRes.ok ? await titleRes.json() : [];
-        // Find the most recent shipment this copy was sent out in (for audit linkage)
         const sbRes = await sbFetch(`/shipment_books?book_copy_id=eq.${copy.id}&order=created_at.desc&limit=1&select=shipment_id,id`);
         const sbRows: any[] = sbRes.ok ? await sbRes.json() : [];
         return {
@@ -726,8 +706,6 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const now = new Date().toISOString();
-
-        // 1. Update book_copies status back to in_house
         const patch: Record<string, any> = { status: "in_house", updated_at: now };
         if (input.condition) patch.condition = input.condition;
         const copyRes = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
@@ -737,12 +715,10 @@ export const appRouter = router({
         });
         if (!copyRes.ok) throw new Error(`Failed to update book copy: ${await copyRes.text()}`);
 
-        // 2. Generate a human-readable return number (RET-YYYYMMDD-XXXXX)
         const datePart = now.slice(0, 10).replace(/-/g, "");
         const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
         const returnNumber = `RET-${datePart}-${randPart}`;
 
-        // 3. Create a returns record for the audit trail
         const returnRes = await sbFetch("/returns", {
           method: "POST",
           body: JSON.stringify({
@@ -762,7 +738,6 @@ export const appRouter = router({
         const returnRows: any[] = await returnRes.json();
         const returnId = returnRows[0]?.id;
 
-        // 4. Create a return_books record linking this copy to the return
         if (returnId) {
           await sbFetch("/return_books", {
             method: "POST",
@@ -784,12 +759,10 @@ export const appRouter = router({
         return { success: true, return_number: returnNumber, return_id: returnId ?? null };
       }),
 
-    // Recent return history for the audit log panel
     history: publicProcedure
       .input(z.object({ limit: z.number().optional() }))
       .query(async ({ input }) => {
         const limit = input.limit ?? 20;
-        // Fetch recent returns with their return_books
         const res = await sbFetch(
           `/returns?order=processed_at.desc&limit=${limit}&select=id,return_number,status,return_type,actual_return_date,processed_at,notes,original_shipment_id`
         );
@@ -797,14 +770,12 @@ export const appRouter = router({
         const returns: any[] = await res.json();
         if (!returns.length) return [];
 
-        // Fetch the return_books for these returns
         const returnIds = returns.map((r: any) => r.id).join(",");
         const rbRes = await sbFetch(
           `/return_books?return_id=in.(${returnIds})&select=return_id,book_copy_id,condition_on_return,condition_notes,action,processed_at`
         );
         const returnBooks: any[] = rbRes.ok ? await rbRes.json() : [];
 
-        // Fetch copy + title info for each return_book
         const copyIds = Array.from(new Set(returnBooks.map((rb: any) => rb.book_copy_id))).join(",");
         let copies: any[] = [];
         if (copyIds) {
@@ -877,14 +848,12 @@ export const appRouter = router({
     convertToMember: publicProcedure
       .input(z.object({ signup_id: z.string() }))
       .mutation(async ({ input }) => {
-        // Fetch the signup
         const signupRes = await sbFetch(`/event_signups?id=eq.${input.signup_id}&limit=1`);
         if (!signupRes.ok) throw new Error("Signup not found");
         const signups: any[] = await signupRes.json();
         const s = signups[0];
         if (!s) throw new Error("Signup not found");
 
-        // Create the member
         const memberRes = await sbFetch("/members", {
           method: "POST",
           body: JSON.stringify({
@@ -906,7 +875,6 @@ export const appRouter = router({
         const members: any[] = await memberRes.json();
         const member = members[0];
 
-        // Save address if present
         if (s.street && s.city && s.state && s.zip) {
           await sbFetch("/member_addresses", {
             method: "POST",
@@ -924,7 +892,6 @@ export const appRouter = router({
           });
         }
 
-        // Mark signup as converted
         await sbFetch(`/event_signups?id=eq.${input.signup_id}`, {
           method: "PATCH",
           body: JSON.stringify({ converted_to_member: true, member_id: member.id }),
