@@ -3,23 +3,41 @@
 // Sign-Up Overlay: clicking "Event Sign-Up" in the sidebar opens a full-screen overlay
 // that hides the entire ops dashboard. Close button (top-right) dismisses it.
 
-import { useState, useEffect } from "react";
-import { Link, useLocation } from "wouter";
-import {
-  LayoutDashboard, Package, Truck, Tag, Archive, BookOpen,
-  RotateCcw, Users, Gift, BookMarked, Bell, ChevronDown,
-  ChevronRight, Menu, X, CalendarCheck, ExternalLink,
-  ToggleLeft, ToggleRight, ClipboardCheck, Layers
-} from "lucide-react";
-import { notifications } from "@/lib/data";
-import { cn } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import SignupPage from "@/pages/SignupPage";
+import { notifications } from "@/lib/data";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
+import SignupPage from "@/pages/SignupPage";
+import {
+  AlertCircle,
+  Archive,
+  Bell,
+  BookMarked,
+  BookOpen,
+  CalendarCheck,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  ExternalLink,
+  Gift,
+  Layers,
+  LayoutDashboard,
+  Menu,
+  Package,
+  RotateCcw,
+  Tag,
+  ToggleLeft,
+  ToggleRight,
+  Truck,
+  Users,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
 
 // ─── Nav structure (Event Sign-Up is NOT a route — it's an overlay trigger) ──
 
@@ -28,11 +46,20 @@ interface NavItem {
   href?: string;
   icon: React.ComponentType<{ className?: string }>;
   overlay?: boolean; // if true, clicking opens the overlay instead of navigating
-  badge?: number;    // optional count badge shown next to the label
-  children?: { label: string; href: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[];
+  badge?: number; // optional count badge shown next to the label
+  children?: {
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[];
 }
 
-const buildNavItems = (pendingLabelCount: number, qcCount: number, stockCount: number): NavItem[] => [
+const buildNavItems = (
+  pendingLabelCount: number,
+  qcCount: number,
+  stockCount: number
+): NavItem[] => [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
     label: "Orders",
@@ -40,7 +67,12 @@ const buildNavItems = (pendingLabelCount: number, qcCount: number, stockCount: n
     children: [
       { label: "Picking Queue", href: "/picking", icon: Package },
       { label: "Shipping Queue", href: "/shipping", icon: Truck },
-      { label: "Label Queue", href: "/labels", icon: Tag, badge: pendingLabelCount > 0 ? pendingLabelCount : undefined },
+      {
+        label: "Label Queue",
+        href: "/labels",
+        icon: Tag,
+        badge: pendingLabelCount > 0 ? pendingLabelCount : undefined,
+      },
     ],
   },
   {
@@ -49,8 +81,18 @@ const buildNavItems = (pendingLabelCount: number, qcCount: number, stockCount: n
     children: [
       { label: "Snapshot", href: "/inventory", icon: Archive },
       { label: "Receive Books", href: "/receive", icon: BookOpen },
-      { label: "QC Queue", href: "/qc", icon: ClipboardCheck, badge: qcCount > 0 ? qcCount : undefined },
-      { label: "Stock Queue", href: "/stock", icon: Layers, badge: stockCount > 0 ? stockCount : undefined },
+      {
+        label: "QC Queue",
+        href: "/qc",
+        icon: ClipboardCheck,
+        badge: qcCount > 0 ? qcCount : undefined,
+      },
+      {
+        label: "Stock Queue",
+        href: "/stock",
+        icon: Layers,
+        badge: stockCount > 0 ? stockCount : undefined,
+      },
       { label: "Process Returns", href: "/returns", icon: RotateCcw },
     ],
   },
@@ -63,6 +105,7 @@ const buildNavItems = (pendingLabelCount: number, qcCount: number, stockCount: n
     ],
   },
   { label: "Members", href: "/members", icon: Users },
+  { label: "Support", href: "/support", icon: AlertCircle },
   // This triggers the overlay — no href
   { label: "Event Sign-Up", overlay: true, icon: CalendarCheck },
 ];
@@ -90,7 +133,9 @@ function NotificationPanel() {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm">Notifications</h3>
             {unread.length > 0 && (
-              <span className="text-xs text-muted-foreground">{unread.length} unread</span>
+              <span className="text-xs text-muted-foreground">
+                {unread.length} unread
+              </span>
             )}
           </div>
         </div>
@@ -105,17 +150,25 @@ function NotificationPanel() {
               )}
             >
               <div className="flex items-start gap-3">
-                <div className={cn(
-                  "w-2 h-2 rounded-full mt-1.5 shrink-0",
-                  n.type === "urgent" && "bg-red-500",
-                  n.type === "warning" && "bg-amber-500",
-                  n.type === "info" && "bg-blue-500",
-                  n.type === "success" && "bg-green-500",
-                )} />
+                <div
+                  className={cn(
+                    "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                    n.type === "urgent" && "bg-red-500",
+                    n.type === "warning" && "bg-amber-500",
+                    n.type === "info" && "bg-blue-500",
+                    n.type === "success" && "bg-green-500"
+                  )}
+                />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">{n.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
-                  <p className="text-xs text-muted-foreground/70 mt-1">{n.time}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {n.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    {n.message}
+                  </p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    {n.time}
+                  </p>
                 </div>
               </div>
             </div>
@@ -140,15 +193,20 @@ function SidebarNavItem({
   const [location] = useLocation();
   const [open, setOpen] = useState(() => {
     if (!item.children) return false;
-    return item.children.some(c => location === c.href || location.startsWith(c.href));
+    return item.children.some(
+      c => location === c.href || location.startsWith(c.href)
+    );
   });
 
   const isActive = item.href
     ? location === item.href || (item.href === "/dashboard" && location === "/")
-    : item.children?.some(c => location === c.href || location.startsWith(c.href));
+    : item.children?.some(
+        c => location === c.href || location.startsWith(c.href)
+      );
 
   // Total badge count for a group (sum of children badges)
-  const groupBadge = item.children?.reduce((sum, c) => sum + (c.badge ?? 0), 0) ?? 0;
+  const groupBadge =
+    item.children?.reduce((sum, c) => sum + (c.badge ?? 0), 0) ?? 0;
 
   // Overlay trigger button (Event Sign-Up)
   if (item.overlay) {
@@ -163,10 +221,14 @@ function SidebarNavItem({
         <item.icon className="w-4 h-4 shrink-0 text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80" />
         {!collapsed && (
           <>
-            <span className="text-sm truncate flex-1 text-left">{item.label}</span>
+            <span className="text-sm truncate flex-1 text-left">
+              {item.label}
+            </span>
             {/* Small "open in overlay" indicator */}
-            <span className="w-4 h-4 rounded flex items-center justify-center opacity-40 group-hover:opacity-70"
-              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
+            <span
+              className="w-4 h-4 rounded flex items-center justify-center opacity-40 group-hover:opacity-70"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+            >
               <ExternalLink className="w-2.5 h-2.5 text-white" />
             </span>
           </>
@@ -179,19 +241,33 @@ function SidebarNavItem({
   if (item.href) {
     return (
       <Link href={item.href}>
-        <div className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all group",
-          isActive
-            ? "bg-sidebar-accent text-white font-medium"
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-        )}>
-          <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-white" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80")} />
+        <div
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all group",
+            isActive
+              ? "bg-sidebar-accent text-white font-medium"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          )}
+        >
+          <item.icon
+            className={cn(
+              "w-4 h-4 shrink-0",
+              isActive
+                ? "text-white"
+                : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
+            )}
+          />
           {!collapsed && (
             <>
               <span className="text-sm truncate flex-1">{item.label}</span>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                  style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+                <span
+                  className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                  style={{
+                    backgroundColor: "oklch(0.75 0.18 75)",
+                    color: "oklch(0.25 0.08 75)",
+                  }}
+                >
                   {item.badge > 99 ? "99+" : item.badge}
                 </span>
               )}
@@ -202,8 +278,10 @@ function SidebarNavItem({
           )}
           {/* Collapsed mode: show badge as dot on icon */}
           {collapsed && item.badge !== undefined && item.badge > 0 && (
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full"
-              style={{ backgroundColor: "oklch(0.75 0.18 75)" }} />
+            <span
+              className="absolute top-1 right-1 w-2 h-2 rounded-full"
+              style={{ backgroundColor: "oklch(0.75 0.18 75)" }}
+            />
           )}
         </div>
       </Link>
@@ -222,38 +300,64 @@ function SidebarNavItem({
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
         )}
       >
-        <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-white" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80")} />
+        <item.icon
+          className={cn(
+            "w-4 h-4 shrink-0",
+            isActive
+              ? "text-white"
+              : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
+          )}
+        />
         {!collapsed && (
           <>
-            <span className="text-sm truncate flex-1 text-left">{item.label}</span>
+            <span className="text-sm truncate flex-1 text-left">
+              {item.label}
+            </span>
             {/* Show group badge when collapsed */}
             {!open && groupBadge > 0 && (
-              <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+              <span
+                className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                style={{
+                  backgroundColor: "oklch(0.75 0.18 75)",
+                  color: "oklch(0.25 0.08 75)",
+                }}
+              >
                 {groupBadge > 99 ? "99+" : groupBadge}
               </span>
             )}
-            {open ? <ChevronDown className="w-3.5 h-3.5 text-sidebar-foreground/40" /> : <ChevronRight className="w-3.5 h-3.5 text-sidebar-foreground/40" />}
+            {open ? (
+              <ChevronDown className="w-3.5 h-3.5 text-sidebar-foreground/40" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-sidebar-foreground/40" />
+            )}
           </>
         )}
       </button>
       {open && !collapsed && item.children && (
         <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border/50 pl-3">
           {item.children.map(child => {
-            const childActive = location === child.href || location.startsWith(child.href);
+            const childActive =
+              location === child.href || location.startsWith(child.href);
             return (
               <Link key={child.href} href={child.href}>
-                <div className={cn(
-                  "flex items-center gap-2.5 px-2 py-2 rounded-md cursor-pointer transition-all text-sm",
-                  childActive
-                    ? "text-white font-medium bg-sidebar-accent"
-                    : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
-                )}>
+                <div
+                  className={cn(
+                    "flex items-center gap-2.5 px-2 py-2 rounded-md cursor-pointer transition-all text-sm",
+                    childActive
+                      ? "text-white font-medium bg-sidebar-accent"
+                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
+                  )}
+                >
                   <child.icon className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate flex-1">{child.label}</span>
                   {child.badge !== undefined && child.badge > 0 && (
-                    <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                      style={{ backgroundColor: "oklch(0.75 0.18 75)", color: "oklch(0.25 0.08 75)" }}>
+                    <span
+                      className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                      style={{
+                        backgroundColor: "oklch(0.75 0.18 75)",
+                        color: "oklch(0.25 0.08 75)",
+                      }}
+                    >
                       {child.badge > 99 ? "99+" : child.badge}
                     </span>
                   )}
@@ -286,7 +390,9 @@ function SignupOverlay({ onClose }: { onClose: () => void }) {
 
   // Close on Escape key
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
@@ -294,7 +400,9 @@ function SignupOverlay({ onClose }: { onClose: () => void }) {
   // Prevent body scroll while overlay is open
   useEffect(() => {
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, []);
 
   return (
@@ -319,10 +427,17 @@ function SignupOverlay({ onClose }: { onClose: () => void }) {
             )}
             style={formOpen ? { backgroundColor: "oklch(0.42 0.11 155)" } : {}}
           >
-            {formOpen
-              ? <><ToggleRight className="w-4 h-4" />Form Open</>
-              : <><ToggleLeft className="w-4 h-4" />Form Closed</>
-            }
+            {formOpen ? (
+              <>
+                <ToggleRight className="w-4 h-4" />
+                Form Open
+              </>
+            ) : (
+              <>
+                <ToggleLeft className="w-4 h-4" />
+                Form Closed
+              </>
+            )}
           </button>
           <span className="text-sidebar-foreground/40 text-xs hidden sm:block">
             Toggle to open or close the sign-up form for visitors
@@ -401,13 +516,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {/* Logo */}
           <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border/30">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+            >
               <BookOpen className="w-4 h-4 text-white" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white leading-tight">BookNest</p>
-                <p className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "oklch(0.62 0.10 155)" }}>Operations</p>
+                <p className="text-sm font-bold text-white leading-tight">
+                  BookNest
+                </p>
+                <p
+                  className="text-[10px] font-medium uppercase tracking-widest"
+                  style={{ color: "oklch(0.62 0.10 155)" }}
+                >
+                  Operations
+                </p>
               </div>
             )}
           </div>
@@ -431,16 +556,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               onClick={() => setCollapsed(!collapsed)}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all"
             >
-              {collapsed ? <ChevronRight className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              {collapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <Menu className="w-4 h-4" />
+              )}
               {!collapsed && <span className="text-xs">Collapse</span>}
             </button>
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
 
       {/* Full-screen sign-up overlay — rendered outside the layout so it covers everything */}

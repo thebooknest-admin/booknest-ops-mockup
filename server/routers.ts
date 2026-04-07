@@ -1,23 +1,22 @@
-import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
-import { pickingRouter } from "./routers/picking";
-import { shippingRouter } from "./routers/shipping";
+import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { pickingRouter } from "./routers/picking";
+import { shippingRouter } from "./routers/shipping";
 import {
-  getDashboardStats,
-  getMembers,
-  getMemberById,
-  getBookTitles,
-  getBookTitlesWithCopies,
-  getBookCopies,
-  getInventorySummary,
-  getShipments,
-  getShipmentById,
-  getShipmentBooks,
-  getMemberAddress,
   getBinConfigs,
+  getBookCopies,
+  getBookTitlesWithCopies,
+  getDashboardStats,
+  getInventorySummary,
+  getMemberAddress,
+  getMemberById,
+  getMembers,
+  getShipmentBooks,
+  getShipmentById,
+  getShipments,
   updateShipmentStatus,
 } from "./supabase";
 
@@ -31,7 +30,10 @@ const sbHeaders = {
   Prefer: "return=representation",
 };
 
-async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
+async function sbFetch(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
   return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     ...options,
     headers: { ...sbHeaders, ...(options.headers ?? {}) },
@@ -44,7 +46,7 @@ export const appRouter = router({
   shipping: shippingRouter,
 
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -83,12 +85,14 @@ export const appRouter = router({
 
     bookTitles: publicProcedure
       .input(
-        z.object({
-          limit: z.number().optional(),
-          offset: z.number().optional(),
-          search: z.string().optional(),
-          age_group: z.string().optional(),
-        }).optional()
+        z
+          .object({
+            limit: z.number().optional(),
+            offset: z.number().optional(),
+            search: z.string().optional(),
+            age_group: z.string().optional(),
+          })
+          .optional()
       )
       .query(async ({ input }) => {
         return getBookTitlesWithCopies(input ?? {});
@@ -96,12 +100,14 @@ export const appRouter = router({
 
     bookCopies: publicProcedure
       .input(
-        z.object({
-          status: z.string().optional(),
-          bin_id: z.string().optional(),
-          age_group: z.string().optional(),
-          limit: z.number().optional(),
-        }).optional()
+        z
+          .object({
+            status: z.string().optional(),
+            bin_id: z.string().optional(),
+            age_group: z.string().optional(),
+            limit: z.number().optional(),
+          })
+          .optional()
       )
       .query(async ({ input }) => {
         return getBookCopies(input ?? {});
@@ -152,7 +158,9 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { id, ...fields } = input;
-        const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+        const patch: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        };
         if (fields.sku !== undefined) patch.sku = fields.sku;
         if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
         if (fields.status !== undefined) patch.status = fields.status;
@@ -164,7 +172,8 @@ export const appRouter = router({
           body: JSON.stringify(patch),
           headers: { Prefer: "return=minimal" },
         });
-        if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
+        if (!res.ok)
+          throw new Error(`Failed to update copy: ${await res.text()}`);
         return { success: true };
       }),
 
@@ -187,24 +196,37 @@ export const appRouter = router({
         const updateFields: Record<string, any> = {};
         if (fields.title !== undefined) updateFields.title = fields.title;
         if (fields.author !== undefined) updateFields.author = fields.author;
-        if (fields.age_group !== undefined) updateFields.age_group = fields.age_group;
+        if (fields.age_group !== undefined)
+          updateFields.age_group = fields.age_group;
         if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
-        if (fields.cover_url !== undefined) updateFields.cover_url = fields.cover_url;
-        if (fields.publisher !== undefined) updateFields.publisher = fields.publisher;
-        if (fields.published_date !== undefined) updateFields.published_date = fields.published_date;
+        if (fields.cover_url !== undefined)
+          updateFields.cover_url = fields.cover_url;
+        if (fields.publisher !== undefined)
+          updateFields.publisher = fields.publisher;
+        if (fields.published_date !== undefined)
+          updateFields.published_date = fields.published_date;
         if (fields.bin_id !== undefined) updateFields.bin_id = fields.bin_id;
         const res = await sbFetch(`/book_titles?id=eq.${id}`, {
           method: "PATCH",
-          body: JSON.stringify({ ...updateFields, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({
+            ...updateFields,
+            updated_at: new Date().toISOString(),
+          }),
           headers: { Prefer: "return=representation" },
         });
         if (!res.ok) throw new Error("Failed to update book title");
         if (fields.bin_id !== undefined) {
-          await sbFetch(`/book_copies?book_title_id=eq.${id}&status=eq.in_house`, {
-            method: "PATCH",
-            body: JSON.stringify({ bin_id: fields.bin_id, updated_at: new Date().toISOString() }),
-            headers: { Prefer: "return=minimal" },
-          });
+          await sbFetch(
+            `/book_copies?book_title_id=eq.${id}&status=eq.in_house`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({
+                bin_id: fields.bin_id,
+                updated_at: new Date().toISOString(),
+              }),
+              headers: { Prefer: "return=minimal" },
+            }
+          );
         }
         const data = await res.json();
         return { success: true, book: data[0] };
@@ -216,18 +238,29 @@ export const appRouter = router({
     list: publicProcedure
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ input }) => {
-        const { data, total } = await getShipments({ status: input?.status, limit: 100 });
-        const memberIds = Array.from(new Set(data.map((s) => s.member_id)));
+        const { data, total } = await getShipments({
+          status: input?.status,
+          limit: 100,
+        });
+        const memberIds = Array.from(new Set(data.map(s => s.member_id)));
         let memberMap: Record<string, string> = {};
         if (memberIds.length > 0) {
           const res = await sbFetch(
             `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
           );
-          const members: { id: string; name: string; tier: string; age_group: string }[] = await res.json();
-          memberMap = Object.fromEntries(members.map((m) => [m.id, m.name]));
+          const members: {
+            id: string;
+            name: string;
+            tier: string;
+            age_group: string;
+          }[] = await res.json();
+          memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
         }
         return {
-          data: data.map((s) => ({ ...s, member_name: memberMap[s.member_id] ?? "Unknown" })),
+          data: data.map(s => ({
+            ...s,
+            member_name: memberMap[s.member_id] ?? "Unknown",
+          })),
           total,
         };
       }),
@@ -242,24 +275,35 @@ export const appRouter = router({
           getMemberById(shipment.member_id),
           shipment.address_id
             ? sbFetch(`/member_addresses?id=eq.${shipment.address_id}&limit=1`)
-                .then((r) => r.json())
+                .then(r => r.json())
                 .then((d: any[]) => d[0] ?? null)
             : getMemberAddress(shipment.member_id),
         ]);
-        const titleIds = Array.from(new Set(books.map((b) => b.book_title_id)));
-        let titleMap: Record<string, { title: string; author: string; cover_url: string | null }> = {};
+        const titleIds = Array.from(new Set(books.map(b => b.book_title_id)));
+        let titleMap: Record<
+          string,
+          { title: string; author: string; cover_url: string | null }
+        > = {};
         if (titleIds.length > 0) {
           const res = await sbFetch(
             `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,cover_url&limit=50`
           );
-          const titles: { id: string; title: string; author: string; cover_url: string | null }[] = await res.json();
-          titleMap = Object.fromEntries(titles.map((t) => [t.id, t]));
+          const titles: {
+            id: string;
+            title: string;
+            author: string;
+            cover_url: string | null;
+          }[] = await res.json();
+          titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
         }
         return {
           ...shipment,
           member,
           address,
-          books: books.map((b) => ({ ...b, book_title: titleMap[b.book_title_id] ?? null })),
+          books: books.map(b => ({
+            ...b,
+            book_title: titleMap[b.book_title_id] ?? null,
+          })),
         };
       }),
 
@@ -287,18 +331,30 @@ export const appRouter = router({
         "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
       );
       const copies: any[] = await res.json();
-      const titleIds = Array.from(new Set(copies.map((c) => c.book_title_id).filter(Boolean)));
-      let titleMap: Record<string, { title: string; author: string; isbn: string | null }> = {};
+      const titleIds = Array.from(
+        new Set(copies.map(c => c.book_title_id).filter(Boolean))
+      );
+      let titleMap: Record<
+        string,
+        { title: string; author: string; isbn: string | null }
+      > = {};
       if (titleIds.length > 0) {
         const tr = await sbFetch(
           `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn&limit=300`
         );
-        const titles: { id: string; title: string; author: string; isbn: string | null }[] = await tr.json();
-        titleMap = Object.fromEntries(titles.map((t) => [t.id, t]));
+        const titles: {
+          id: string;
+          title: string;
+          author: string;
+          isbn: string | null;
+        }[] = await tr.json();
+        titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
       }
-      return copies.map((c) => ({
+      return copies.map(c => ({
         ...c,
-        isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as string | null,
+        isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as
+          | string
+          | null,
         book_title: titleMap[c.book_title_id] ?? null,
       }));
     }),
@@ -316,14 +372,17 @@ export const appRouter = router({
           }),
           headers: { Prefer: "return=minimal" },
         });
-        await sbFetch(`/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "pending_stock",
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
+        await sbFetch(
+          `/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "pending_stock",
+              updated_at: now,
+            }),
+            headers: { Prefer: "return=minimal" },
+          }
+        );
         return { success: true };
       }),
   }),
@@ -348,7 +407,9 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const titleRes = await sbFetch("/book_titles?isbn=eq." + input.isbn + "&limit=1");
+        const titleRes = await sbFetch(
+          "/book_titles?isbn=eq." + input.isbn + "&limit=1"
+        );
         const existing: any[] = await titleRes.json();
         let titleId: string;
         if (existing.length > 0) {
@@ -358,7 +419,8 @@ export const appRouter = router({
             body: JSON.stringify({
               cover_url: input.cover_url ?? existing[0].cover_url,
               publisher: input.publisher ?? existing[0].publisher,
-              published_date: input.published_date ?? existing[0].published_date,
+              published_date:
+                input.published_date ?? existing[0].published_date,
               page_count: input.page_count ?? existing[0].page_count,
               subjects: input.subjects ?? existing[0].subjects,
               updated_at: new Date().toISOString(),
@@ -384,7 +446,10 @@ export const appRouter = router({
           titleId = newTitle[0].id;
         }
         const normalizeAgeGroup = (ag: string): string => {
-          const lower = ag.toLowerCase().replace(/\s*\(.*\)\s*/, "").trim();
+          const lower = ag
+            .toLowerCase()
+            .replace(/\s*\(.*\)\s*/, "")
+            .trim();
           return lower.replace(/\s+/g, "_");
         };
         const ageGroupKey = normalizeAgeGroup(input.age_group);
@@ -394,7 +459,8 @@ export const appRouter = router({
           soarers: "SOAR",
           sky_readers: "SKY",
         };
-        const agePrefix = SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
+        const agePrefix =
+          SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
         const maxSkuRes = await sbFetch(
           `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.desc&limit=1`
         );
@@ -432,7 +498,7 @@ export const appRouter = router({
       );
       if (!res.ok) return [];
       const data: any[] = await res.json();
-      return data.map((c) => ({
+      return data.map(c => ({
         id: c.id as string,
         sku: c.sku as string,
         isbn: c.isbn as string | null,
@@ -442,14 +508,22 @@ export const appRouter = router({
         condition: c.condition as string | null,
         received_at: c.received_at as string,
         book_title_id: c.book_title_id as string,
-        book_title: c.book_titles as { id: string; title: string; author: string; cover_url: string | null } | null,
+        book_title: c.book_titles as {
+          id: string;
+          title: string;
+          author: string;
+          cover_url: string | null;
+        } | null,
       }));
     }),
     count: publicProcedure.query(async () => {
       const res = await sbFetch("/book_copies?status=eq.pending_qc&select=id", {
         headers: { Prefer: "count=exact", Range: "0-0" },
       });
-      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      const total = parseInt(
+        res.headers.get("content-range")?.split("/")[1] ?? "0",
+        10
+      );
       return { count: total };
     }),
     pass: publicProcedure
@@ -462,7 +536,9 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const nextStatus = input.reprint_label ? "pending_label" : "pending_stock";
+        const nextStatus = input.reprint_label
+          ? "pending_label"
+          : "pending_stock";
         await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -500,7 +576,7 @@ export const appRouter = router({
       );
       if (!res.ok) return [];
       const data: any[] = await res.json();
-      return data.map((c) => ({
+      return data.map(c => ({
         id: c.id as string,
         sku: c.sku as string,
         isbn: c.isbn as string | null,
@@ -510,14 +586,25 @@ export const appRouter = router({
         condition: c.condition as string | null,
         received_at: c.received_at as string,
         book_title_id: c.book_title_id as string,
-        book_title: c.book_titles as { id: string; title: string; author: string; cover_url: string | null } | null,
+        book_title: c.book_titles as {
+          id: string;
+          title: string;
+          author: string;
+          cover_url: string | null;
+        } | null,
       }));
     }),
     count: publicProcedure.query(async () => {
-      const res = await sbFetch("/book_copies?status=eq.pending_stock&select=id", {
-        headers: { Prefer: "count=exact", Range: "0-0" },
-      });
-      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      const res = await sbFetch(
+        "/book_copies?status=eq.pending_stock&select=id",
+        {
+          headers: { Prefer: "count=exact", Range: "0-0" },
+        }
+      );
+      const total = parseInt(
+        res.headers.get("content-range")?.split("/")[1] ?? "0",
+        10
+      );
       return { count: total };
     }),
     confirmPlaced: publicProcedure
@@ -554,7 +641,10 @@ export const appRouter = router({
         headers: { Prefer: "count=exact" },
       });
       if (!res.ok) return { data: [], total: 0 };
-      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      const total = parseInt(
+        res.headers.get("content-range")?.split("/")[1] ?? "0",
+        10
+      );
       const data = await res.json();
       return { data, total };
     }),
@@ -578,9 +668,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const res = await sbFetch("/donations", {
           method: "POST",
-          body: JSON.stringify({ ...input, tags: input.tags ?? [], created_at: new Date().toISOString() }),
+          body: JSON.stringify({
+            ...input,
+            tags: input.tags ?? [],
+            created_at: new Date().toISOString(),
+          }),
         });
-        if (!res.ok) throw new Error(`Failed to save donation: ${await res.text()}`);
+        if (!res.ok)
+          throw new Error(`Failed to save donation: ${await res.text()}`);
         const data = await res.json();
         return { success: true, id: data[0]?.id };
       }),
@@ -591,7 +686,9 @@ export const appRouter = router({
     getByEmail: publicProcedure
       .input(z.object({ email: z.string().email() }))
       .query(async ({ input }) => {
-        const res = await sbFetch(`/members?email=eq.${encodeURIComponent(input.email)}&limit=1`);
+        const res = await sbFetch(
+          `/members?email=eq.${encodeURIComponent(input.email)}&limit=1`
+        );
         const data: any[] = await res.json();
         if (!data[0]) return null;
         const m = data[0];
@@ -633,7 +730,9 @@ export const appRouter = router({
           welcome_form: "completed",
           updated_at: new Date().toISOString(),
           ...(input.child_name ? { child_name: input.child_name } : {}),
-          ...(input.child_birthday ? { child_birthday: input.child_birthday } : {}),
+          ...(input.child_birthday
+            ? { child_birthday: input.child_birthday }
+            : {}),
           ...(input.additional_notes ? { notes: input.additional_notes } : {}),
         };
 
@@ -680,9 +779,13 @@ export const appRouter = router({
         const copies: any[] = await res.json();
         if (!copies[0]) return null;
         const copy = copies[0];
-        const titleRes = await sbFetch(`/book_titles?id=eq.${copy.book_title_id}&limit=1&select=id,title,author`);
+        const titleRes = await sbFetch(
+          `/book_titles?id=eq.${copy.book_title_id}&limit=1&select=id,title,author`
+        );
         const titles: any[] = titleRes.ok ? await titleRes.json() : [];
-        const sbRes = await sbFetch(`/shipment_books?book_copy_id=eq.${copy.id}&order=created_at.desc&limit=1&select=shipment_id,id`);
+        const sbRes = await sbFetch(
+          `/shipment_books?book_copy_id=eq.${copy.id}&order=created_at.desc&limit=1&select=shipment_id,id`
+        );
         const sbRows: any[] = sbRes.ok ? await sbRes.json() : [];
         return {
           ...copy,
@@ -706,14 +809,20 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const now = new Date().toISOString();
-        const patch: Record<string, any> = { status: "in_house", updated_at: now };
+        const patch: Record<string, any> = {
+          status: "in_house",
+          updated_at: now,
+        };
         if (input.condition) patch.condition = input.condition;
         const copyRes = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify(patch),
           headers: { Prefer: "return=minimal" },
         });
-        if (!copyRes.ok) throw new Error(`Failed to update book copy: ${await copyRes.text()}`);
+        if (!copyRes.ok)
+          throw new Error(
+            `Failed to update book copy: ${await copyRes.text()}`
+          );
 
         const datePart = now.slice(0, 10).replace(/-/g, "");
         const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -734,7 +843,10 @@ export const appRouter = router({
           }),
           headers: { Prefer: "return=representation" },
         });
-        if (!returnRes.ok) throw new Error(`Failed to create return record: ${await returnRes.text()}`);
+        if (!returnRes.ok)
+          throw new Error(
+            `Failed to create return record: ${await returnRes.text()}`
+          );
         const returnRows: any[] = await returnRes.json();
         const returnId = returnRows[0]?.id;
 
@@ -756,7 +868,11 @@ export const appRouter = router({
           });
         }
 
-        return { success: true, return_number: returnNumber, return_id: returnId ?? null };
+        return {
+          success: true,
+          return_number: returnNumber,
+          return_id: returnId ?? null,
+        };
       }),
 
     history: publicProcedure
@@ -776,39 +892,64 @@ export const appRouter = router({
         );
         const returnBooks: any[] = rbRes.ok ? await rbRes.json() : [];
 
-        const copyIds = Array.from(new Set(returnBooks.map((rb: any) => rb.book_copy_id))).join(",");
+        const copyIds = Array.from(
+          new Set(returnBooks.map((rb: any) => rb.book_copy_id))
+        ).join(",");
         let copies: any[] = [];
         if (copyIds) {
-          const copyRes = await sbFetch(`/book_copies?id=in.(${copyIds})&select=id,sku,bin_id,book_title_id`);
+          const copyRes = await sbFetch(
+            `/book_copies?id=in.(${copyIds})&select=id,sku,bin_id,book_title_id`
+          );
           copies = copyRes.ok ? await copyRes.json() : [];
         }
-        const titleIds = Array.from(new Set(copies.map((c: any) => c.book_title_id))).join(",");
+        const titleIds = Array.from(
+          new Set(copies.map((c: any) => c.book_title_id))
+        ).join(",");
         let titles: any[] = [];
         if (titleIds) {
-          const titleRes = await sbFetch(`/book_titles?id=in.(${titleIds})&select=id,title,author`);
+          const titleRes = await sbFetch(
+            `/book_titles?id=in.(${titleIds})&select=id,title,author`
+          );
           titles = titleRes.ok ? await titleRes.json() : [];
         }
 
         const titleMap = Object.fromEntries(titles.map((t: any) => [t.id, t]));
-        const copyMap = Object.fromEntries(copies.map((c: any) => [c.id, { ...c, book_title: titleMap[c.book_title_id] ?? null }]));
+        const copyMap = Object.fromEntries(
+          copies.map((c: any) => [
+            c.id,
+            { ...c, book_title: titleMap[c.book_title_id] ?? null },
+          ])
+        );
         const rbByReturn: Record<string, any[]> = {};
         for (const rb of returnBooks) {
           if (!rbByReturn[rb.return_id]) rbByReturn[rb.return_id] = [];
-          rbByReturn[rb.return_id].push({ ...rb, copy: copyMap[rb.book_copy_id] ?? null });
+          rbByReturn[rb.return_id].push({
+            ...rb,
+            copy: copyMap[rb.book_copy_id] ?? null,
+          });
         }
 
-        return returns.map((r: any) => ({ ...r, books: rbByReturn[r.id] ?? [] }));
+        return returns.map((r: any) => ({
+          ...r,
+          books: rbByReturn[r.id] ?? [],
+        }));
       }),
   }),
 
   // ─── Event Sign-Ups ─────────────────────────────────────────────────────────
   signups: router({
     list: publicProcedure.query(async () => {
-      const res = await sbFetch("/event_signups?order=created_at.desc&limit=200", {
-        headers: { Prefer: "count=exact" },
-      });
+      const res = await sbFetch(
+        "/event_signups?order=created_at.desc&limit=200",
+        {
+          headers: { Prefer: "count=exact" },
+        }
+      );
       if (!res.ok) return { data: [], total: 0 };
-      const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+      const total = parseInt(
+        res.headers.get("content-range")?.split("/")[1] ?? "0",
+        10
+      );
       const data = await res.json();
       return { data, total };
     }),
@@ -838,9 +979,13 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const res = await sbFetch("/event_signups", {
           method: "POST",
-          body: JSON.stringify({ ...input, created_at: new Date().toISOString() }),
+          body: JSON.stringify({
+            ...input,
+            created_at: new Date().toISOString(),
+          }),
         });
-        if (!res.ok) throw new Error(`Failed to save sign-up: ${await res.text()}`);
+        if (!res.ok)
+          throw new Error(`Failed to save sign-up: ${await res.text()}`);
         const data = await res.json();
         return { success: true, id: data[0]?.id };
       }),
@@ -848,7 +993,9 @@ export const appRouter = router({
     convertToMember: publicProcedure
       .input(z.object({ signup_id: z.string() }))
       .mutation(async ({ input }) => {
-        const signupRes = await sbFetch(`/event_signups?id=eq.${input.signup_id}&limit=1`);
+        const signupRes = await sbFetch(
+          `/event_signups?id=eq.${input.signup_id}&limit=1`
+        );
         if (!signupRes.ok) throw new Error("Signup not found");
         const signups: any[] = await signupRes.json();
         const s = signups[0];
@@ -871,7 +1018,8 @@ export const appRouter = router({
           }),
           headers: { Prefer: "return=representation" },
         });
-        if (!memberRes.ok) throw new Error(`Failed to create member: ${await memberRes.text()}`);
+        if (!memberRes.ok)
+          throw new Error(`Failed to create member: ${await memberRes.text()}`);
         const members: any[] = await memberRes.json();
         const member = members[0];
 
@@ -894,11 +1042,106 @@ export const appRouter = router({
 
         await sbFetch(`/event_signups?id=eq.${input.signup_id}`, {
           method: "PATCH",
-          body: JSON.stringify({ converted_to_member: true, member_id: member.id }),
+          body: JSON.stringify({
+            converted_to_member: true,
+            member_id: member.id,
+          }),
           headers: { Prefer: "return=minimal" },
         });
 
         return { success: true, member_id: member.id };
+      }),
+  }),
+  // ─── Support ──────────────────────────────────────────────────────────────
+  support: router({
+    list: publicProcedure
+      .input(z.object({ status: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const status = input?.status ?? "pending";
+        const res = await sbFetch(
+          `/damaged_book_reports?status=eq.${status}&order=created_at.desc&limit=100&select=id,created_at,member_id,book_copy_id,torn_pages,cover,writing_marks,water,missing_pages,other,photo1,photo2,photo3,notes,status,resolution_note,resolved_at`
+        );
+        if (!res.ok) return [];
+        const reports: any[] = await res.json();
+        if (!reports.length) return [];
+
+        // Enrich with member names
+        const memberIds = Array.from(
+          new Set(reports.map(r => r.member_id).filter(Boolean))
+        );
+        let memberMap: Record<string, string> = {};
+        if (memberIds.length > 0) {
+          const mRes = await sbFetch(
+            `/members?id=in.(${memberIds.join(",")})&select=id,name,email&limit=200`
+          );
+          const members: any[] = mRes.ok ? await mRes.json() : [];
+          memberMap = Object.fromEntries(
+            members.map(m => [m.id, m.name ?? m.email ?? "Unknown"])
+          );
+        }
+
+        // Enrich with book titles
+        const copyIds = Array.from(
+          new Set(reports.map(r => r.book_copy_id).filter(Boolean))
+        );
+        let bookMap: Record<string, string> = {};
+        if (copyIds.length > 0) {
+          const cRes = await sbFetch(
+            `/book_copies?id=in.(${copyIds.join(",")})&select=id,book_title_id,book_titles(title)&limit=200`
+          );
+          const copies: any[] = cRes.ok ? await cRes.json() : [];
+          bookMap = Object.fromEntries(
+            copies.map(c => [c.id, c.book_titles?.title ?? "Unknown Book"])
+          );
+        }
+
+        return reports.map(r => ({
+          ...r,
+          member_name: memberMap[r.member_id] ?? "Unknown",
+          book_title: bookMap[r.book_copy_id] ?? "Unknown Book",
+        }));
+      }),
+
+    resolve: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          resolution_note: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/damaged_book_reports?id=eq.${input.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "resolved",
+            resolution_note: input.resolution_note ?? null,
+            resolved_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error("Failed to resolve report");
+        return { success: true };
+      }),
+
+    dismiss: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          resolution_note: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/damaged_book_reports?id=eq.${input.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "dismissed",
+            resolution_note: input.resolution_note ?? null,
+            resolved_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error("Failed to dismiss report");
+        return { success: true };
       }),
   }),
 });
