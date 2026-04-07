@@ -1143,6 +1143,102 @@ export const appRouter = router({
         if (!res.ok) throw new Error("Failed to dismiss report");
         return { success: true };
       }),
+    listMissing: publicProcedure
+      .input(z.object({ status: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const status = input?.status ?? "pending";
+        const res = await sbFetch(
+          `/missing_bundle_reports?status=eq.${status}&order=created_at.desc&limit=100&select=id,created_at,member_id,shipment_id,problem,notes,status,resolution_note,resolved_at`
+        );
+        if (!res.ok) return [];
+        const reports: any[] = await res.json();
+        if (!reports.length) return [];
+
+        // Enrich with member names
+        const memberIds = Array.from(
+          new Set(reports.map(r => r.member_id).filter(Boolean))
+        );
+        let memberMap: Record<string, string> = {};
+        if (memberIds.length > 0) {
+          const mRes = await sbFetch(
+            `/members?id=in.(${memberIds.join(",")})&select=id,name,email&limit=200`
+          );
+          const members: any[] = mRes.ok ? await mRes.json() : [];
+          memberMap = Object.fromEntries(
+            members.map(m => [m.id, m.name ?? m.email ?? "Unknown"])
+          );
+        }
+
+        // Enrich with tracking numbers
+        const shipmentIds = Array.from(
+          new Set(reports.map(r => r.shipment_id).filter(Boolean))
+        );
+        let shipmentMap: Record<
+          string,
+          { tracking_number: string | null; carrier: string | null }
+        > = {};
+        if (shipmentIds.length > 0) {
+          const sRes = await sbFetch(
+            `/shipments?id=in.(${shipmentIds.join(",")})&select=id,tracking_number,carrier&limit=200`
+          );
+          const shipments: any[] = sRes.ok ? await sRes.json() : [];
+          shipmentMap = Object.fromEntries(
+            shipments.map(s => [
+              s.id,
+              { tracking_number: s.tracking_number, carrier: s.carrier },
+            ])
+          );
+        }
+
+        return reports.map(r => ({
+          ...r,
+          member_name: memberMap[r.member_id] ?? "Unknown",
+          tracking_number: shipmentMap[r.shipment_id]?.tracking_number ?? null,
+          carrier: shipmentMap[r.shipment_id]?.carrier ?? null,
+        }));
+      }),
+
+    resolveMissing: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          resolution_note: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/missing_bundle_reports?id=eq.${input.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "resolved",
+            resolution_note: input.resolution_note ?? null,
+            resolved_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error("Failed to resolve report");
+        return { success: true };
+      }),
+
+    dismissMissing: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          resolution_note: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/missing_bundle_reports?id=eq.${input.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "dismissed",
+            resolution_note: input.resolution_note ?? null,
+            resolved_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error("Failed to dismiss report");
+        return { success: true };
+      }),
   }),
 });
 
