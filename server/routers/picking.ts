@@ -91,8 +91,8 @@ export const pickingRouter = router({
 
       // Get active members with next_ship_date <= today
       const membersRes = await sbFetch(
-        `/members?subscription_status=eq.active&next_ship_date=lte.${today}&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,email,shopify_customer_id&order=next_ship_date.asc&limit=200`
-      );
+  `/members?subscription_status=eq.active&next_ship_date=lte.${today}&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,email,shopify_customer_id&order=next_ship_date.asc&limit=200`
+);
       const members: any[] = await membersRes.json();
 
       if (!members.length) return { orders: [], date: today };
