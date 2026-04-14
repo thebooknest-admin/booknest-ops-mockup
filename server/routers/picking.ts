@@ -40,13 +40,13 @@ const DEFAULT_BOOK_COUNT = 4;
  */
 const INTEREST_TO_THEMES: Record<string, string[]> = {
   "Brave & Bold": ["adventure"],
-  "Heart & Home": ["life", "feel-good", "home"],
-  "Curious Minds": ["space", "science", "learn"],
-  "Wild Things": ["animals", "nature"],
-  "All About Me": ["identity", "feelings", "culture"],
+  "Heart & Home": ["life"],
+  "Curious Minds": ["learn"],
+  "Wild Things": ["nature"],
+  "All About Me": ["identity"],
   "Old Favorites": ["classics"],
-  "Celebrate!": ["seasonal", "holidays"],
-  "Giggle Worthy": ["humor", "silly"],
+  "Celebrate!": ["seasonal"],
+  "Giggle Worthy": ["humor"],
 };
 
 /**
