@@ -212,7 +212,7 @@ export const pickingRouter = router({
       }
 
       const booksRes = await sbFetch(
-  `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,bin_id,age_group&limit=500`
+  `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
 );
       const booksRaw = await booksRes.text();
 console.log('books status:', booksRes.status);
@@ -263,7 +263,7 @@ const allBooks: any[] = JSON.parse(booksRaw);
             author: b.author,
             cover_url: b.cover_url,
             bin_theme: b.bin_theme,
-            bin_id: b.bin_id,
+            bin_id: null, // not available at title level
             age_group: b.age_group,
             in_house_count: inHouseCount,
             score,
