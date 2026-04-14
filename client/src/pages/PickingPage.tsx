@@ -420,22 +420,23 @@ export default function PickingPage() {
     }
   };
 
-  const handleConfirmAll = () => {
-    const pickList = orders
-      .filter((o) => !confirmedMemberIds.has(o.member_id))
-      .map((o) => ({
-        member_id: o.member_id,
-        book_title_ids: (picks[o.member_id] ?? []).filter(Boolean),
-      }))
-      .filter((p) => p.book_title_ids.length > 0);
+const handleConfirmAll = () => {
+  const pickList = orders
+    .filter((o) => !confirmedMemberIds.has(o.member_id))
+    .map((o) => ({
+      member_id: o.member_id,
+      shipment_id: o.shipment_id,
+      book_title_ids: (picks[o.member_id] ?? []).filter(Boolean),
+    }))
+    .filter((p) => p.book_title_ids.length > 0);
 
-    if (!pickList.length) {
-      toast.error("No picks to confirm. Auto-fill books for each member first.");
-      return;
-    }
+  if (!pickList.length) {
+    toast.error("No picks to confirm. Auto-fill books for each member first.");
+    return;
+  }
 
-    confirmMutation.mutate({ picks: pickList });
-  };
+  confirmMutation.mutate({ picks: pickList });
+};
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
