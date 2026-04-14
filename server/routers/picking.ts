@@ -214,10 +214,10 @@ export const pickingRouter = router({
       const booksRes = await sbFetch(
         `/book_titles?age_group=ilike.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,bin_id,age_group&limit=500`
       );
-      const allBooks: any[] = await booksRes.json();
-
-      console.log('allBooks count:', allBooks.length);
-console.log('sample:', JSON.stringify(allBooks[0]));
+      const booksRaw = await booksRes.text();
+console.log('books status:', booksRes.status);
+console.log('books body:', booksRaw.substring(0, 300));
+const allBooks: any[] = JSON.parse(booksRaw);
 
       const titleIds = allBooks.map((b) => b.id);
       const inHouseCounts: Record<string, number> = {};
