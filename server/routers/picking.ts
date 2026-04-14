@@ -214,10 +214,8 @@ export const pickingRouter = router({
       const booksRes = await sbFetch(
   `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
 );
-      const booksRaw = await booksRes.text();
-console.log('books status:', booksRes.status);
-console.log('books body:', booksRaw.substring(0, 300));
-const allBooks: any[] = JSON.parse(booksRaw);
+
+const allBooks: any[] = await booksRes.json();
 
       const titleIds = allBooks.map((b) => b.id);
       const inHouseCounts: Record<string, number> = {};
