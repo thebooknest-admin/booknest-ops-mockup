@@ -212,8 +212,8 @@ export const pickingRouter = router({
       }
 
       const booksRes = await sbFetch(
-        `/book_titles?age_group=ilike.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,bin_id,age_group&limit=500`
-      );
+  `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,bin_id,age_group&limit=500`
+);
       const booksRaw = await booksRes.text();
 console.log('books status:', booksRes.status);
 console.log('books body:', booksRaw.substring(0, 300));
