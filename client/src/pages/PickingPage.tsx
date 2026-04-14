@@ -447,7 +447,7 @@ const handleConfirmAll = () => {
           <p className="text-sm text-muted-foreground mt-0.5">
             {isLoading
               ? "Loading today's orders…"
-              : `${orders.length} member${orders.length !== 1 ? "s" : ""} due to ship today`}
+              : `${orders.length} member${orders.length !== 1 ? "s" : ""} pending`}
             {overdueCount > 0 && (
               <span className="ml-2 text-red-600 font-medium">· {overdueCount} overdue</span>
             )}

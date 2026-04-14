@@ -96,9 +96,9 @@ export const pickingRouter = router({
       const today = input?.date ?? new Date().toISOString().split("T")[0];
 
       // Get all pending shipments scheduled for today or earlier
-      const shipmentsRes = await sbFetch(
-        `/shipments?scheduled_ship_date=lte.${today}&status=eq.pending&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
-      );
+     const shipmentsRes = await sbFetch(
+  `/shipments?status=eq.pending&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
+);
       const pendingShipments: any[] = await shipmentsRes.json();
 
       if (!pendingShipments.length) return { orders: [], date: today };
