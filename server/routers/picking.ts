@@ -194,6 +194,7 @@ export const pickingRouter = router({
         }
       }
 
+      // Get books already sent to this member
       const sentRes = await sbFetch(
         `/shipments?member_id=eq.${input.member_id}&select=id&limit=200`
       );
@@ -211,12 +212,13 @@ export const pickingRouter = router({
         }
       }
 
+      // Get available books for this age group
       const booksRes = await sbFetch(
-  `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
-);
+        `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
+      );
+      const allBooks: any[] = await booksRes.json();
 
-const allBooks: any[] = await booksRes.json();
-
+      // Get in-house copy counts
       const titleIds = allBooks.map((b) => b.id);
       const inHouseCounts: Record<string, number> = {};
       if (titleIds.length > 0) {
@@ -232,6 +234,7 @@ const allBooks: any[] = await booksRes.json();
         }
       }
 
+      // Score and rank books
       const scored = allBooks
         .filter((b) => (inHouseCounts[b.id] ?? 0) > 0)
         .filter((b) => !avoidThemes.has(b.bin_theme ?? ""))
@@ -261,7 +264,6 @@ const allBooks: any[] = await booksRes.json();
             author: b.author,
             cover_url: b.cover_url,
             bin_theme: b.bin_theme,
-            bin_id: null, // not available at title level
             age_group: b.age_group,
             in_house_count: inHouseCount,
             score,
@@ -271,8 +273,40 @@ const allBooks: any[] = await booksRes.json();
         })
         .sort((a, b) => b.score - a.score);
 
-      const suggestions = scored.slice(0, booksNeeded * 2);
       const recommended = scored.slice(0, booksNeeded);
+      const allSuggestions = scored.slice(0, booksNeeded * 2);
+
+      // For each recommended book, fetch one specific in-house copy (SKU + bin)
+      const recommendedWithCopies = await Promise.all(
+        recommended.map(async (book) => {
+          const copyRes = await sbFetch(
+            `/book_copies?book_title_id=eq.${book.book_title_id}&status=eq.in_house&select=id,sku,bin_id&limit=1&order=received_at.asc`
+          );
+          const [copy] = await copyRes.json();
+          return {
+            ...book,
+            copy_id: copy?.id ?? null,
+            sku: copy?.sku ?? null,
+            bin_id: copy?.bin_id ?? null,
+          };
+        })
+      );
+
+      // Also fetch copy info for all suggestions (for swap dropdown)
+      const allSuggestionsWithCopies = await Promise.all(
+        allSuggestions.map(async (book) => {
+          const copyRes = await sbFetch(
+            `/book_copies?book_title_id=eq.${book.book_title_id}&status=eq.in_house&select=id,sku,bin_id&limit=1&order=received_at.asc`
+          );
+          const [copy] = await copyRes.json();
+          return {
+            ...book,
+            copy_id: copy?.id ?? null,
+            sku: copy?.sku ?? null,
+            bin_id: copy?.bin_id ?? null,
+          };
+        })
+      );
 
       return {
         member_id: input.member_id,
@@ -280,8 +314,8 @@ const allBooks: any[] = await booksRes.json();
         tier: member.tier,
         age_group: member.age_group,
         books_needed: booksNeeded,
-        recommended,
-        all_suggestions: suggestions,
+        recommended: recommendedWithCopies,
+        all_suggestions: allSuggestionsWithCopies,
       };
     }),
 
@@ -296,6 +330,7 @@ const allBooks: any[] = await booksRes.json();
             member_id: z.string(),
             shipment_id: z.string(),
             book_title_ids: z.array(z.string()),
+            copy_ids: z.array(z.string()), // specific copy IDs from scan confirmation
           })
         ),
       })
@@ -304,22 +339,19 @@ const allBooks: any[] = await booksRes.json();
       const results: { member_id: string; shipment_id: string; shipment_number: string }[] = [];
 
       for (const pick of input.picks) {
-        const { member_id, shipment_id, book_title_ids } = pick;
+        const { member_id, shipment_id, book_title_ids, copy_ids } = pick;
 
-        // Get the existing shipment
         const shipmentRes = await sbFetch(
           `/shipments?id=eq.${shipment_id}&select=id,shipment_number,member_id&limit=1`
         );
         const [shipment] = await shipmentRes.json();
         if (!shipment) continue;
 
-        // Get member's default address
         const addrRes = await sbFetch(
           `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&select=id&limit=1`
         );
         const [address] = await addrRes.json();
 
-        // Update existing shipment to picking status
         await sbFetch(`/shipments?id=eq.${shipment_id}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -330,15 +362,12 @@ const allBooks: any[] = await booksRes.json();
           headers: { Prefer: "return=minimal" },
         });
 
-        // For each book title, find an in-house copy and assign it
-        for (const titleId of book_title_ids) {
-          const copyRes = await sbFetch(
-            `/book_copies?book_title_id=eq.${titleId}&status=eq.in_house&select=id&limit=1&order=received_at.asc`
-          );
-          const [copy] = await copyRes.json();
-          if (!copy) continue;
+        for (let i = 0; i < book_title_ids.length; i++) {
+          const titleId = book_title_ids[i];
+          const copyId = copy_ids[i];
+          if (!titleId || !copyId) continue;
 
-          await sbFetch(`/book_copies?id=eq.${copy.id}`, {
+          await sbFetch(`/book_copies?id=eq.${copyId}`, {
             method: "PATCH",
             body: JSON.stringify({
               status: "in_transit",
@@ -352,7 +381,7 @@ const allBooks: any[] = await booksRes.json();
             body: JSON.stringify({
               shipment_id: shipment_id,
               book_title_id: titleId,
-              book_copy_id: copy.id,
+              book_copy_id: copyId,
               status: "selected",
               selection_reason: "Batch pick",
               created_at: new Date().toISOString(),
@@ -361,7 +390,6 @@ const allBooks: any[] = await booksRes.json();
           });
         }
 
-        // Update member's next_ship_date (advance by ~4 weeks)
         const nextDate = new Date();
         nextDate.setDate(nextDate.getDate() + 28);
         await sbFetch(`/members?id=eq.${member_id}`, {

@@ -1,28 +1,27 @@
 /**
- * BookNest Ops — Batch Picking Page (Pharmacy-style)
+ * BookNest Ops — Scan-based Picking Page
  *
- * Morning workflow:
- * 1. See all members due to ship today
- * 2. Each member shows AI-suggested books (matched by age group + interests)
- * 3. Swap any suggestion if needed
- * 4. "Confirm All Picks" locks in assignments and creates shipments
- * 5. Navigate to the bin-sorted pick list, then ship each bundle
+ * Workflow:
+ * 1. Queue view — list of all pending orders
+ * 2. Click an order to enter Pick Mode
+ * 3. Pick Mode shows suggested books with bin location and SKU
+ * 4. Scan each book's SKU to confirm
+ * 5. All books scanned → Complete Order → next member
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import {
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   BookOpen,
-  Shuffle,
-  ClipboardList,
   ArrowRight,
+  ArrowLeft,
+  Barcode,
+  MapPin,
   Package,
-  Printer,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -40,565 +39,464 @@ const AGE_COLORS: Record<string, { bg: string; text: string; border: string }> =
   Soarers: { bg: "oklch(0.97 0.04 300)", text: "oklch(0.42 0.11 300)", border: "oklch(0.85 0.06 300)" },
 };
 
-// ─── Per-member book suggestion row ──────────────────────────────────────────
+type ScanState = "idle" | "success" | "error";
 
-interface MemberPickCardProps {
-  order: {
-    member_id: string;
-    member_name: string;
-    tier: string | null;
-    age_group: string;
-    next_ship_date: string | null;
-    books_needed: number;
-    interests: string[];
-    topics_to_avoid: string[];
-    address: any;
-  };
-  picks: Record<string, string[]>; // member_id → book_title_ids
-  onPicksChange: (memberId: string, titleIds: string[]) => void;
-  confirmed: boolean;
+interface ScannedBook {
+  book_title_id: string;
+  copy_id: string;
+  sku: string;
 }
 
-function MemberPickCard({ order, picks, onPicksChange, confirmed }: MemberPickCardProps) {
-  const [expanded, setExpanded] = useState(true);
-  const [swappingIdx, setSwappingIdx] = useState<number | null>(null);
+// ─── Pick Mode (single order scan view) ──────────────────────────────────────
+
+interface PickModeProps {
+  order: any;
+  onComplete: (scannedBooks: ScannedBook[]) => void;
+  onBack: () => void;
+}
+
+function PickMode({ order, onComplete, onBack }: PickModeProps) {
+  const [scannedBooks, setScannedBooks] = useState<ScannedBook[]>([]);
+  const [scanInput, setScanInput] = useState("");
+  const [scanState, setScanState] = useState<ScanState>("idle");
+  const [scanMessage, setScanMessage] = useState("");
+  const [activeSlot, setActiveSlot] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: suggestions, isLoading } = trpc.picking.suggestBooks.useQuery(
     { member_id: order.member_id, count: order.books_needed },
     { staleTime: 5 * 60 * 1000 }
   );
 
-  const currentPicks = picks[order.member_id] ?? suggestions?.recommended?.map((b) => b.book_title_id) ?? [];
-  const allSuggestions = suggestions?.all_suggestions ?? [];
+  const recommended = suggestions?.recommended ?? [];
+  const booksNeeded = order.books_needed;
+  const allScanned = scannedBooks.length >= booksNeeded;
 
-  // Auto-populate picks from recommendations when they load
-  const handleAutoFill = useCallback(() => {
-    if (suggestions?.recommended) {
-      onPicksChange(order.member_id, suggestions.recommended.map((b) => b.book_title_id));
+  // Auto-focus scan input
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [activeSlot]);
+
+  const handleScan = useCallback((sku: string) => {
+    if (!sku.trim() || allScanned) return;
+
+    const expectedBook = recommended[activeSlot];
+    if (!expectedBook) return;
+
+    const scannedSku = sku.trim().toUpperCase();
+    const expectedSku = expectedBook.sku?.toUpperCase();
+
+    if (!expectedSku) {
+      setScanState("error");
+      setScanMessage("No SKU on file for this book. Try swapping it.");
+      setScanInput("");
+      return;
     }
-  }, [suggestions, order.member_id, onPicksChange]);
 
-  const handleSwap = (idx: number, newTitleId: string) => {
-    const updated = [...currentPicks];
-    updated[idx] = newTitleId;
-    onPicksChange(order.member_id, updated);
-    setSwappingIdx(null);
+    if (scannedSku === expectedSku) {
+      // Check for duplicates
+      if (scannedBooks.some((b) => b.sku.toUpperCase() === scannedSku)) {
+        setScanState("error");
+        setScanMessage("This book was already scanned!");
+        setScanInput("");
+        return;
+      }
+
+      setScannedBooks((prev) => [
+        ...prev,
+        {
+          book_title_id: expectedBook.book_title_id,
+          copy_id: expectedBook.copy_id,
+          sku: expectedBook.sku,
+        },
+      ]);
+      setScanState("success");
+      setScanMessage(`✓ ${expectedBook.title} confirmed!`);
+      setScanInput("");
+      setActiveSlot((prev) => prev + 1);
+
+      setTimeout(() => setScanState("idle"), 2000);
+    } else {
+      setScanState("error");
+      setScanMessage(`Wrong book! Expected SKU: ${expectedSku}`);
+      setScanInput("");
+      setTimeout(() => setScanState("idle"), 3000);
+    }
+  }, [recommended, activeSlot, scannedBooks, allScanned]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleScan(scanInput);
+    }
   };
 
-  const isOverdue = order.next_ship_date && new Date(order.next_ship_date) < new Date();
+  const handleUnscan = (idx: number) => {
+    setScannedBooks((prev) => prev.filter((_, i) => i !== idx));
+    setActiveSlot(idx);
+    setScanState("idle");
+    setScanMessage("");
+  };
+
   const ageColors = AGE_COLORS[order.age_group] ?? AGE_COLORS["Fledglings"];
-  const booksSelected = currentPicks.filter(Boolean).length;
-  const booksNeeded = order.books_needed;
-  const isComplete = booksSelected >= booksNeeded;
 
   return (
-    <div className={cn(
-      "bg-card rounded-xl border overflow-hidden transition-all",
-      confirmed ? "border-green-300 opacity-70" : isComplete ? "border-green-200" : "border-border"
-    )}>
-      {/* Card header */}
-      <div
-        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
-        onClick={() => setExpanded((e) => !e)}
-      >
-        {/* Status dot */}
-        <div className={cn(
-          "w-2.5 h-2.5 rounded-full shrink-0",
-          confirmed ? "bg-green-500" : isComplete ? "bg-green-400" : isLoading ? "bg-muted-foreground/30 animate-pulse" : "bg-amber-400"
-        )} />
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-foreground">{order.member_name}</span>
-            <span
-              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
-              style={{ backgroundColor: ageColors.bg, color: ageColors.text, borderColor: ageColors.border }}
-            >
-              {order.age_group}
-            </span>
-            {order.tier && (
-              <span className="text-xs text-muted-foreground">
-                {TIER_LABELS[order.tier] ?? order.tier}
-              </span>
-            )}
-            {isOverdue && (
-              <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
-                <AlertTriangle className="w-3 h-3" /> Overdue
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-xs text-muted-foreground">
-              {booksSelected}/{booksNeeded} books selected
-            </span>
-            {order.interests.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                Interests: {order.interests.slice(0, 2).join(", ")}{order.interests.length > 2 ? ` +${order.interests.length - 2}` : ""}
-              </span>
-            )}
-            {order.topics_to_avoid.length > 0 && (
-              <span className="text-xs text-red-500">
-                Avoid: {order.topics_to_avoid.join(", ")}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {confirmed && (
-            <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Confirmed
-            </span>
-          )}
-          {!confirmed && !isComplete && !isLoading && (
-            <button
-              onClick={(e) => { e.stopPropagation(); handleAutoFill(); }}
-              className="text-xs px-2.5 py-1 rounded-lg border border-border hover:bg-muted transition-colors flex items-center gap-1"
-            >
-              <BookOpen className="w-3 h-3" /> Auto-fill
-            </button>
-          )}
-          {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        </div>
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Queue
+        </button>
       </div>
 
-      {/* Expanded book list */}
-      {expanded && !confirmed && (
-        <div className="border-t border-border/50 px-5 py-4 space-y-2 bg-muted/10">
-          {isLoading ? (
-            <div className="flex items-center gap-2 py-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Finding best books…</span>
-            </div>
-          ) : (
-            <>
-              {Array.from({ length: booksNeeded }).map((_, idx) => {
-                const titleId = currentPicks[idx];
-                const book = allSuggestions.find((s) => s.book_title_id === titleId)
-                  ?? suggestions?.recommended?.[idx];
-                const isSwapping = swappingIdx === idx;
+      {/* Member info */}
+      <div className="bg-card rounded-xl border border-border p-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-xl font-bold text-foreground">{order.member_name}</h2>
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+            style={{ backgroundColor: ageColors.bg, color: ageColors.text, borderColor: ageColors.border }}
+          >
+            {order.age_group}
+          </span>
+          <span className="text-sm text-muted-foreground">{TIER_LABELS[order.tier] ?? order.tier}</span>
+          <span className="text-sm text-muted-foreground ml-auto">
+            Ship date: {order.next_ship_date}
+          </span>
+        </div>
+        {order.interests.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Interests: {order.interests.join(", ")}
+          </p>
+        )}
+        {order.topics_to_avoid.length > 0 && (
+          <p className="text-xs text-red-500 mt-1">
+            Avoid: {order.topics_to_avoid.join(", ")}
+          </p>
+        )}
+      </div>
 
-                return (
-                  <div key={idx} className="flex items-start gap-3">
-                    {/* Slot number */}
-                    <span className="text-xs font-mono text-muted-foreground w-5 pt-2 shrink-0">
-                      {idx + 1}.
-                    </span>
+      {/* Progress */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 bg-muted rounded-full h-2">
+          <div
+            className="bg-green-500 h-2 rounded-full transition-all"
+            style={{ width: `${(scannedBooks.length / booksNeeded) * 100}%` }}
+          />
+        </div>
+        <span className="text-sm font-medium text-foreground">{scannedBooks.length}/{booksNeeded} scanned</span>
+      </div>
 
-                    {isSwapping ? (
-                      // Swap dropdown
-                      <div className="flex-1 bg-background border border-border rounded-lg p-2 space-y-1 max-h-48 overflow-y-auto">
-                        <p className="text-xs font-medium text-muted-foreground px-1 pb-1 border-b border-border/50">
-                          Select a replacement:
-                        </p>
-                        {allSuggestions
-                          .filter((s) => !currentPicks.includes(s.book_title_id) || s.book_title_id === titleId)
-                          .map((s) => (
-                            <button
-                              key={s.book_title_id}
-                              onClick={() => handleSwap(idx, s.book_title_id)}
-                              className="w-full text-left px-2 py-1.5 rounded hover:bg-muted/50 transition-colors"
-                            >
-                              <p className="text-xs font-medium text-foreground truncate">{s.title}</p>
-                              <p className="text-xs text-muted-foreground">{s.author} · {s.match_reason}</p>
-                            </button>
-                          ))}
-                        <button
-                          onClick={() => setSwappingIdx(null)}
-                          className="w-full text-xs text-muted-foreground hover:text-foreground py-1"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : book ? (
-                      // Book chip
-                      <div className="flex-1 flex items-center gap-2 bg-background border border-border/60 rounded-lg px-3 py-2">
-                        {book.cover_url ? (
-                          <img src={book.cover_url} alt="" className="w-7 h-9 object-cover rounded shrink-0" />
-                        ) : (
-                          <div className="w-7 h-9 bg-muted rounded shrink-0 flex items-center justify-center">
-                            <BookOpen className="w-3 h-3 text-muted-foreground" />
-                          </div>
+      {/* Book slots */}
+      {isLoading ? (
+        <div className="bg-card rounded-xl border border-border p-10 text-center">
+          <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Finding best books…</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {recommended.map((book, idx) => {
+            const isScanned = idx < scannedBooks.length;
+            const isActive = idx === activeSlot && !allScanned;
+            const isPending = idx > activeSlot;
+
+            return (
+              <div
+                key={book.book_title_id}
+                className={cn(
+                  "rounded-xl border p-4 transition-all",
+                  isScanned ? "border-green-300 bg-green-50" :
+                  isActive ? "border-brand-teal bg-white shadow-md" :
+                  "border-border bg-card opacity-50"
+                )}
+              >
+                <div className="flex items-start gap-4">
+                  {/* Cover */}
+                  {book.cover_url ? (
+                    <img src={book.cover_url} alt="" className="w-12 h-16 object-cover rounded shrink-0 shadow-sm" />
+                  ) : (
+                    <div className="w-12 h-16 bg-muted rounded shrink-0 flex items-center justify-center">
+                      <BookOpen className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                  )}
+
+                  {/* Book info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-foreground">{book.title}</p>
+                        <p className="text-sm text-muted-foreground">{book.author}</p>
+                        {book.match_reason && (
+                          <p className="text-xs mt-1" style={{ color: "oklch(0.50 0.12 155)" }}>
+                            {book.match_reason}
+                          </p>
                         )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-foreground truncate">{book.title}</p>
-                          <p className="text-xs text-muted-foreground truncate">{book.author}</p>
-                          {book.match_reason && (
-                            <p className="text-xs mt-0.5" style={{ color: "oklch(0.50 0.12 155)" }}>
-                              {book.match_reason}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-xs text-muted-foreground">{book.bin_id}</span>
+                      </div>
+                      {isScanned && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                            <CheckCircle2 className="w-4 h-4" /> Scanned
+                          </span>
                           <button
-                            onClick={() => setSwappingIdx(idx)}
-                            className="p-1 rounded hover:bg-muted transition-colors"
-                            title="Swap book"
+                            onClick={() => handleUnscan(idx)}
+                            className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
+                            title="Undo scan"
                           >
-                            <Shuffle className="w-3.5 h-3.5 text-muted-foreground" />
+                            <XCircle className="w-4 h-4" />
                           </button>
                         </div>
-                      </div>
-                    ) : (
-                      // Empty slot
-                      <button
-                        onClick={() => setSwappingIdx(idx)}
-                        className="flex-1 flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2 hover:bg-muted/30 transition-colors"
-                      >
-                        <span className="text-xs text-muted-foreground">Click to select a book</span>
-                      </button>
+                      )}
+                    </div>
+
+                    {/* Location + SKU */}
+                    <div className="flex items-center gap-4 mt-2">
+                      {book.bin_id && (
+                        <span className="flex items-center gap-1 text-xs font-mono font-bold text-foreground bg-muted px-2 py-1 rounded">
+                          <MapPin className="w-3 h-3" /> {book.bin_id}
+                        </span>
+                      )}
+                      {book.sku && (
+                        <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
+                          <Barcode className="w-3 h-3" /> {book.sku}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scan input — only show for active slot */}
+                {isActive && (
+                  <div className="mt-4 pt-4 border-t border-border/50">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Scan the barcode on the book spine to confirm:
+                    </p>
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={scanInput}
+                      onChange={(e) => setScanInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Scan SKU…"
+                      className={cn(
+                        "w-full border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 transition-all",
+                        scanState === "success" ? "border-green-400 focus:ring-green-200 bg-green-50" :
+                        scanState === "error" ? "border-red-400 focus:ring-red-200 bg-red-50" :
+                        "border-border focus:ring-brand-teal/20"
+                      )}
+                      autoFocus
+                    />
+                    {scanMessage && (
+                      <p className={cn(
+                        "text-xs mt-2 font-medium",
+                        scanState === "success" ? "text-green-600" : "text-red-500"
+                      )}>
+                        {scanMessage}
+                      </p>
                     )}
                   </div>
-                );
-              })}
-            </>
-          )}
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Complete button */}
+      {allScanned && (
+        <div className="sticky bottom-6">
+          <button
+            onClick={() => onComplete(scannedBooks)}
+            className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all hover:opacity-90 active:scale-95"
+            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+          >
+            <Package className="w-5 h-5" />
+            Complete Order — {order.member_name}
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main Picking Page ────────────────────────────────────────────────────────
+// ─── Queue View ───────────────────────────────────────────────────────────────
 
 export default function PickingPage() {
   const [, navigate] = useLocation();
-  const [picks, setPicks] = useState<Record<string, string[]>>({});
-  const [confirmedShipments, setConfirmedShipments] = useState<{ member_id: string; shipment_id: string; shipment_number: string }[]>([]);
-  const [showPickList, setShowPickList] = useState(false);
+  const [activeOrderIdx, setActiveOrderIdx] = useState<number | null>(null);
+  const [completedShipments, setCompletedShipments] = useState<{ member_id: string; shipment_id: string; shipment_number: string }[]>([]);
 
   const { data: dailyData, isLoading, refetch, isRefetching } =
     trpc.picking.dailyOrders.useQuery(undefined, { refetchInterval: 5 * 60 * 1000 });
 
   const confirmMutation = trpc.picking.confirmPicks.useMutation({
     onSuccess: (result) => {
-      setConfirmedShipments(result.shipments);
-      setShowPickList(true);
-      toast.success(`${result.shipments.length} shipment${result.shipments.length !== 1 ? "s" : ""} created!`);
+      setCompletedShipments((prev) => [...prev, ...result.shipments]);
+      setActiveOrderIdx(null);
+      toast.success("Order confirmed!");
+      refetch();
     },
     onError: (err) => {
-      toast.error("Failed to confirm picks: " + err.message);
+      toast.error("Failed to confirm: " + err.message);
     },
   });
 
-  const shipmentIds = confirmedShipments.map((s) => s.shipment_id);
-  const { data: pickListData } = trpc.picking.batchPickList.useQuery(
-    { shipment_ids: shipmentIds },
-    { enabled: shipmentIds.length > 0 }
-  );
-
   const orders = dailyData?.orders ?? [];
-  const overdueCount = orders.filter((o) => o.next_ship_date && new Date(o.next_ship_date) < new Date()).length;
+  const completedMemberIds = new Set(completedShipments.map((s) => s.member_id));
+  const pendingOrders = orders.filter((o) => !completedMemberIds.has(o.member_id));
+  const activeOrder = activeOrderIdx !== null ? pendingOrders[activeOrderIdx] : null;
 
-  const handlePicksChange = useCallback((memberId: string, titleIds: string[]) => {
-    setPicks((prev) => ({ ...prev, [memberId]: titleIds }));
-  }, []);
+  const handleComplete = useCallback((order: any, scannedBooks: ScannedBook[]) => {
+    confirmMutation.mutate({
+      picks: [{
+        member_id: order.member_id,
+        shipment_id: order.shipment_id,
+        book_title_ids: scannedBooks.map((b) => b.book_title_id),
+        copy_ids: scannedBooks.map((b) => b.copy_id),
+      }],
+    });
+  }, [confirmMutation]);
 
-  const confirmedMemberIds = new Set(confirmedShipments.map((s) => s.member_id));
-
-  const allPicksReady = orders.length > 0 && orders.every((o) => {
-    const memberPicks = picks[o.member_id] ?? [];
-    return memberPicks.filter(Boolean).length >= o.books_needed;
-  });
-
-  const handlePrintPickList = () => {
-    if (!pickListData) return;
-    const date = dailyData?.date
-      ? new Date(dailyData.date + "T12:00:00").toLocaleDateString("en-US", {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-        })
-      : new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-
-    const binsHtml = pickListData.bins
-      .map(
-        (bin) => `
-        <div class="bin-section">
-          <div class="bin-header">
-            <span class="bin-id">${bin.bin_id}</span>
-            <span class="bin-count">${bin.items.length} book${bin.items.length !== 1 ? "s" : ""}</span>
-          </div>
-          <table class="book-table">
-            <thead>
-              <tr>
-                <th class="col-cover"></th>
-                <th class="col-title">Title / Author</th>
-                <th class="col-sku">SKU</th>
-                <th class="col-member">Member</th>
-                <th class="col-check">✓</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${bin.items
-                .map(
-                  (item) => `
-                <tr>
-                  <td class="col-cover">
-                    ${item.cover_url
-                      ? `<img src="${item.cover_url}" alt="" class="cover-img" onerror="this.style.display='none'" />`
-                      : `<div class="cover-placeholder"></div>`
-                    }
-                  </td>
-                  <td class="col-title">
-                    <strong>${item.title}</strong><br/>
-                    <span class="author">${item.author}</span>
-                  </td>
-                  <td class="col-sku">${item.sku ?? "—"}</td>
-                  <td class="col-member">${item.member_name}</td>
-                  <td class="col-check"><div class="checkbox"></div></td>
-                </tr>`
-                )
-                .join("")}
-            </tbody>
-          </table>
-        </div>`
-      )
-      .join("");
-
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>BookNest Pick List — ${date}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; padding: 16px 20px; }
-    .page-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #2d6a4f; padding-bottom: 10px; margin-bottom: 16px; }
-    .page-header h1 { font-size: 18px; font-weight: 700; color: #2d6a4f; }
-    .page-header .meta { font-size: 10px; color: #666; text-align: right; line-height: 1.6; }
-    .summary { font-size: 10px; color: #555; margin-bottom: 14px; }
-    .bin-section { margin-bottom: 14px; break-inside: avoid; }
-    .bin-header { display: flex; justify-content: space-between; align-items: center; background: #f0f7f4; border: 1px solid #b7d9c8; border-radius: 4px 4px 0 0; padding: 5px 10px; }
-    .bin-id { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; color: #1a3d2b; letter-spacing: 0.05em; }
-    .bin-count { font-size: 10px; color: #555; }
-    .book-table { width: 100%; border-collapse: collapse; border: 1px solid #d4e8dc; border-top: none; border-radius: 0 0 4px 4px; overflow: hidden; }
-    .book-table thead tr { background: #f8fdf9; }
-    .book-table th { padding: 4px 8px; text-align: left; font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #d4e8dc; }
-    .book-table td { padding: 6px 8px; vertical-align: middle; border-bottom: 1px solid #eaf3ee; }
-    .book-table tr:last-child td { border-bottom: none; }
-    .book-table tr:nth-child(even) { background: #fafffe; }
-    .col-cover { width: 40px; }
-    .col-title { width: auto; }
-    .col-sku { width: 130px; font-family: 'Courier New', monospace; font-size: 10px; color: #444; white-space: nowrap; }
-    .col-member { width: 130px; font-weight: 600; color: #2d6a4f; }
-    .col-check { width: 28px; text-align: center; }
-    .cover-img { width: 28px; height: 38px; object-fit: cover; border-radius: 2px; border: 1px solid #ddd; display: block; }
-    .cover-placeholder { width: 28px; height: 38px; background: #e8f4ee; border-radius: 2px; border: 1px solid #cce0d4; }
-    .author { color: #666; font-size: 10px; }
-    .checkbox { width: 14px; height: 14px; border: 1.5px solid #999; border-radius: 2px; margin: 0 auto; }
-    @media print {
-      body { padding: 8px 12px; }
-      .bin-section { break-inside: avoid; }
-      @page { margin: 12mm 10mm; size: letter portrait; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page-header">
-    <div>
-      <h1>📚 BookNest Pick List</h1>
-      <div style="font-size:11px;color:#555;margin-top:3px">${date}</div>
-    </div>
-    <div class="meta">
-      ${pickListData.total_books} books &nbsp;·&nbsp; ${pickListData.bins.length} bins<br/>
-      Printed: ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-    </div>
-  </div>
-  ${binsHtml}
-</body>
-</html>`;
-
-    const win = window.open("", "_blank");
-    if (win) {
-      win.document.write(html);
-      win.document.close();
-      win.focus();
-      setTimeout(() => win.print(), 500);
-    }
-  };
-
-const handleConfirmAll = () => {
-  const pickList = orders
-    .filter((o) => !confirmedMemberIds.has(o.member_id))
-    .map((o) => ({
-      member_id: o.member_id,
-      shipment_id: o.shipment_id,
-      book_title_ids: (picks[o.member_id] ?? []).filter(Boolean),
-    }))
-    .filter((p) => p.book_title_ids.length > 0);
-
-  if (!pickList.length) {
-    toast.error("No picks to confirm. Auto-fill books for each member first.");
-    return;
+  // Show pick mode if an order is active
+  if (activeOrder) {
+    return (
+      <PickMode
+        order={activeOrder}
+        onComplete={(scannedBooks) => handleComplete(activeOrder, scannedBooks)}
+        onBack={() => setActiveOrderIdx(null)}
+      />
+    );
   }
 
-  confirmMutation.mutate({ picks: pickList });
-};
-
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Daily Batch Picking</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Picking Queue</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {isLoading
-              ? "Loading today's orders…"
-              : `${orders.length} member${orders.length !== 1 ? "s" : ""} pending`}
-            {overdueCount > 0 && (
-              <span className="ml-2 text-red-600 font-medium">· {overdueCount} overdue</span>
-            )}
-            {dailyData?.date && (
-              <span className="ml-2 text-muted-foreground">
-                · {new Date(dailyData.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              ? "Loading orders…"
+              : `${pendingOrders.length} order${pendingOrders.length !== 1 ? "s" : ""} pending`}
+            {completedShipments.length > 0 && (
+              <span className="ml-2 text-green-600 font-medium">
+                · {completedShipments.length} completed today
               </span>
             )}
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
+            Refresh
+          </button>
+          {completedShipments.length > 0 && (
+            <button
+              onClick={() => navigate("/shipping")}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+            >
+              Go to Shipping <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Post-confirm: Bin-sorted pick list */}
-      {showPickList && pickListData && (
-        <div className="rounded-xl border-2 p-5 space-y-4" style={{ borderColor: "oklch(0.75 0.12 155)", backgroundColor: "oklch(0.97 0.03 155)" }}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="w-5 h-5" style={{ color: "oklch(0.42 0.11 155)" }} />
-              <h2 className="font-semibold text-foreground">
-                Warehouse Pick List — {pickListData.total_books} books across {pickListData.bins.length} bins
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrintPickList}
-                className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border transition-colors"
-                style={{ borderColor: "oklch(0.75 0.12 155)", color: "oklch(0.42 0.11 155)", backgroundColor: "oklch(0.99 0.01 155)" }}
-              >
-                <Printer className="w-4 h-4" />
-                Print Pick List
-              </button>
-              <button
-                onClick={() => navigate("/shipping")}
-                className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors"
-                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-              >
-                Go to Shipping <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            Walk the warehouse in bin order. Pull each book and place it in the labelled tray for that member.
-          </p>
-
-          <div className="space-y-3">
-                {pickListData.bins.map((bin) => (
-                  <div key={bin.bin_id} className="bg-background rounded-lg border border-border overflow-hidden">
-                    <div className="px-4 py-2.5 bg-muted/30 border-b border-border/50 flex items-center justify-between">
-                      <span className="text-sm font-bold text-foreground font-mono tracking-wide">{bin.bin_id}</span>
-                      <span className="text-xs text-muted-foreground">{bin.items.length} book{bin.items.length !== 1 ? "s" : ""}</span>
-                    </div>
-                    <div className="divide-y divide-border/30">
-                      {bin.items.map((item, i) => (
-                        <div key={i} className="px-4 py-3 flex items-center gap-3">
-                          {/* Cover thumbnail */}
-                          {item.cover_url ? (
-                            <img
-                              src={item.cover_url}
-                              alt={item.title}
-                              className="w-9 h-12 object-cover rounded shadow-sm shrink-0 border border-border/40"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <div className="w-9 h-12 bg-muted rounded shrink-0 flex items-center justify-center border border-border/40">
-                              <BookOpen className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium text-foreground truncate block">{item.title}</span>
-                            <span className="text-xs text-muted-foreground">{item.author}</span>
-                          </div>
-                          {item.sku && (
-                            <span className="text-xs font-mono text-muted-foreground shrink-0 bg-muted px-1.5 py-0.5 rounded">{item.sku}</span>
-                          )}
-                          <span className="text-xs font-semibold shrink-0 px-2 py-1 rounded-full" style={{ color: "oklch(0.42 0.11 155)", backgroundColor: "oklch(0.95 0.03 155)" }}>
-                            → {item.member_name}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-          </div>
-        </div>
-      )}
-
-      {/* Loading state */}
+      {/* Loading */}
       {isLoading && (
         <div className="bg-card rounded-xl border border-border p-10 text-center">
           <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Loading today's orders and suggesting books…</p>
+          <p className="text-sm text-muted-foreground">Loading orders…</p>
         </div>
       )}
 
-      {/* Empty state */}
-      {!isLoading && orders.length === 0 && (
+      {/* Empty */}
+      {!isLoading && pendingOrders.length === 0 && (
         <div className="bg-card rounded-xl border border-border p-10 text-center">
           <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
           <p className="text-base font-medium text-foreground">All caught up!</p>
-          <p className="text-sm text-muted-foreground mt-1">No members are due to ship today.</p>
+          <p className="text-sm text-muted-foreground mt-1">No pending orders to pick.</p>
+          {completedShipments.length > 0 && (
+            <button
+              onClick={() => navigate("/shipping")}
+              className="mt-4 flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white mx-auto transition-colors"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+            >
+              Go to Shipping <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
 
-      {/* Member pick cards */}
-      {!isLoading && orders.length > 0 && (
+      {/* Order queue */}
+      {!isLoading && pendingOrders.length > 0 && (
         <div className="space-y-3">
-          {orders.map((order) => (
-            <MemberPickCard
-              key={order.member_id}
-              order={order}
-              picks={picks}
-              onPicksChange={handlePicksChange}
-              confirmed={confirmedMemberIds.has(order.member_id)}
-            />
-          ))}
+          {pendingOrders.map((order, idx) => {
+            const ageColors = AGE_COLORS[order.age_group] ?? AGE_COLORS["Fledglings"];
+            const isOverdue = order.next_ship_date && order.next_ship_date < new Date().toISOString().split("T")[0];
+
+            return (
+              <button
+                key={order.member_id}
+                onClick={() => setActiveOrderIdx(idx)}
+                className="w-full bg-card rounded-xl border border-border p-5 text-left hover:border-brand-teal hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-foreground">{order.member_name}</span>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+                        style={{ backgroundColor: ageColors.bg, color: ageColors.text, borderColor: ageColors.border }}
+                      >
+                        {order.age_group}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {TIER_LABELS[order.tier] ?? order.tier} · {order.books_needed} books
+                      </span>
+                      {isOverdue && (
+                        <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
+                          <AlertTriangle className="w-3 h-3" /> Overdue
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-muted-foreground">
+                        Ship: {order.next_ship_date}
+                      </span>
+                      {order.interests.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {order.interests.slice(0, 2).join(", ")}{order.interests.length > 2 ? ` +${order.interests.length - 2}` : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-brand-teal transition-colors shrink-0" />
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Confirm All Picks sticky footer */}
-      {!isLoading && orders.length > 0 && confirmedShipments.length < orders.length && (
-        <div className="sticky bottom-6 flex justify-end">
-          <button
-            onClick={handleConfirmAll}
-            disabled={confirmMutation.isPending}
-            className={cn(
-              "flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold shadow-lg transition-all",
-              allPicksReady
-                ? "hover:opacity-90 active:scale-95"
-                : "opacity-60 cursor-not-allowed"
-            )}
-            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-          >
-            {confirmMutation.isPending ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4" />
-            )}
-            {confirmMutation.isPending
-              ? "Creating shipments…"
-              : `Confirm All Picks (${orders.filter((o) => !confirmedMemberIds.has(o.member_id)).length} orders)`}
-          </button>
+      {/* Completed orders */}
+      {completedShipments.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Completed</p>
+          {completedShipments.map((s) => (
+            <div key={s.shipment_id} className="bg-green-50 rounded-xl border border-green-200 px-5 py-3 flex items-center gap-3">
+              <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+              <span className="text-sm font-medium text-foreground">
+                {orders.find((o) => o.member_id === s.member_id)?.member_name ?? "Member"}
+              </span>
+              <span className="text-xs text-muted-foreground font-mono">{s.shipment_number}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
