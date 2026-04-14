@@ -216,6 +216,9 @@ export const pickingRouter = router({
       );
       const allBooks: any[] = await booksRes.json();
 
+      console.log('allBooks count:', allBooks.length);
+console.log('sample:', JSON.stringify(allBooks[0]));
+
       const titleIds = allBooks.map((b) => b.id);
       const inHouseCounts: Record<string, number> = {};
       if (titleIds.length > 0) {
