@@ -1,10 +1,12 @@
 /**
- * Picking Router — Batch pharmacy-style picking engine
+ * Picking Router — Scan-based picking engine
  *
- * Workflow:
- * 1. picking.dailyOrders  → list all members with pending shipments due today or earlier
- * 2. picking.suggestBooks → for a given member, return ranked book suggestions
- * 3. picking.confirmPicks → lock in book assignments (updates existing shipment + creates shipment_books rows)
+ * Status flow:
+ * picking → packing → shipped
+ *
+ * 1. picking.dailyOrders  → list all shipments in 'picking' status
+ * 2. picking.suggestBooks → ranked book suggestions with SKU + bin location
+ * 3. picking.confirmPicks → scan confirmed, move shipment to 'packing'
  */
 
 import { z } from "zod";
@@ -27,7 +29,6 @@ async function sbFetch(path: string, options: RequestInit = {}): Promise<Respons
   });
 }
 
-/** How many books each tier gets per shipment */
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
   "story-nest": 8,
@@ -35,9 +36,6 @@ const TIER_BOOK_COUNT: Record<string, number> = {
 };
 const DEFAULT_BOOK_COUNT = 4;
 
-/**
- * Maps interest_category names to bin_theme values used on book_titles.
- */
 const INTEREST_TO_THEMES: Record<string, string[]> = {
   "Brave & Bold": ["adventure"],
   "Heart & Home": ["life"],
@@ -49,9 +47,6 @@ const INTEREST_TO_THEMES: Record<string, string[]> = {
   "Giggle Worthy": ["humor"],
 };
 
-/**
- * Maps topics_to_avoid values to bin_theme values that should be excluded.
- */
 const AVOID_TO_THEMES: Record<string, string[]> = {
   "Scary / Horror": ["horror", "scary"],
   "Violence": ["violence", "war", "conflict"],
@@ -77,14 +72,9 @@ function getBookCount(tier: string | null): number {
   return TIER_BOOK_COUNT[tier] ?? DEFAULT_BOOK_COUNT;
 }
 
-function normalizeAgeGroup(ag: string | null): string {
-  if (!ag) return "";
-  return ag.toLowerCase().replace(/\s+/g, "_");
-}
-
 export const pickingRouter = router({
   /**
-   * Returns all members with pending shipments due today or earlier.
+   * Returns all shipments in 'picking' status.
    */
   dailyOrders: publicProcedure
     .input(
@@ -95,10 +85,10 @@ export const pickingRouter = router({
     .query(async ({ input }) => {
       const today = input?.date ?? new Date().toISOString().split("T")[0];
 
-      // Get all pending shipments scheduled for today or earlier
-     const shipmentsRes = await sbFetch(
-  `/shipments?status=eq.pending&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
-);
+      // Get all shipments in picking status
+      const shipmentsRes = await sbFetch(
+        `/shipments?status=eq.picking&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
+      );
       const pendingShipments: any[] = await shipmentsRes.json();
 
       if (!pendingShipments.length) return { orders: [], date: today };
@@ -156,7 +146,7 @@ export const pickingRouter = router({
     }),
 
   /**
-   * Suggests ranked books for a specific member.
+   * Suggests ranked books for a specific member with SKU + bin location.
    */
   suggestBooks: publicProcedure
     .input(
@@ -276,7 +266,7 @@ export const pickingRouter = router({
       const recommended = scored.slice(0, booksNeeded);
       const allSuggestions = scored.slice(0, booksNeeded * 2);
 
-      // For each recommended book, fetch one specific in-house copy (SKU + bin)
+      // Fetch one specific in-house copy per recommended book
       const recommendedWithCopies = await Promise.all(
         recommended.map(async (book) => {
           const copyRes = await sbFetch(
@@ -292,7 +282,7 @@ export const pickingRouter = router({
         })
       );
 
-      // Also fetch copy info for all suggestions (for swap dropdown)
+      // Fetch copy info for all suggestions
       const allSuggestionsWithCopies = await Promise.all(
         allSuggestions.map(async (book) => {
           const copyRes = await sbFetch(
@@ -320,7 +310,7 @@ export const pickingRouter = router({
     }),
 
   /**
-   * Confirms picks — updates existing pending shipment instead of creating a new one.
+   * Confirms scanned picks — moves shipment to 'packing' status.
    */
   confirmPicks: publicProcedure
     .input(
@@ -330,7 +320,7 @@ export const pickingRouter = router({
             member_id: z.string(),
             shipment_id: z.string(),
             book_title_ids: z.array(z.string()),
-            copy_ids: z.array(z.string()), // specific copy IDs from scan confirmation
+            copy_ids: z.array(z.string()),
           })
         ),
       })
@@ -341,32 +331,37 @@ export const pickingRouter = router({
       for (const pick of input.picks) {
         const { member_id, shipment_id, book_title_ids, copy_ids } = pick;
 
+        // Get the existing shipment
         const shipmentRes = await sbFetch(
           `/shipments?id=eq.${shipment_id}&select=id,shipment_number,member_id&limit=1`
         );
         const [shipment] = await shipmentRes.json();
         if (!shipment) continue;
 
+        // Get member's default address
         const addrRes = await sbFetch(
           `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&select=id&limit=1`
         );
         const [address] = await addrRes.json();
 
+        // Update shipment to packing status
         await sbFetch(`/shipments?id=eq.${shipment_id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: "picking",
+            status: "packing",
             address_id: address?.id ?? null,
             updated_at: new Date().toISOString(),
           }),
           headers: { Prefer: "return=minimal" },
         });
 
+        // Assign specific scanned copies to shipment
         for (let i = 0; i < book_title_ids.length; i++) {
           const titleId = book_title_ids[i];
           const copyId = copy_ids[i];
           if (!titleId || !copyId) continue;
 
+          // Mark copy as in_transit
           await sbFetch(`/book_copies?id=eq.${copyId}`, {
             method: "PATCH",
             body: JSON.stringify({
@@ -376,6 +371,7 @@ export const pickingRouter = router({
             headers: { Prefer: "return=minimal" },
           });
 
+          // Create shipment_books record
           await sbFetch("/shipment_books", {
             method: "POST",
             body: JSON.stringify({
@@ -383,13 +379,14 @@ export const pickingRouter = router({
               book_title_id: titleId,
               book_copy_id: copyId,
               status: "selected",
-              selection_reason: "Batch pick",
+              selection_reason: "Scan confirmed",
               created_at: new Date().toISOString(),
             }),
             headers: { Prefer: "return=minimal" },
           });
         }
 
+        // Update member's next_ship_date (advance by ~4 weeks)
         const nextDate = new Date();
         nextDate.setDate(nextDate.getDate() + 28);
         await sbFetch(`/members?id=eq.${member_id}`, {
@@ -412,7 +409,7 @@ export const pickingRouter = router({
     }),
 
   /**
-   * Returns a master pick list for all confirmed picks in a batch.
+   * Returns a master pick list for confirmed shipments grouped by bin.
    */
   batchPickList: publicProcedure
     .input(z.object({ shipment_ids: z.array(z.string()) }))
@@ -430,7 +427,7 @@ export const pickingRouter = router({
         for (let i = 0; i < titleIds.length; i += 50) {
           const batch = titleIds.slice(i, i + 50);
           const tr = await sbFetch(
-            `/book_titles?id=in.(${batch.join(",")})&select=id,title,author,bin_id,cover_url&limit=200`
+            `/book_titles?id=in.(${batch.join(",")})&select=id,title,author,cover_url&limit=200`
           );
           const titles: any[] = await tr.json();
           for (const t of titles) titleMap[t.id] = t;
@@ -443,7 +440,7 @@ export const pickingRouter = router({
         for (let i = 0; i < copyIds.length; i += 50) {
           const batch = copyIds.slice(i, i + 50);
           const cr = await sbFetch(
-            `/book_copies?id=in.(${batch.join(",")})&select=id,sku&limit=200`
+            `/book_copies?id=in.(${batch.join(",")})&select=id,sku,bin_id&limit=200`
           );
           const copies: any[] = await cr.json();
           for (const c of copies) copyMap[c.id] = c;
@@ -472,7 +469,7 @@ export const pickingRouter = router({
       for (const sb of sbBooks) {
         const title = titleMap[sb.book_title_id];
         if (!title) continue;
-        const binId = title.bin_id ?? "UNKNOWN";
+        const binId = copyMap[sb.book_copy_id]?.bin_id ?? "UNKNOWN";
         if (!binMap[binId]) binMap[binId] = { bin_id: binId, items: [] };
         binMap[binId].items.push({
           book_title_id: sb.book_title_id,
