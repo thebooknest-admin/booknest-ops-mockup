@@ -17,10 +17,8 @@ function isOverdue(date: string | null): boolean {
 }
 
 export default function ShippingPage() {
-  const { data: shippingData, isLoading: loadingShipping, refetch, isRefetching } =
-    trpc.shipments.list.useQuery({ status: "shipping" }, { refetchInterval: 60_000 });
-  const { data: packedData, isLoading: loadingPacked } =
-    trpc.shipments.list.useQuery({ status: "packed" }, { refetchInterval: 60_000 });
+  const { data: packedData, isLoading: loadingShipping, refetch, isRefetching } =
+  trpc.shipments.list.useQuery({ status: "packed" }, { refetchInterval: 60_000 });
   const { data: pendingSwapsData, isLoading: loadingSwaps, refetch: refetchSwaps } =
     trpc.shipping.pendingSwaps.useQuery(undefined, { refetchInterval: 60_000 });
 
@@ -53,8 +51,8 @@ export default function ShippingPage() {
     },
   });
 
-  const isLoading = loadingShipping || loadingPacked;
-  const allOrders = [...(shippingData?.data ?? []), ...(packedData?.data ?? [])];
+  const isLoading = loadingShipping;
+  const allOrders = packedData?.data ?? [];
   const overdueCount = allOrders.filter((o) => isOverdue(o.scheduled_ship_date)).length;
   const pendingSwaps = pendingSwapsData?.pending ?? [];
 

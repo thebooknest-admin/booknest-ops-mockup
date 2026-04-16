@@ -18,6 +18,7 @@ import {
   Bell,
   BookMarked,
   BookOpen,
+  BoxIcon,
   CalendarCheck,
   ChevronDown,
   ChevronRight,
@@ -66,6 +67,7 @@ const buildNavItems = (
     icon: Package,
     children: [
       { label: "Picking Queue", href: "/picking", icon: Package },
+      { label: "Packing Queue", href: "/packing", icon: BoxIcon },   // ← add this
       { label: "Shipping Queue", href: "/shipping", icon: Truck },
       {
         label: "Label Queue",

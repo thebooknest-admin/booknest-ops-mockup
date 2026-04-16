@@ -23,6 +23,7 @@ import StockQueuePage from "./pages/StockQueuePage";
 import SupportPage from "./pages/SupportPage";
 import WelcomePage from "./pages/WelcomePage";
 import IsbnLookupPage from "./pages/IsbnLookupPage";
+import PackingPage from "./pages/PackingPage";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
 function DashboardRouter() {
@@ -33,6 +34,7 @@ function DashboardRouter() {
           <Route path="/" component={Dashboard} />
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/picking" component={PickingPage} />
+          <Route path="/packing" component={PackingPage} />
           <Route path="/shipping" component={ShippingPage} />
           <Route path="/ship/:id" component={ShipBundlePage} />
           <Route path="/labels" component={LabelsPage} />

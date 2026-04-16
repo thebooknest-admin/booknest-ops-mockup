@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { pickingRouter } from "./routers/picking";
 import { shippingRouter } from "./routers/shipping";
+import { packingRouter } from "./routers/packing";
 import {
   getBinConfigs,
   getBookCopies,
@@ -44,6 +45,7 @@ async function sbFetch(
 export const appRouter = router({
   system: systemRouter,
   picking: pickingRouter,
+  packing: packingRouter,
   shipping: shippingRouter,
   isbn: isbnRouter,
 
