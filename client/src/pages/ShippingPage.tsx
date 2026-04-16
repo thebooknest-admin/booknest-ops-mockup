@@ -1,7 +1,7 @@
 // BookNest Ops — Shipping Queue (wired to real Supabase data)
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Truck, AlertTriangle, Clock, RefreshCw, CheckCircle2, Tag, ArrowRightLeft, CalendarDays, PackageCheck } from "lucide-react";
+import { Truck, AlertTriangle, Clock, RefreshCw, CheckCircle2, Tag, ArrowRightLeft, CalendarDays, PackageCheck, Printer, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -29,13 +29,9 @@ function isDueToday(date: string | null): boolean {
 
 function getNextShipDay(): { label: string; isToday: boolean } {
   const today = new Date();
-  const dow = today.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  const todayStr = today.toLocaleDateString("en-US", { weekday: "long" });
-
-  if (dow === 2) return { label: `Today (Tuesday)`, isToday: true };
-  if (dow === 5) return { label: `Today (Friday)`, isToday: true };
-
-  // Find next ship day
+  const dow = today.getDay();
+  if (dow === 2) return { label: "Today (Tuesday)", isToday: true };
+  if (dow === 5) return { label: "Today (Friday)", isToday: true };
   const daysUntilTue = (2 - dow + 7) % 7;
   const daysUntilFri = (5 - dow + 7) % 7;
   const daysUntilNext = Math.min(daysUntilTue, daysUntilFri);
@@ -51,39 +47,67 @@ export default function ShippingPage() {
   const { data: pendingSwapsData, isLoading: loadingSwaps, refetch: refetchSwaps } =
     trpc.shipping.pendingSwaps.useQuery(undefined, { refetchInterval: 60_000 });
 
-  const generateLabel = trpc.shipping.generateLabel.useMutation({
+  // ── Return label mutations ────────────────────────────────────────────────
+  const generateReturnLabel = trpc.shipping.generateLabel.useMutation({
     onSuccess: (result) => {
       if (result.success && result.label_url) {
         toast.success("Return label generated!", {
-          action: {
-            label: "Open Label",
-            onClick: () => window.open(result.label_url!, "_blank"),
-          },
+          action: { label: "Open Label", onClick: () => window.open(result.label_url!, "_blank") },
         });
       } else if (!result.success) {
         toast.error(`Label generation failed: ${result.error}`);
       }
       refetchSwaps();
     },
-    onError: () => {
-      toast.error("Failed to generate label. Check EasyPost configuration.");
-    },
+    onError: () => toast.error("Failed to generate label. Check EasyPost configuration."),
   });
 
-  const generateAllLabels = trpc.shipping.generateAllLabels.useMutation({
+  const generateAllReturnLabels = trpc.shipping.generateAllLabels.useMutation({
     onSuccess: (result) => {
       toast.success(`Generated ${result.processed} label${result.processed !== 1 ? "s" : ""}${result.failed > 0 ? `, ${result.failed} failed` : ""}`);
       refetchSwaps();
     },
-    onError: () => {
-      toast.error("Batch label generation failed.");
+    onError: () => toast.error("Batch label generation failed."),
+  });
+
+  // ── Outbound label mutations ──────────────────────────────────────────────
+  const generateOutboundLabel = trpc.shipping.generateOutboundLabel.useMutation({
+    onSuccess: (result) => {
+      if (result.success && result.label_url) {
+        toast.success(
+          result.already_existed ? "Label already exists — opening." : `Label generated! ${result.carrier} · $${result.shipping_cost?.toFixed(2)}`,
+          { action: { label: "Open Label", onClick: () => window.open(result.label_url!, "_blank") } }
+        );
+      } else if (!result.success) {
+        toast.error(`Label failed: ${result.error}`);
+      }
+      refetch();
     },
+    onError: () => toast.error("Failed to generate label. Check EasyPost configuration."),
+  });
+
+  const generateAllOutboundLabels = trpc.shipping.generateAllOutboundLabels.useMutation({
+    onSuccess: (result) => {
+      if (result.processed === 0 && result.failed === 0) {
+        toast.info("All labels already generated.");
+        return;
+      }
+      toast.success(
+        `Generated ${result.processed} label${result.processed !== 1 ? "s" : ""}${result.failed > 0 ? ` · ${result.failed} failed` : ""}`,
+        result.label_urls.length > 0
+          ? { action: { label: "Open All", onClick: () => result.label_urls.forEach((url) => window.open(url, "_blank")) } }
+          : undefined
+      );
+      refetch();
+    },
+    onError: () => toast.error("Bulk label generation failed."),
   });
 
   const allOrders = packedData?.data ?? [];
   const overdueCount = allOrders.filter((o) => isOverdue(o.scheduled_ship_date)).length;
   const dueTodayCount = allOrders.filter((o) => isDueToday(o.scheduled_ship_date)).length;
   const upcomingCount = allOrders.filter((o) => !isOverdue(o.scheduled_ship_date) && !isDueToday(o.scheduled_ship_date)).length;
+  const unlabeledCount = allOrders.filter((o) => !(o as any).label_url).length;
   const pendingSwaps = pendingSwapsData?.pending ?? [];
   const nextShipDay = getNextShipDay();
 
@@ -115,13 +139,13 @@ export default function ShippingPage() {
           </div>
           {pendingSwaps.length > 0 && (
             <button
-              onClick={() => generateAllLabels.mutate()}
-              disabled={generateAllLabels.isPending}
+              onClick={() => generateAllReturnLabels.mutate()}
+              disabled={generateAllReturnLabels.isPending}
               className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
               <Tag className="w-4 h-4" />
-              {generateAllLabels.isPending ? "Generating..." : "Generate All Labels"}
+              {generateAllReturnLabels.isPending ? "Generating..." : "Generate All Labels"}
             </button>
           )}
         </div>
@@ -171,7 +195,7 @@ export default function ShippingPage() {
                     <div className="col-span-2 flex justify-end">
                       {swap.address ? (
                         <button
-                          onClick={() => generateLabel.mutate({
+                          onClick={() => generateReturnLabel.mutate({
                             return_id: swap.return_id,
                             member_name: swap.member_name,
                             street: swap.address!.street,
@@ -180,12 +204,12 @@ export default function ShippingPage() {
                             state: swap.address!.state,
                             zip: swap.address!.zip,
                           })}
-                          disabled={generateLabel.isPending}
+                          disabled={generateReturnLabel.isPending}
                           className="text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-50 flex items-center gap-1"
                           style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
                         >
                           <Tag className="w-3 h-3" />
-                          {generateLabel.isPending ? "..." : "Generate"}
+                          {generateReturnLabel.isPending ? "..." : "Generate"}
                         </button>
                       ) : (
                         <span className="text-xs text-muted-foreground italic">No address</span>
@@ -209,24 +233,36 @@ export default function ShippingPage() {
             </h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isLoading ? "Loading..." : `${allOrders.length} order${allOrders.length !== 1 ? "s" : ""} packed and ready`}
-              {overdueCount > 0 && (
-                <span className="ml-2 text-red-600 font-medium">· {overdueCount} overdue</span>
-              )}
+              {overdueCount > 0 && <span className="ml-2 text-red-600 font-medium">· {overdueCount} overdue</span>}
             </p>
           </div>
-          <button
-            onClick={() => refetch()}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refetch()}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
+              Refresh
+            </button>
+            {unlabeledCount > 0 && (
+              <button
+                onClick={() => generateAllOutboundLabels.mutate()}
+                disabled={generateAllOutboundLabels.isPending}
+                className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50"
+                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+              >
+                <Printer className="w-4 h-4" />
+                {generateAllOutboundLabels.isPending
+                  ? "Generating..."
+                  : `Generate All Labels (${unlabeledCount})`}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Stat pills ─────────────────────────────────────────────── */}
         {!isLoading && (
           <div className="grid grid-cols-3 gap-3">
-            {/* Next ship day */}
             <div
               className="flex items-center gap-3 px-4 py-3 rounded-xl border"
               style={{
@@ -234,22 +270,15 @@ export default function ShippingPage() {
                 borderColor: nextShipDay.isToday ? "oklch(0.85 0.08 155)" : "oklch(0.91 0.006 80)",
               }}
             >
-              <CalendarDays
-                className="w-4 h-4 shrink-0"
-                style={{ color: nextShipDay.isToday ? "oklch(0.42 0.11 155)" : "oklch(0.55 0.01 80)" }}
-              />
+              <CalendarDays className="w-4 h-4 shrink-0" style={{ color: nextShipDay.isToday ? "oklch(0.42 0.11 155)" : "oklch(0.55 0.01 80)" }} />
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Next Ship Day</p>
-                <p
-                  className="text-sm font-semibold"
-                  style={{ color: nextShipDay.isToday ? "oklch(0.35 0.10 155)" : "oklch(0.25 0.01 80)" }}
-                >
+                <p className="text-sm font-semibold" style={{ color: nextShipDay.isToday ? "oklch(0.35 0.10 155)" : "oklch(0.25 0.01 80)" }}>
                   {nextShipDay.label}
                 </p>
               </div>
             </div>
 
-            {/* Due today */}
             <div
               className="flex items-center gap-3 px-4 py-3 rounded-xl border"
               style={{
@@ -257,35 +286,20 @@ export default function ShippingPage() {
                 borderColor: dueTodayCount > 0 ? "oklch(0.88 0.08 75)" : "oklch(0.91 0.006 80)",
               }}
             >
-              <PackageCheck
-                className="w-4 h-4 shrink-0"
-                style={{ color: dueTodayCount > 0 ? "oklch(0.55 0.14 75)" : "oklch(0.65 0.01 80)" }}
-              />
+              <PackageCheck className="w-4 h-4 shrink-0" style={{ color: dueTodayCount > 0 ? "oklch(0.55 0.14 75)" : "oklch(0.65 0.01 80)" }} />
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Due Today</p>
-                <p
-                  className="text-sm font-semibold"
-                  style={{ color: dueTodayCount > 0 ? "oklch(0.40 0.12 75)" : "oklch(0.55 0.01 80)" }}
-                >
+                <p className="text-sm font-semibold" style={{ color: dueTodayCount > 0 ? "oklch(0.40 0.12 75)" : "oklch(0.55 0.01 80)" }}>
                   {dueTodayCount} order{dueTodayCount !== 1 ? "s" : ""}
                 </p>
               </div>
             </div>
 
-            {/* Upcoming */}
-            <div
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border"
-              style={{
-                backgroundColor: "oklch(0.98 0.01 80)",
-                borderColor: "oklch(0.91 0.006 80)",
-              }}
-            >
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border" style={{ backgroundColor: "oklch(0.98 0.01 80)", borderColor: "oklch(0.91 0.006 80)" }}>
               <Clock className="w-4 h-4 shrink-0 text-muted-foreground" />
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Upcoming</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {upcomingCount} order{upcomingCount !== 1 ? "s" : ""}
-                </p>
+                <p className="text-sm font-semibold text-foreground">{upcomingCount} order{upcomingCount !== 1 ? "s" : ""}</p>
               </div>
             </div>
           </div>
@@ -319,11 +333,11 @@ export default function ShippingPage() {
             <>
               <div className="grid grid-cols-12 px-5 py-3 bg-muted/30">
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Order #</span>
-                <span className="col-span-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Member</span>
+                <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Member</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tier</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ship By</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</span>
-                <span className="col-span-1"></span>
+                <span className="col-span-2"></span>
               </div>
               <div className="divide-y divide-border/50">
                 {sorted.map((order) => {
@@ -331,6 +345,9 @@ export default function ShippingPage() {
                   const today = isDueToday(order.scheduled_ship_date);
                   const tierKey = ((order as any).member_tier ?? "").toLowerCase();
                   const tierLabel = TIER_LABELS[tierKey] ?? "—";
+                  const hasLabel = !!(order as any).label_url;
+                  const isGenerating = generateOutboundLabel.isPending &&
+                    (generateOutboundLabel.variables as any)?.shipment_id === order.id;
 
                   return (
                     <div
@@ -346,9 +363,9 @@ export default function ShippingPage() {
                           {order.order_number ?? order.shipment_number ?? order.id.slice(0, 8).toUpperCase()}
                         </p>
                       </div>
-                      <div className="col-span-3 min-w-0">
+                      <div className="col-span-2 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">
-                          {(order as any).member_name ?? "Unknown Member"}
+                          {(order as any).member_name ?? "Unknown"}
                         </p>
                       </div>
                       <div className="col-span-2">
@@ -360,16 +377,12 @@ export default function ShippingPage() {
                       <div className="col-span-2">
                         {order.scheduled_ship_date ? (
                           <div className="flex items-center gap-1.5">
-                            {overdue ? (
-                              <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                            ) : (
-                              <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            )}
-                            <span className={cn(
-                              "text-xs",
+                            {overdue
+                              ? <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                              : <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                            <span className={cn("text-xs",
                               overdue ? "text-red-600 font-semibold" :
-                              today ? "text-amber-700 font-semibold" :
-                              "text-foreground"
+                              today ? "text-amber-700 font-semibold" : "text-foreground"
                             )}>
                               {new Date(order.scheduled_ship_date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                             </span>
@@ -388,15 +401,49 @@ export default function ShippingPage() {
                           {overdue ? "Overdue" : today ? "Ship Today" : "Upcoming"}
                         </span>
                       </div>
-                      <div className="col-span-1 flex justify-end">
-                        <Link href={`/ship/${order.id}`}>
-                          <button
-                            className="text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
-                            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-                          >
-                            Ship
-                          </button>
-                        </Link>
+
+                      {/* Actions */}
+                      <div className="col-span-2 flex items-center justify-end gap-1.5">
+                        {hasLabel ? (
+                          <>
+                            <button
+                              onClick={() => window.open((order as any).label_url, "_blank")}
+                              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              Label
+                            </button>
+                            <Link href={`/ship/${order.id}`}>
+                              <button
+                                className="text-xs font-medium px-2.5 py-1.5 rounded-lg text-white transition-colors"
+                                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+                              >
+                                Ship
+                              </button>
+                            </Link>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => generateOutboundLabel.mutate({ shipment_id: order.id })}
+                              disabled={isGenerating || generateAllOutboundLabels.isPending}
+                              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-40"
+                            >
+                              {isGenerating
+                                ? <RefreshCw className="w-3 h-3 animate-spin" />
+                                : <Tag className="w-3 h-3" />}
+                              {isGenerating ? "..." : "Label"}
+                            </button>
+                            <Link href={`/ship/${order.id}`}>
+                              <button
+                                className="text-xs font-medium px-2.5 py-1.5 rounded-lg text-white transition-colors opacity-50"
+                                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+                              >
+                                Ship
+                              </button>
+                            </Link>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
