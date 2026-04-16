@@ -250,23 +250,25 @@ export const appRouter = router({
         let memberMap: Record<string, string> = {};
         if (memberIds.length > 0) {
           const res = await sbFetch(
-            `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
-          );
-          const members: {
-            id: string;
-            name: string;
-            tier: string;
-            age_group: string;
-          }[] = await res.json();
-          memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
+  `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
+);
+const members: {
+  id: string;
+  name: string;
+  tier: string;
+  age_group: string;
+}[] = await res.json();
+memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
+const memberTierMap: Record<string, string> = Object.fromEntries(members.map(m => [m.id, m.tier]));
         }
         return {
-          data: data.map(s => ({
-            ...s,
-            member_name: memberMap[s.member_id] ?? "Unknown",
-          })),
-          total,
-        };
+  data: data.map(s => ({
+    ...s,
+    member_name: memberMap[s.member_id] ?? "Unknown",
+    member_tier: memberTierMap[s.member_id] ?? null,
+  })),
+  total,
+};
       }),
 
     byId: publicProcedure

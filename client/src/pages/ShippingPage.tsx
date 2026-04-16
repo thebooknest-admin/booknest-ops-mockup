@@ -1,11 +1,14 @@
 // BookNest Ops — Shipping Queue (wired to real Supabase data)
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Truck, AlertTriangle, Clock, RefreshCw, CheckCircle2, Tag, ArrowRightLeft } from "lucide-react";
+import { Truck, AlertTriangle, Clock, RefreshCw, CheckCircle2, Tag, ArrowRightLeft, CalendarDays, PackageCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const TIER_LABELS: Record<string, string> = {
+  "little-nest": "Little Nest",
+  "cozy-nest": "Cozy Nest",
+  "story-nest": "Story Nest",
   little_nest: "Little Nest",
   cozy_nest: "Cozy Nest",
   story_nest: "Story Nest",
@@ -13,12 +16,38 @@ const TIER_LABELS: Record<string, string> = {
 
 function isOverdue(date: string | null): boolean {
   if (!date) return false;
-  return new Date(date) < new Date();
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d < new Date();
+}
+
+function isDueToday(date: string | null): boolean {
+  if (!date) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return date === today;
+}
+
+function getNextShipDay(): { label: string; isToday: boolean } {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  const todayStr = today.toLocaleDateString("en-US", { weekday: "long" });
+
+  if (dow === 2) return { label: `Today (Tuesday)`, isToday: true };
+  if (dow === 5) return { label: `Today (Friday)`, isToday: true };
+
+  // Find next ship day
+  const daysUntilTue = (2 - dow + 7) % 7;
+  const daysUntilFri = (5 - dow + 7) % 7;
+  const daysUntilNext = Math.min(daysUntilTue, daysUntilFri);
+  const next = new Date(today);
+  next.setDate(today.getDate() + daysUntilNext);
+  const nextLabel = next.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  return { label: nextLabel, isToday: false };
 }
 
 export default function ShippingPage() {
-  const { data: packedData, isLoading: loadingShipping, refetch, isRefetching } =
-  trpc.shipments.list.useQuery({ status: "packed" }, { refetchInterval: 60_000 });
+  const { data: packedData, isLoading, refetch, isRefetching } =
+    trpc.shipments.list.useQuery({ status: "packed" }, { refetchInterval: 60_000 });
   const { data: pendingSwapsData, isLoading: loadingSwaps, refetch: refetchSwaps } =
     trpc.shipping.pendingSwaps.useQuery(undefined, { refetchInterval: 60_000 });
 
@@ -51,10 +80,12 @@ export default function ShippingPage() {
     },
   });
 
-  const isLoading = loadingShipping;
   const allOrders = packedData?.data ?? [];
   const overdueCount = allOrders.filter((o) => isOverdue(o.scheduled_ship_date)).length;
+  const dueTodayCount = allOrders.filter((o) => isDueToday(o.scheduled_ship_date)).length;
+  const upcomingCount = allOrders.filter((o) => !isOverdue(o.scheduled_ship_date) && !isDueToday(o.scheduled_ship_date)).length;
   const pendingSwaps = pendingSwapsData?.pending ?? [];
+  const nextShipDay = getNextShipDay();
 
   const sorted = [...allOrders].sort((a, b) => {
     const aOver = isOverdue(a.scheduled_ship_date);
@@ -177,31 +208,90 @@ export default function ShippingPage() {
               Outbound Shipping Queue
             </h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {isLoading ? "Loading..." : `${allOrders.length} order${allOrders.length !== 1 ? "s" : ""} ready to ship`}
+              {isLoading ? "Loading..." : `${allOrders.length} order${allOrders.length !== 1 ? "s" : ""} packed and ready`}
               {overdueCount > 0 && (
                 <span className="ml-2 text-red-600 font-medium">· {overdueCount} overdue</span>
               )}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
-            >
-              <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
-              Refresh
-            </button>
-            <button
-              onClick={() => toast.info("Fetching rates for all orders...")}
-              className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors"
-              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-            >
-              <Truck className="w-4 h-4" />
-              Get All Rates
-            </button>
-          </div>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
+            Refresh
+          </button>
         </div>
 
+        {/* ── Stat pills ─────────────────────────────────────────────── */}
+        {!isLoading && (
+          <div className="grid grid-cols-3 gap-3">
+            {/* Next ship day */}
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border"
+              style={{
+                backgroundColor: nextShipDay.isToday ? "oklch(0.96 0.04 155)" : "oklch(0.98 0.01 80)",
+                borderColor: nextShipDay.isToday ? "oklch(0.85 0.08 155)" : "oklch(0.91 0.006 80)",
+              }}
+            >
+              <CalendarDays
+                className="w-4 h-4 shrink-0"
+                style={{ color: nextShipDay.isToday ? "oklch(0.42 0.11 155)" : "oklch(0.55 0.01 80)" }}
+              />
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Next Ship Day</p>
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: nextShipDay.isToday ? "oklch(0.35 0.10 155)" : "oklch(0.25 0.01 80)" }}
+                >
+                  {nextShipDay.label}
+                </p>
+              </div>
+            </div>
+
+            {/* Due today */}
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border"
+              style={{
+                backgroundColor: dueTodayCount > 0 ? "oklch(0.97 0.04 75)" : "oklch(0.98 0.01 80)",
+                borderColor: dueTodayCount > 0 ? "oklch(0.88 0.08 75)" : "oklch(0.91 0.006 80)",
+              }}
+            >
+              <PackageCheck
+                className="w-4 h-4 shrink-0"
+                style={{ color: dueTodayCount > 0 ? "oklch(0.55 0.14 75)" : "oklch(0.65 0.01 80)" }}
+              />
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Due Today</p>
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: dueTodayCount > 0 ? "oklch(0.40 0.12 75)" : "oklch(0.55 0.01 80)" }}
+                >
+                  {dueTodayCount} order{dueTodayCount !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+
+            {/* Upcoming */}
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border"
+              style={{
+                backgroundColor: "oklch(0.98 0.01 80)",
+                borderColor: "oklch(0.91 0.006 80)",
+              }}
+            >
+              <Clock className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Upcoming</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {upcomingCount} order{upcomingCount !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Overdue banner ─────────────────────────────────────────── */}
         {overdueCount > 0 && (
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl border"
             style={{ backgroundColor: "oklch(0.97 0.03 25)", borderColor: "oklch(0.88 0.08 25)" }}>
@@ -212,6 +302,7 @@ export default function ShippingPage() {
           </div>
         )}
 
+        {/* ── Order table ────────────────────────────────────────────── */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           {isLoading ? (
             <div className="p-8 text-center">
@@ -237,13 +328,18 @@ export default function ShippingPage() {
               <div className="divide-y divide-border/50">
                 {sorted.map((order) => {
                   const overdue = isOverdue(order.scheduled_ship_date);
-                  const tierKey = (order as any).member_tier?.toLowerCase() ?? "";
-                  const tierLabel = TIER_LABELS[tierKey] ?? order.shipment_type ?? "—";
+                  const today = isDueToday(order.scheduled_ship_date);
+                  const tierKey = ((order as any).member_tier ?? "").toLowerCase();
+                  const tierLabel = TIER_LABELS[tierKey] ?? "—";
 
                   return (
                     <div
                       key={order.id}
-                      className={cn("grid grid-cols-12 px-5 py-3.5 items-center", overdue && "bg-red-50/40")}
+                      className={cn(
+                        "grid grid-cols-12 px-5 py-3.5 items-center",
+                        overdue && "bg-red-50/40",
+                        today && !overdue && "bg-amber-50/30"
+                      )}
                     >
                       <div className="col-span-2">
                         <p className="text-sm font-mono font-medium text-foreground">
@@ -269,8 +365,13 @@ export default function ShippingPage() {
                             ) : (
                               <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                             )}
-                            <span className={cn("text-xs", overdue ? "text-red-600 font-semibold" : "text-foreground")}>
-                              {new Date(order.scheduled_ship_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            <span className={cn(
+                              "text-xs",
+                              overdue ? "text-red-600 font-semibold" :
+                              today ? "text-amber-700 font-semibold" :
+                              "text-foreground"
+                            )}>
+                              {new Date(order.scheduled_ship_date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                             </span>
                           </div>
                         ) : (
@@ -280,9 +381,11 @@ export default function ShippingPage() {
                       <div className="col-span-2">
                         <span className={cn(
                           "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize",
-                          overdue ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                          overdue ? "bg-red-50 text-red-700 border-red-200" :
+                          today ? "bg-amber-50 text-amber-700 border-amber-200" :
+                          "bg-blue-50 text-blue-700 border-blue-200"
                         )}>
-                          {overdue ? "Overdue" : order.status}
+                          {overdue ? "Overdue" : today ? "Ship Today" : "Upcoming"}
                         </span>
                       </div>
                       <div className="col-span-1 flex justify-end">
