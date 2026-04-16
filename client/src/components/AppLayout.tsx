@@ -106,6 +106,7 @@ const buildNavItems = (
   },
   { label: "Members", href: "/members", icon: Users },
   { label: "Support", href: "/support", icon: AlertCircle },
+  { label: "ISBN Lookup", href: "/isbn", icon: BookOpen },
   // This triggers the overlay — no href
   { label: "Event Sign-Up", overlay: true, icon: CalendarCheck },
 ];

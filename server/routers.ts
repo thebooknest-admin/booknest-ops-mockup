@@ -19,6 +19,7 @@ import {
   getShipments,
   updateShipmentStatus,
 } from "./supabase";
+import { isbnRouter } from "./routers/isbn";
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
@@ -44,6 +45,7 @@ export const appRouter = router({
   system: systemRouter,
   picking: pickingRouter,
   shipping: shippingRouter,
+  isbn: isbnRouter,
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),

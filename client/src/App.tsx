@@ -22,6 +22,7 @@ import SignupPage from "./pages/SignupPage";
 import StockQueuePage from "./pages/StockQueuePage";
 import SupportPage from "./pages/SupportPage";
 import WelcomePage from "./pages/WelcomePage";
+import IsbnLookupPage from "./pages/IsbnLookupPage";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
 function DashboardRouter() {
@@ -44,6 +45,7 @@ function DashboardRouter() {
           <Route path="/donations/intake" component={DonationIntakePage} />
           <Route path="/donations/log" component={DonationLogPage} />
           <Route path="/support" component={SupportPage} />
+          <Route path="/isbn" component={IsbnLookupPage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>
