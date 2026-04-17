@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Package, Truck, CheckCircle2, Archive, Users, Gift,
   AlertTriangle, AlertCircle, ArrowRight, BookOpen, RotateCcw,
-  RefreshCw, Clock, BoxIcon,
+  RefreshCw, Clock, BoxIcon, ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
