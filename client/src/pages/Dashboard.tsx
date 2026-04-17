@@ -1,18 +1,16 @@
 // BookNest Ops — Dashboard (Command Center)
-// Wired to real Supabase data via tRPC
-
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import {
   Package, Truck, CheckCircle2, Archive, Users, Gift,
   AlertTriangle, AlertCircle, ArrowRight, BookOpen, RotateCcw,
-  RefreshCw, Clock
+  RefreshCw, Clock, BoxIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
   const { data: stats, isLoading, refetch, isRefetching } = trpc.dashboard.stats.useQuery(undefined, {
-    refetchInterval: 60_000, // auto-refresh every minute
+    refetchInterval: 60_000,
   });
 
   const today = new Date().toLocaleDateString("en-US", {
@@ -85,7 +83,10 @@ export default function Dashboard() {
       )}
 
       {/* ── STAT CARDS ── */}
-      <div className="grid grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* Status flow: picking → packing → packed → shipped */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+
+        {/* PICK */}
         <Link href="/picking">
           <div className="stat-card group cursor-pointer">
             <div className="flex items-center justify-between">
@@ -95,13 +96,31 @@ export default function Dashboard() {
             <p className="text-3xl font-bold text-foreground mt-1">
               {isLoading ? "—" : (stats?.toPick ?? 0)}
             </p>
-            <p className="text-xs text-muted-foreground">bundles to pick</p>
+            <p className="text-xs text-muted-foreground">orders to pick</p>
             <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
-              Start Picking <ArrowRight className="w-3 h-3" />
+              Picking Queue <ArrowRight className="w-3 h-3" />
             </div>
           </div>
         </Link>
 
+        {/* PACK */}
+        <Link href="/packing">
+          <div className="stat-card group cursor-pointer">
+            <div className="flex items-center justify-between">
+              <span className="section-label">Pack</span>
+              <BoxIcon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <p className="text-3xl font-bold text-foreground mt-1">
+              {isLoading ? "—" : (stats?.toPack ?? 0)}
+            </p>
+            <p className="text-xs text-muted-foreground">orders to pack</p>
+            <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
+              Packing Queue <ArrowRight className="w-3 h-3" />
+            </div>
+          </div>
+        </Link>
+
+        {/* SHIP */}
         <Link href="/shipping">
           <div className={cn("stat-card group cursor-pointer", overdueCount > 0 && "border-red-200")}
             style={overdueCount > 0 ? { borderTopWidth: 3, borderTopColor: "oklch(0.63 0.22 25)" } : {}}>
@@ -118,11 +137,12 @@ export default function Dashboard() {
                 : "orders ready"}
             </p>
             <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
-              Ship Now <ArrowRight className="w-3 h-3" />
+              Shipping Queue <ArrowRight className="w-3 h-3" />
             </div>
           </div>
         </Link>
 
+        {/* DONE TODAY */}
         <div className="stat-card">
           <div className="flex items-center justify-between">
             <span className="section-label">Done Today</span>
@@ -131,9 +151,10 @@ export default function Dashboard() {
           <p className="text-3xl font-bold text-foreground mt-1">
             {isLoading ? "—" : (stats?.shippedToday ?? 0)}
           </p>
-          <p className="text-xs text-muted-foreground">orders shipped</p>
+          <p className="text-xs text-muted-foreground">shipped today</p>
         </div>
 
+        {/* INVENTORY */}
         <Link href="/inventory">
           <div className={cn("stat-card group cursor-pointer", lowBinCount > 0 && "border-amber-200")}
             style={lowBinCount > 0 ? { borderTopWidth: 3, borderTopColor: "oklch(0.76 0.16 70)" } : {}}>
@@ -155,6 +176,7 @@ export default function Dashboard() {
           </div>
         </Link>
 
+        {/* MEMBERS */}
         <Link href="/members">
           <div className="stat-card group cursor-pointer">
             <div className="flex items-center justify-between">
@@ -175,21 +197,6 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link href="/donation-intake">
-          <div className="stat-card group cursor-pointer">
-            <div className="flex items-center justify-between">
-              <span className="section-label">In Transit</span>
-              <Clock className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-            </div>
-            <p className="text-3xl font-bold text-foreground mt-1">
-              {isLoading ? "—" : (stats?.inventory?.in_transit ?? 0)}
-            </p>
-            <p className="text-xs text-muted-foreground">books with members</p>
-            <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
-              Log Donation <ArrowRight className="w-3 h-3" />
-            </div>
-          </div>
-        </Link>
       </div>
 
       {/* ── QUICK ACTIONS ── */}
@@ -201,7 +208,7 @@ export default function Dashboard() {
             { label: "Start Picking", icon: Package, href: "/picking" },
             { label: "Start Shipping", icon: Truck, href: "/shipping" },
             { label: "Process Returns", icon: RotateCcw, href: "/returns" },
-            { label: "Log Donation", icon: Gift, href: "/donation-intake" },
+            { label: "Log Donation", icon: Gift, href: "/donations/intake" },
           ].map(action => (
             <Link key={action.label} href={action.href}>
               <div className="action-card items-center text-center">
@@ -259,7 +266,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Low Bins Panel */}
+        {/* Bin Status Panel */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h2 className="font-semibold text-sm text-foreground">Bin Status</h2>

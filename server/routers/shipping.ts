@@ -1,22 +1,16 @@
 /**
- * Shipping Router — Pirateship CSV export + EasyPost return labels
+ * Shipping Router — Pirateship CSV export + tracking import
  *
- * Outbound flow (Pirateship):
- * 1. shipping.exportOrders → packed shipments for next ship day with full addresses
- *
- * Return label flow (EasyPost):
- * 2. shipping.pendingSwaps      → swap returns needing a label
- * 3. shipping.generateLabel     → generate return label for one swap
- * 4. shipping.generateAllLabels → batch generate return labels
+ * Flow:
+ * 1. shipping.exportOrders   → packed shipments for next ship day with full addresses
+ * 2. shipping.importTracking → match Pirateship export back to shipments, mark shipped
  */
 
-import EasyPost from '@easypost/api';
 import {z} from 'zod';
 import {publicProcedure, router} from '../_core/trpc';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
-const EASYPOST_API_KEY = process.env.EASYPOST_API_KEY!;
 
 const sbHeaders = {
   apikey: SUPABASE_ANON_KEY,
@@ -32,32 +26,20 @@ async function sbFetch(path: string, options: RequestInit = {}): Promise<Respons
   });
 }
 
-const BOOK_NEST_ADDRESS = {
-  company: 'The Book Nest',
-  street1: '205 Ambrose Drive',
+const TIER_WEIGHT_OZ: Record<string, number> = {
+  'little-nest': 32, 'cozy-nest': 48, 'story-nest': 64,
+  little_nest: 32, cozy_nest: 48, story_nest: 64,
+};
+const DEFAULT_WEIGHT_OZ = 40;
+
+const BOOK_NEST = {
+  name: 'The Book Nest',
+  street: '205 Ambrose Drive',
   street2: '#8',
   city: 'Ranson',
   state: 'WV',
   zip: '25438',
-  country: 'US',
 };
-
-const RETURN_PARCEL = {
-  length: 13,
-  width: 11,
-  height: 4,
-  weight: 32,
-};
-
-const TIER_WEIGHT_OZ: Record<string, number> = {
-  'little-nest': 32,
-  'cozy-nest':   48,
-  'story-nest':  64,
-  little_nest:   32,
-  cozy_nest:     48,
-  story_nest:    64,
-};
-const DEFAULT_WEIGHT_OZ = 40;
 
 function getNextShipDate(): string {
   const today = new Date();
@@ -65,9 +47,8 @@ function getNextShipDate(): string {
   if (dow === 2 || dow === 5) return today.toISOString().split('T')[0];
   const daysUntilTue = (2 - dow + 7) % 7;
   const daysUntilFri = (5 - dow + 7) % 7;
-  const daysUntilNext = Math.min(daysUntilTue, daysUntilFri);
   const next = new Date(today);
-  next.setDate(today.getDate() + daysUntilNext);
+  next.setDate(today.getDate() + Math.min(daysUntilTue, daysUntilFri));
   return next.toISOString().split('T')[0];
 }
 
@@ -128,129 +109,64 @@ export const shippingRouter = router({
     return { orders, missing, ship_date: nextShipDate };
   }),
 
-  // ─── Return Labels (EasyPost) ─────────────────────────────────────────────
+  // ─── Import Tracking Numbers from Pirateship ──────────────────────────────
 
-  pendingSwaps: publicProcedure.query(async () => {
-    const returnsRes = await sbFetch(
-      `/returns?status=eq.requested&return_label_url=is.null&select=id,member_id,original_shipment_id,created_at&order=created_at.asc&limit=100`,
-    );
-    const returns: any[] = await returnsRes.json();
-    if (!returns.length) return {pending: []};
+  importTracking: publicProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            order_number: z.string(),
+            tracking_number: z.string(),
+            carrier: z.string().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const results: {
+        order_number: string;
+        tracking_number: string;
+        shipment_id: string | null;
+        success: boolean;
+        error?: string;
+      }[] = [];
 
-    const memberIds = [...new Set(returns.map((r) => r.member_id))];
-    const [membersRes, addressesRes] = await Promise.all([
-      sbFetch(`/members?id=in.(${memberIds.join(',')})&select=id,name,email&limit=200`),
-      sbFetch(`/member_addresses?member_id=in.(${memberIds.join(',')})&is_default=eq.true&select=member_id,street,street2,city,state,zip&limit=200`),
-    ]);
+      for (const row of input.rows) {
+        const res = await sbFetch(
+          `/shipments?or=(order_number.eq.${encodeURIComponent(row.order_number)},shipment_number.eq.${encodeURIComponent(row.order_number)})&limit=1&select=id,status`
+        );
+        const [shipment] = await res.json();
 
-    const members: any[] = await membersRes.json();
-    const addresses: any[] = await addressesRes.json();
-    const memberMap: Record<string, any> = {};
-    for (const m of members) memberMap[m.id] = m;
-    const addressMap: Record<string, any> = {};
-    for (const a of addresses) addressMap[a.member_id] = a;
+        if (!shipment) {
+          results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: null, success: false, error: 'No matching shipment found' });
+          continue;
+        }
 
-    return {
-      pending: returns.map((r) => ({
-        return_id: r.id,
-        member_id: r.member_id,
-        member_name: memberMap[r.member_id]?.name ?? 'Unknown',
-        member_email: memberMap[r.member_id]?.email ?? '',
-        address: addressMap[r.member_id] ?? null,
-        original_shipment_id: r.original_shipment_id,
-        created_at: r.created_at,
-      })),
-    };
-  }),
-
-  generateLabel: publicProcedure
-    .input(z.object({
-      return_id: z.string(),
-      member_name: z.string(),
-      street: z.string(),
-      street2: z.string().optional(),
-      city: z.string(),
-      state: z.string(),
-      zip: z.string(),
-    }))
-    .mutation(async ({input}) => {
-      const client = new EasyPost(EASYPOST_API_KEY);
-      try {
-        const shipment = await client.Shipment.create({
-          from_address: {name: input.member_name, street1: input.street, street2: input.street2 || undefined, city: input.city, state: input.state, zip: input.zip, country: 'US'},
-          to_address: BOOK_NEST_ADDRESS,
-          parcel: RETURN_PARCEL,
-        });
-        const bought = await client.Shipment.buy(shipment.id, shipment.lowestRate(['USPS'], ['Media Mail']));
-        const labelUrl = bought.postage_label?.label_url ?? null;
-        const trackingNumber = bought.tracking_code ?? null;
-
-        await sbFetch(`/returns?id=eq.${input.return_id}`, {
+        const patch = await sbFetch(`/shipments?id=eq.${shipment.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({return_label_url: labelUrl, return_tracking_number: trackingNumber, return_label_generated_at: new Date().toISOString(), status: 'label_generated', updated_at: new Date().toISOString()}),
-          headers: {Prefer: 'return=minimal'},
+          body: JSON.stringify({
+            tracking_number: row.tracking_number,
+            carrier: row.carrier ?? 'USPS',
+            status: 'shipped',
+            actual_ship_date: new Date().toISOString().split('T')[0],
+            updated_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: 'return=minimal' },
         });
 
-        return {success: true, return_id: input.return_id, label_url: labelUrl, tracking_number: trackingNumber};
-      } catch (e: any) {
-        return {success: false, error: e?.message ?? 'Label generation failed'};
+        if (!patch.ok) {
+          results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: false, error: 'Failed to update shipment' });
+          continue;
+        }
+
+        results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: true });
       }
+
+      return {
+        succeeded: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        results,
+      };
     }),
-
-  generateAllLabels: publicProcedure.mutation(async () => {
-    const returnsRes = await sbFetch(`/returns?status=eq.requested&return_label_url=is.null&select=id,member_id&order=created_at.asc&limit=50`);
-    const returns: any[] = await returnsRes.json();
-    if (!returns.length) return {processed: 0, failed: 0, results: []};
-
-    const memberIds = [...new Set(returns.map((r) => r.member_id))];
-    const [membersRes, addressesRes] = await Promise.all([
-      sbFetch(`/members?id=in.(${memberIds.join(',')})&select=id,name&limit=200`),
-      sbFetch(`/member_addresses?member_id=in.(${memberIds.join(',')})&is_default=eq.true&select=member_id,street,street2,city,state,zip&limit=200`),
-    ]);
-
-    const members: any[] = await membersRes.json();
-    const addresses: any[] = await addressesRes.json();
-    const memberMap: Record<string, any> = {};
-    for (const m of members) memberMap[m.id] = m;
-    const addressMap: Record<string, any> = {};
-    for (const a of addresses) addressMap[a.member_id] = a;
-
-    const client = new EasyPost(EASYPOST_API_KEY);
-    const results: any[] = [];
-    let processed = 0, failed = 0;
-
-    for (const r of returns) {
-      const address = addressMap[r.member_id];
-      const member = memberMap[r.member_id];
-      if (!address || !member) {
-        failed++;
-        results.push({return_id: r.id, success: false, error: 'No address found'});
-        continue;
-      }
-      try {
-        const shipment = await client.Shipment.create({
-          from_address: {name: member.name, street1: address.street, street2: address.street2 || undefined, city: address.city, state: address.state, zip: address.zip, country: 'US'},
-          to_address: BOOK_NEST_ADDRESS,
-          parcel: RETURN_PARCEL,
-        });
-        const bought = await client.Shipment.buy(shipment.id, shipment.lowestRate(['USPS'], ['Media Mail']));
-        const labelUrl = bought.postage_label?.label_url ?? null;
-        const trackingNumber = bought.tracking_code ?? null;
-
-        await sbFetch(`/returns?id=eq.${r.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({return_label_url: labelUrl, return_tracking_number: trackingNumber, return_label_generated_at: new Date().toISOString(), status: 'label_generated', updated_at: new Date().toISOString()}),
-          headers: {Prefer: 'return=minimal'},
-        });
-
-        processed++;
-        results.push({return_id: r.id, success: true, label_url: labelUrl, tracking_number: trackingNumber});
-      } catch (e: any) {
-        failed++;
-        results.push({return_id: r.id, success: false, error: e?.message ?? 'Unknown error'});
-      }
-    }
-
-    return {processed, failed, results};
-  }),
 });

@@ -371,37 +371,43 @@ export async function getBookTitlesWithCopies(params?: {
   return { data, total: titlesResult.total };
 }
 
-// ─── Dashboard Stats ──────────────────────────────────────────────────────────
+// Replace the getDashboardStats function in server/supabase.ts
 
 export async function getDashboardStats() {
   const [membersRes, shipmentsRes, inventoryRes] = await Promise.all([
     sbFetch("/members?select=id,subscription_status&limit=500"),
-    sbFetch("/shipments?select=id,status,scheduled_ship_date&limit=500"),
+    sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
     getInventorySummary(),
   ]);
-
   const members: { id: string; subscription_status: string }[] = await membersRes.json();
-  const shipments: { id: string; status: string; scheduled_ship_date: string | null }[] = await shipmentsRes.json();
+  const shipments: { id: string; status: string; scheduled_ship_date: string | null; actual_ship_date: string | null }[] = await shipmentsRes.json();
 
   const today = new Date().toISOString().split("T")[0];
-
   const activeMembers = members.filter((m) => m.subscription_status === "active").length;
   const waitlistMembers = members.filter((m) => m.subscription_status === "waitlist").length;
 
-  const toPick = shipments.filter((s) => s.status === "picking" || s.status === "pending").length;
-  const toShip = shipments.filter((s) => s.status === "shipping" || s.status === "packed").length;
+  // Status flow: picking → packing → packed → shipped
+  const toPick = shipments.filter((s) => s.status === "picking").length;
+  const toPack = shipments.filter((s) => s.status === "packing").length;
+  const toShip = shipments.filter((s) => s.status === "packed").length;
+
   const overdueShipments = shipments.filter(
     (s) =>
-      (s.status === "shipping" || s.status === "pending" || s.status === "picking") &&
+      (s.status === "picking" || s.status === "packing" || s.status === "packed") &&
       s.scheduled_ship_date &&
       s.scheduled_ship_date < today
   ).length;
-  const shippedToday = shipments.filter((s) => s.status === "shipped" && s.scheduled_ship_date === today).length;
+
+  // Count shipped today by actual_ship_date
+  const shippedToday = shipments.filter(
+    (s) => s.status === "shipped" && s.actual_ship_date === today
+  ).length;
 
   return {
     activeMembers,
     waitlistMembers,
     toPick,
+    toPack,
     toShip,
     overdueShipments,
     shippedToday,
