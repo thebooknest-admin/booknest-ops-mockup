@@ -313,16 +313,15 @@ export const shippingRouter = router({
         const service = bought.selected_rate?.service ?? null;
 
         await sbFetch(`/shipments?id=eq.${input.shipment_id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            label_url: labelUrl,
-            tracking_number: trackingNumber,
-            carrier: carrier,
-            shipping_cost: shippingCost,
-            updated_at: new Date().toISOString(),
-          }),
-          headers: {Prefer: 'return=minimal'},
-        });
+  method: 'PATCH',
+  body: JSON.stringify({
+    label_url: labelUrl,
+    tracking_number: trackingNumber,
+    carrier: carrier,
+    updated_at: new Date().toISOString(),
+  }),
+  headers: {Prefer: 'return=minimal'},
+});
 
         return {
           success: true,
@@ -415,7 +414,6 @@ export const shippingRouter = router({
             label_url: labelUrl,
             tracking_number: trackingNumber,
             carrier,
-            shipping_cost: shippingCost,
             updated_at: new Date().toISOString(),
           }),
           headers: {Prefer: 'return=minimal'},
