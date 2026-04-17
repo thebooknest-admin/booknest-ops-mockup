@@ -211,11 +211,11 @@ export async function getShipments(params?: {
   limit?: number;
 }): Promise<{ data: Shipment[]; total: number }> {
   const limit = params?.limit ?? 50;
-  let qs = `?limit=${limit}&order=created_at.desc`;
-  if (params?.status) qs += `&status=eq.${params.status}`;
-  const res = await sbFetch(`/shipments${qs}`, {
-    headers: { Prefer: "count=exact" },
-  });
+  let qs = `?limit=${limit}&order=created_at.desc&select=id,member_id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,carrier,label_url,address_id,shipment_type,created_at,updated_at`;
+if (params?.status) qs += `&status=eq.${params.status}`;
+const res = await sbFetch(`/shipments${qs}`, {
+  headers: { Prefer: "count=exact" },
+});
   const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
   const data: Shipment[] = await res.json();
   return { data, total };
