@@ -371,7 +371,6 @@ export async function getBookTitlesWithCopies(params?: {
   return { data, total: titlesResult.total };
 }
 
-// Replace the getDashboardStats function in server/supabase.ts
 
 export async function getDashboardStats() {
   const [membersRes, shipmentsRes, inventoryRes] = await Promise.all([
@@ -398,10 +397,12 @@ export async function getDashboardStats() {
       s.scheduled_ship_date < today
   ).length;
 
-  // Count shipped today by actual_ship_date
+// Count shipped today by actual_ship_date
   const shippedToday = shipments.filter(
     (s) => s.status === "shipped" && s.actual_ship_date === today
   ).length;
+
+  const totalOrders = shipments.length;
 
   return {
     activeMembers,
