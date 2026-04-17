@@ -142,17 +142,22 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        {/* DONE TODAY */}
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="section-label">Done Today</span>
-            <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
-          </div>
-          <p className="text-3xl font-bold text-foreground mt-1">
-            {isLoading ? "—" : (stats?.shippedToday ?? 0)}
-          </p>
-          <p className="text-xs text-muted-foreground">shipped today</p>
-        </div>
+        {/* ALL ORDERS */}
+        <Link href="/orders">
+  <div className="stat-card group cursor-pointer">
+    <div className="flex items-center justify-between">
+      <span className="section-label">All Orders</span>
+      <ClipboardList className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+    </div>
+    <p className="text-3xl font-bold text-foreground mt-1">
+      {isLoading ? "—" : (stats?.totalOrders ?? 0)}
+    </p>
+    <p className="text-xs text-muted-foreground">total shipments</p>
+    <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
+      View History <ArrowRight className="w-3 h-3" />
+    </div>
+  </div>
+</Link>
 
         {/* INVENTORY */}
         <Link href="/inventory">

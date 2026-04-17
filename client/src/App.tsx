@@ -24,6 +24,7 @@ import SupportPage from "./pages/SupportPage";
 import WelcomePage from "./pages/WelcomePage";
 import IsbnLookupPage from "./pages/IsbnLookupPage";
 import PackingPage from "./pages/PackingPage";
+import OrdersPage from "./pages/OrdersPage";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
 function DashboardRouter() {
@@ -48,6 +49,7 @@ function DashboardRouter() {
           <Route path="/donations/log" component={DonationLogPage} />
           <Route path="/support" component={SupportPage} />
           <Route path="/isbn" component={IsbnLookupPage} />
+          <Route path="/orders" component={OrdersPage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

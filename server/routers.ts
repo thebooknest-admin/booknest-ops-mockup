@@ -329,6 +329,27 @@ return {
         await updateShipmentStatus(id, status, extra as any);
         return { success: true };
       }),
+listAll: publicProcedure.query(async () => {
+      const { data } = await getShipments({ limit: 500 });
+      const memberIds = Array.from(new Set(data.map(s => s.member_id)));
+      let memberMap: Record<string, string> = {};
+      let memberTierMap: Record<string, string> = {};
+      if (memberIds.length > 0) {
+        const res = await sbFetch(
+          `/members?id=in.(${memberIds.join(",")})&select=id,name,tier&limit=500`
+        );
+        const members: { id: string; name: string; tier: string }[] = await res.json();
+        memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
+        memberTierMap = Object.fromEntries(members.map(m => [m.id, m.tier]));
+      }
+      return {
+        data: data.map(s => ({
+          ...s,
+          member_name: memberMap[s.member_id] ?? "Unknown",
+          member_tier: memberTierMap[s.member_id] ?? null,
+        })),
+      };
+    }),
   }),
 
   // ─── Labels ─────────────────────────────────────────────────────────────────

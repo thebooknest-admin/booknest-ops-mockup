@@ -411,6 +411,7 @@ export async function getDashboardStats() {
     toShip,
     overdueShipments,
     shippedToday,
+    totalOrders,
     inventory: inventoryRes,
   };
 }

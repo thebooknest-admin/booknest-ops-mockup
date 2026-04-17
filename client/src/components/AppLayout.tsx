@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  ClipboardList,
   ExternalLink,
   Gift,
   Layers,
@@ -69,6 +70,7 @@ const buildNavItems = (
       { label: "Picking Queue", href: "/picking", icon: Package },
       { label: "Packing Queue", href: "/packing", icon: BoxIcon },
       { label: "Shipping Queue", href: "/shipping", icon: Truck },
+      { label: "Order History", href: "/orders", icon: ClipboardList },
     ],
   },
   {
