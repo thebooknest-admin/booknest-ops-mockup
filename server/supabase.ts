@@ -373,11 +373,14 @@ export async function getBookTitlesWithCopies(params?: {
 
 
 export async function getDashboardStats() {
-  const [membersRes, shipmentsRes, inventoryRes] = await Promise.all([
-    sbFetch("/members?select=id,subscription_status&limit=500"),
-    sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
-    getInventorySummary(),
-  ]);
+  const [membersRes, shipmentsRes, inventoryRes, returnsRes] = await Promise.all([
+  sbFetch("/members?select=id,subscription_status&limit=500"),
+  sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
+  getInventorySummary(),
+  sbFetch("/returns?select=id&status=eq.requested&limit=100"),
+]);
+const returns: { id: string }[] = await returnsRes.json();
+const pendingSwaps = returns.length;
   const members: { id: string; subscription_status: string }[] = await membersRes.json();
   const shipments: { id: string; status: string; scheduled_ship_date: string | null; actual_ship_date: string | null }[] = await shipmentsRes.json();
 
@@ -413,6 +416,7 @@ export async function getDashboardStats() {
     overdueShipments,
     shippedToday,
     totalOrders,
+    pendingSwaps,
     inventory: inventoryRes,
   };
 }
