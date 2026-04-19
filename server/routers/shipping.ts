@@ -3,14 +3,19 @@
  *
  * Flow:
  * 1. shipping.exportOrders   → packed shipments for next ship day with full addresses
- * 2. shipping.importTracking → match Pirateship export back to shipments, mark shipped
+ * 2. shipping.importTracking → match Pirateship export back to shipments + returns
+ *    - Regular rows (BN-1003)     → mark outbound shipment as shipped
+ *    - Return rows (BN-1003-RET)  → save return tracking + register with EasyPost
  */
 
+import EasyPost from '@easypost/api';
 import {z} from 'zod';
 import {publicProcedure, router} from '../_core/trpc';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
+const EASYPOST_API_KEY = process.env.EASYPOST_API_KEY!;
+const OPS_BASE_URL = process.env.OPS_BASE_URL ?? 'https://booknest-ops-mockup-production.up.railway.app';
 
 const sbHeaders = {
   apikey: SUPABASE_ANON_KEY,
@@ -50,6 +55,21 @@ function getNextShipDate(): string {
   const next = new Date(today);
   next.setDate(today.getDate() + Math.min(daysUntilTue, daysUntilFri));
   return next.toISOString().split('T')[0];
+}
+
+/** Register a tracking number with EasyPost so we get webhook updates */
+async function registerEasyPostTracking(trackingNumber: string): Promise<boolean> {
+  try {
+    const client = new EasyPost(EASYPOST_API_KEY);
+    await client.Tracker.create({
+      tracking_code: trackingNumber,
+      carrier: 'USPS',
+    });
+    return true;
+  } catch (e) {
+    console.error('EasyPost tracker registration failed:', e);
+    return false;
+  }
 }
 
 export const shippingRouter = router({
@@ -124,49 +144,102 @@ export const shippingRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const results: {
-        order_number: string;
-        tracking_number: string;
-        shipment_id: string | null;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const outboundResults: { order_number: string; tracking_number: string; shipment_id: string | null; success: boolean; error?: string }[] = [];
+      const returnResults: { order_number: string; tracking_number: string; return_id: string | null; success: boolean; error?: string; easypost_registered?: boolean }[] = [];
 
       for (const row of input.rows) {
-        const res = await sbFetch(
-          `/shipments?or=(order_number.eq.${encodeURIComponent(row.order_number)},shipment_number.eq.${encodeURIComponent(row.order_number)})&limit=1&select=id,status`
-        );
-        const [shipment] = await res.json();
+        const isReturn = row.order_number.endsWith('-RET');
 
-        if (!shipment) {
-          results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: null, success: false, error: 'No matching shipment found' });
-          continue;
-        }
+        if (isReturn) {
+          // ── Return label row ──────────────────────────────────────────────
+          // Strip -RET to get the base order number, find the shipment, then the return
+          const baseOrderNumber = row.order_number.replace(/-RET$/, '');
 
-        const patch = await sbFetch(`/shipments?id=eq.${shipment.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
+          const shipRes = await sbFetch(
+            `/shipments?or=(order_number.eq.${encodeURIComponent(baseOrderNumber)},shipment_number.eq.${encodeURIComponent(baseOrderNumber)})&limit=1&select=id,member_id`
+          );
+          const [shipment] = await shipRes.json();
+
+          if (!shipment) {
+            returnResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, return_id: null, success: false, error: 'No matching shipment found for return' });
+            continue;
+          }
+
+          // Find the pending return for this member
+          const returnRes = await sbFetch(
+            `/returns?member_id=eq.${shipment.member_id}&status=eq.requested&order=created_at.desc&limit=1&select=id`
+          );
+          const [returnRecord] = await returnRes.json();
+
+          if (!returnRecord) {
+            returnResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, return_id: null, success: false, error: 'No pending return found for this member' });
+            continue;
+          }
+
+          // Save tracking number to return record
+          const patch = await sbFetch(`/returns?id=eq.${returnRecord.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              return_tracking_number: row.tracking_number,
+              updated_at: new Date().toISOString(),
+            }),
+            headers: { Prefer: 'return=minimal' },
+          });
+
+          if (!patch.ok) {
+            returnResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, return_id: returnRecord.id, success: false, error: 'Failed to save return tracking number' });
+            continue;
+          }
+
+          // Register with EasyPost for tracking webhook
+          const epRegistered = await registerEasyPostTracking(row.tracking_number);
+
+          returnResults.push({
+            order_number: row.order_number,
             tracking_number: row.tracking_number,
-            carrier: row.carrier ?? 'USPS',
-            status: 'shipped',
-            actual_ship_date: new Date().toISOString().split('T')[0],
-            updated_at: new Date().toISOString(),
-          }),
-          headers: { Prefer: 'return=minimal' },
-        });
+            return_id: returnRecord.id,
+            success: true,
+            easypost_registered: epRegistered,
+          });
 
-        if (!patch.ok) {
-          results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: false, error: 'Failed to update shipment' });
-          continue;
+        } else {
+          // ── Outbound shipment row ─────────────────────────────────────────
+          const res = await sbFetch(
+            `/shipments?or=(order_number.eq.${encodeURIComponent(row.order_number)},shipment_number.eq.${encodeURIComponent(row.order_number)})&limit=1&select=id,status`
+          );
+          const [shipment] = await res.json();
+
+          if (!shipment) {
+            outboundResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: null, success: false, error: 'No matching shipment found' });
+            continue;
+          }
+
+          const patch = await sbFetch(`/shipments?id=eq.${shipment.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              tracking_number: row.tracking_number,
+              carrier: row.carrier ?? 'USPS',
+              status: 'shipped',
+              actual_ship_date: new Date().toISOString().split('T')[0],
+              updated_at: new Date().toISOString(),
+            }),
+            headers: { Prefer: 'return=minimal' },
+          });
+
+          if (!patch.ok) {
+            outboundResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: false, error: 'Failed to update shipment' });
+            continue;
+          }
+
+          outboundResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: true });
         }
-
-        results.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: true });
       }
 
       return {
-        succeeded: results.filter((r) => r.success).length,
-        failed: results.filter((r) => !r.success).length,
-        results,
+        succeeded: outboundResults.filter((r) => r.success).length + returnResults.filter((r) => r.success).length,
+        failed: outboundResults.filter((r) => !r.success).length + returnResults.filter((r) => !r.success).length,
+        outbound: outboundResults,
+        returns: returnResults,
       };
     }),
 });
