@@ -25,6 +25,7 @@ import WelcomePage from "./pages/WelcomePage";
 import IsbnLookupPage from "./pages/IsbnLookupPage";
 import PackingPage from "./pages/PackingPage";
 import OrdersPage from "./pages/OrdersPage";
+import MemberProfilePage from "./pages/MemberProfilePage";
 
 // Routes that render INSIDE the ops dashboard (with sidebar)
 function DashboardRouter() {
@@ -50,6 +51,7 @@ function DashboardRouter() {
           <Route path="/support" component={SupportPage} />
           <Route path="/isbn" component={IsbnLookupPage} />
           <Route path="/orders" component={OrdersPage} />
+          <Route path="/memebers/:id" component={MemberProfilePage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

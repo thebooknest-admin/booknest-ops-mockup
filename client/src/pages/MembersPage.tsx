@@ -2,8 +2,11 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Users, Search, UserCheck, ChevronDown, RefreshCw, CheckCircle2, Clock, Link2 } from "lucide-react";
+import { Users, Search, RefreshCw, CheckCircle2, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Link } from "wouter";
+import { UserPlus } from "lucide-react";
+import AddMemberModal from "@/components/AddMemberModal";
 
 const TIER_LABELS: Record<string, string> = {
   little_nest: "Little Nest",
@@ -22,7 +25,7 @@ const AGE_LABELS: Record<string, string> = {
 export default function MembersPage() {
   const [filter, setFilter] = useState<"all" | "active" | "waitlist" | "paused">("all");
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showAddMember, setShowAddMember] = useState(false);
 
   const { data, isLoading, refetch, isRefetching } = trpc.members.list.useQuery(undefined, {
     refetchInterval: 120_000,
@@ -45,22 +48,33 @@ export default function MembersPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Members</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {isLoading ? "Loading..." : `${data?.total ?? 0} total members`}
-          </p>
-        </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
-          Refresh
-        </button>
-      </div>
+<div className="flex items-start justify-between">
+  <div>
+    <h1 className="text-2xl font-bold text-foreground tracking-tight">Members</h1>
+    <p className="text-sm text-muted-foreground mt-0.5">
+      {isLoading ? "Loading..." : `${data?.total ?? 0} total members`}
+    </p>
+  </div>
+  <div className="flex items-center gap-2">
+    <button
+      onClick={() => setShowAddMember(true)}
+      className="flex items-center gap-1.5 text-xs text-white px-3 py-1.5 rounded-lg transition-colors"
+      style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+    >
+      <UserPlus className="w-3.5 h-3.5" />
+      Add Member
+    </button>
+    <button
+      onClick={() => refetch()}
+      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+    >
+      <RefreshCw className={cn("w-3.5 h-3.5", (isLoading || isRefetching) && "animate-spin")} />
+      Refresh
+    </button>
+  </div>
+</div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -150,15 +164,11 @@ export default function MembersPage() {
             </div>
 
             {filtered.map((member) => {
-              const isExpanded = expanded === member.id;
               const tierLabel = TIER_LABELS[member.tier?.toLowerCase() ?? ""] ?? member.tier;
 
               return (
                 <div key={member.id}>
-                  <div
-                    className="grid grid-cols-12 px-5 py-3.5 items-center hover:bg-muted/20 transition-colors cursor-pointer"
-                    onClick={() => setExpanded(isExpanded ? null : member.id)}
-                  >
+                  <div className="grid grid-cols-12 px-5 py-3.5 items-center hover:bg-muted/20 transition-colors">
                     {/* Name + Email */}
                     <div className="col-span-3 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{member.name}</p>
@@ -209,102 +219,15 @@ export default function MembersPage() {
                       </span>
                     </div>
 
-                    {/* Expand */}
                     <div className="col-span-1 flex justify-end">
-                      <ChevronDown className={cn(
-                        "w-4 h-4 text-muted-foreground transition-transform",
-                        isExpanded && "rotate-180"
-                      )} />
+  <Link href={`/members/${member.id}`}>
+    <button className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
+      View →
+    </button>
+  </Link>
+</div>
+                  
                     </div>
-                  </div>
-
-                  {/* Expanded Row */}
-                  {isExpanded && (
-                    <div className="px-5 pb-4 bg-muted/10 border-t border-border/50">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Phone</p>
-                          <p className="text-sm text-foreground">{member.phone || "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Founding Flock</p>
-                          <p className="text-sm text-foreground">{member.is_founding_flock ? "✅ Yes" : "No"}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">VIP</p>
-                          <p className="text-sm text-foreground">{member.is_vip ? "⭐ Yes" : "No"}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Welcome Form</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
-                              member.welcome_form_completed
-                                ? "bg-green-50 text-green-700 border-green-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200"
-                            )}>
-                              {member.welcome_form_completed ? (
-                                <><CheckCircle2 className="w-3 h-3" /> Completed</>
-                              ) : (
-                                <><Clock className="w-3 h-3" /> Pending</>
-                              )}
-                            </span>
-                            {!member.welcome_form_completed && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const link = `${window.location.origin}/welcome?email=${encodeURIComponent(member.email)}`;
-                                  navigator.clipboard.writeText(link).then(() => {
-                                    toast.success("Welcome link copied! Send it to " + member.name.split(" ")[0] + ".");
-                                  }).catch(() => {
-                                    toast.info("Welcome link: " + link);
-                                  });
-                                }}
-                                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors hover:bg-muted"
-                                style={{ borderColor: "oklch(0.42 0.11 155)", color: "oklch(0.42 0.11 155)" }}
-                              >
-                                <Link2 className="w-3 h-3" />
-                                Copy Welcome Link
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {member.topics_to_avoid && member.topics_to_avoid.length > 0 && (
-                          <div className="col-span-2 md:col-span-4">
-                            <p className="text-xs text-muted-foreground mb-1">Topics to Avoid</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {member.topics_to_avoid.map((t) => (
-                                <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Member Since</p>
-                          <p className="text-sm text-foreground">
-                            {new Date(member.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          </p>
-                        </div>
-                      </div>
-                      {member.subscription_status === "waitlist" && (
-                        <div className="mt-3 pt-3 border-t border-border/50">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toast.info("To activate this member, update their status in Supabase or your Shopify admin.");
-                            }}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
-                            style={{ borderColor: "oklch(0.42 0.11 155)", color: "oklch(0.42 0.11 155)" }}
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            Activate Member
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -317,6 +240,12 @@ export default function MembersPage() {
           Showing {filtered.length} of {members.length} members
         </p>
       )}
+      {showAddMember && (
+  <AddMemberModal
+    onClose={() => setShowAddMember(false)}
+    onSuccess={() => refetch()}
+  />
+)}
     </div>
   );
 }

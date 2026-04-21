@@ -53,14 +53,111 @@ export const appRouter = router({
     }),
 
     byId: publicProcedure
-      .input(z.object({ id: z.string() }))
-      .query(async ({ input }) => {
-        const member = await getMemberById(input.id);
-        if (!member) return null;
-        const address = await getMemberAddress(input.id);
-        return { ...member, address };
-      }),
+  .input(z.object({ id: z.string() }))
+  .query(async ({ input }) => {
+    const member = await getMemberById(input.id);
+    if (!member) return null;
+
+    const [address, shipmentsRes, keptBooksRes, creditsRes] = await Promise.all([
+      getMemberAddress(input.id),
+      sbFetch(`/shipments?member_id=eq.${input.id}&order=created_at.desc&limit=50&select=id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,shipment_type`),
+      sbFetch(`/member_book_history?member_id=eq.${input.id}&kept=eq.true&select=id,book_title_id,shipment_id,received_date&limit=100`),
+      sbFetch(`/member_credits?member_id=eq.${input.id}&limit=1&select=credits_available,next_issue_at`),
+    ]);
+
+    const shipments: any[] = await shipmentsRes.json();
+    const keptBooks: any[] = await keptBooksRes.json();
+    const credits: any[] = await creditsRes.json();
+
+    // Fetch book titles for kept books
+    let keptBooksWithTitles: any[] = [];
+    if (keptBooks.length > 0) {
+      const titleIds = [...new Set(keptBooks.map(b => b.book_title_id))];
+      const titlesRes = await sbFetch(
+        `/book_titles?id=in.(${titleIds.join(',')})&select=id,title,author&limit=100`
+      );
+      const titles: any[] = await titlesRes.json();
+      const titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
+      keptBooksWithTitles = keptBooks.map(b => ({
+        ...b,
+        book_title: titleMap[b.book_title_id] ?? null,
+      }));
+    }
+
+    return {
+      ...member,
+      address,
+      shipments,
+      keptBooks: keptBooksWithTitles,
+      creditsAvailable: credits[0]?.credits_available ?? 0,
+      nextCreditAt: credits[0]?.next_issue_at ?? null,
+    };
   }),
+  create: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        email: z.string(),
+        phone: z.string().optional(),
+        tier: z.string(),
+        age_group: z.string().optional(),
+        subscription_status: z.string(),
+        is_founding_flock: z.boolean().optional(),
+        street: z.string().optional(),
+        street2: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        zip: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { street, street2, city, state, zip, ...memberData } = input;
+        const memberRes = await sbFetch("/members", {
+          method: "POST",
+          body: JSON.stringify({
+            ...memberData,
+            welcome_form_completed: false,
+            is_vip: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: "return=representation" },
+        });
+        if (!memberRes.ok) throw new Error("Failed to create member");
+        const [member] = await memberRes.json();
+        const creditCount = input.tier === "Story Nest" ? 2 : input.tier === "Cozy Nest" ? 1 : 0;
+        if (creditCount > 0) {
+          const nextIssueAt = new Date();
+          nextIssueAt.setFullYear(nextIssueAt.getFullYear() + 1);
+          await sbFetch("/member_credits", {
+            method: "POST",
+            body: JSON.stringify({
+              member_id: member.id,
+              credits_available: creditCount,
+              last_issued_at: new Date().toISOString(),
+              next_issue_at: nextIssueAt.toISOString(),
+            }),
+          });
+        }
+        if (street && city && state && zip) {
+          await sbFetch("/member_addresses", {
+            method: "POST",
+            body: JSON.stringify({
+              member_id: member.id,
+              address_type: "shipping",
+              street,
+              street2: street2 || null,
+              city,
+              state,
+              zip,
+              country: "US",
+              is_default: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }),
+          });
+        }
+        return { success: true, id: member.id };
+      }),
+  }),  // ← closes members router
 
   // ─── Inventory ──────────────────────────────────────────────────────────────
   inventory: router({
