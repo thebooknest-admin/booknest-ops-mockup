@@ -45,13 +45,13 @@ function DashboardRouter() {
           <Route path="/returns" component={ReturnsPage} />
           <Route path="/qc" component={QCQueuePage} />
           <Route path="/stock" component={StockQueuePage} />
+          <Route path="/memebers/:id" component={MemberProfilePage} />
           <Route path="/members" component={MembersPage} />
           <Route path="/donations/intake" component={DonationIntakePage} />
           <Route path="/donations/log" component={DonationLogPage} />
           <Route path="/support" component={SupportPage} />
           <Route path="/isbn" component={IsbnLookupPage} />
           <Route path="/orders" component={OrdersPage} />
-          <Route path="/memebers/:id" component={MemberProfilePage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>
