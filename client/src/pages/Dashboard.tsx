@@ -64,7 +64,7 @@ export default function Dashboard() {
       priority: "urgent",
       label: `${pendingSwaps} swap${pendingSwaps !== 1 ? "s" : ""} requested`,
       sub: "Members ready to send books back — prep next bundle",
-      href: "/members",
+      href: "/picking",
       icon: ArrowRightLeft,
       count: pendingSwaps,
     });
@@ -281,7 +281,7 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link href="/members">
+        <Link href="/picking">
           <div className={cn("stat-card group cursor-pointer", pendingSwaps > 0 && "border-amber-200")}
             style={pendingSwaps > 0 ? { borderTopWidth: 3, borderTopColor: "oklch(0.76 0.16 70)" } : {}}>
             <div className="flex items-center justify-between">
