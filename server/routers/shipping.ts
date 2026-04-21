@@ -180,7 +180,7 @@ export const shippingRouter = router({
         } else {
           // ── Outbound shipment row ─────────────────────────────────────────
           const res = await sbFetch(
-            `/shipments?or=(order_number.eq.${encodeURIComponent(row.order_number)},shipment_number.eq.${encodeURIComponent(row.order_number)})&limit=1&select=id,status`
+            `/shipments?or=(order_number.eq.${encodeURIComponent(row.order_number)},shipment_number.eq.${encodeURIComponent(row.order_number)})&limit=1&select=id,status,member_id`
           );
           const [shipment] = await res.json();
 
@@ -206,7 +206,37 @@ export const shippingRouter = router({
             continue;
           }
 
-          outboundResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: true });
+          // Auto-create member_book_history rows
+const sbRes = await sbFetch(
+  `/shipment_books?shipment_id=eq.${shipment.id}&select=book_title_id`
+);
+const shipmentBooks: { book_title_id: string }[] = await sbRes.json();
+
+if (shipmentBooks.length > 0 && shipment.member_id) {
+  const today = new Date().toISOString().split('T')[0];
+  const historyRows = shipmentBooks.map((sb) => ({
+    member_id: shipment.member_id,
+    book_title_id: sb.book_title_id,
+    shipment_id: shipment.id,
+    received_date: today,
+    kept: false,
+    created_at: new Date().toISOString(),
+  }));
+
+  const histRes = await sbFetch('/member_book_history', {
+    method: 'POST',
+    body: JSON.stringify(historyRows),
+    headers: { Prefer: 'return=minimal' },
+  });
+
+  if (!histRes.ok) {
+    console.error(`[importTracking] Failed to create member_book_history for shipment ${shipment.id}`);
+  } else {
+    console.log(`[importTracking] Created ${historyRows.length} member_book_history rows for shipment ${shipment.id}`);
+  }
+}
+
+outboundResults.push({ order_number: row.order_number, tracking_number: row.tracking_number, shipment_id: shipment.id, success: true });
         }
       }
 
