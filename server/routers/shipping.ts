@@ -11,40 +11,15 @@
 import EasyPost from '@easypost/api';
 import {z} from 'zod';
 import {publicProcedure, router} from '../_core/trpc';
+import {sbFetch} from '../supabase';
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
 const EASYPOST_API_KEY = process.env.EASYPOST_API_KEY!;
-const OPS_BASE_URL = process.env.OPS_BASE_URL ?? 'https://booknest-ops-mockup-production.up.railway.app';
-
-const sbHeaders = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  'Content-Type': 'application/json',
-  Prefer: 'return=representation',
-};
-
-async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {...sbHeaders, ...(options.headers ?? {})},
-  });
-}
 
 const TIER_WEIGHT_OZ: Record<string, number> = {
   'little-nest': 32, 'cozy-nest': 48, 'story-nest': 64,
   little_nest: 32, cozy_nest: 48, story_nest: 64,
 };
 const DEFAULT_WEIGHT_OZ = 40;
-
-const BOOK_NEST = {
-  name: 'The Book Nest',
-  street: '205 Ambrose Drive',
-  street2: '#8',
-  city: 'Ranson',
-  state: 'WV',
-  zip: '25438',
-};
 
 function getNextShipDate(): string {
   const today = new Date();

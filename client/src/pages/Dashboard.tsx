@@ -8,21 +8,7 @@ import {
   CheckCircle2, Tag, Layers, CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-function getNextShipDay(): { isToday: boolean; label: string } {
-  const today = new Date();
-  const dow = today.getDay();
-  if (dow === 2) return { isToday: true, label: "Tuesday" };
-  if (dow === 5) return { isToday: true, label: "Friday" };
-  const daysUntilTue = (2 - dow + 7) % 7;
-  const daysUntilFri = (5 - dow + 7) % 7;
-  const next = new Date(today);
-  next.setDate(today.getDate() + Math.min(daysUntilTue, daysUntilFri));
-  return {
-    isToday: false,
-    label: next.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }),
-  };
-}
+import { getNextShipDay } from "@/lib/shipDays";
 
 export default function Dashboard() {
   const { data: stats, isLoading, refetch, isRefetching } = trpc.dashboard.stats.useQuery(undefined, {
@@ -40,8 +26,6 @@ export default function Dashboard() {
   const toPick = stats?.toPick ?? 0;
   const toPack = stats?.toPack ?? 0;
   const toShip = stats?.toShip ?? 0;
-  const labelCount = 0; // TODO: pull from labels.pending count
-  const stockCount = 0; // TODO: pull from stock.count
 
   // Build action items
   const actions: { id: string; priority: "urgent" | "today" | "normal"; label: string; sub: string; href: string; icon: React.ComponentType<any>; count?: number }[] = [];
@@ -75,7 +59,7 @@ export default function Dashboard() {
       id: "ship-today",
       priority: "today",
       label: `${toShip} order${toShip !== 1 ? "s" : ""} to ship today`,
-      sub: `It's ${nextShipDay.label} — export labels and drop off at USPS`,
+      sub: `It's ${nextShipDay.dayName} — export labels and drop off at USPS`,
       href: "/shipping",
       icon: Truck,
       count: toShip,

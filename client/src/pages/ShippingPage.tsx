@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { getNextShipDay } from "@/lib/shipDays";
 
 const TIER_LABELS: Record<string, string> = {
   "little-nest": "Little Nest", "cozy-nest": "Cozy Nest", "story-nest": "Story Nest",
@@ -31,17 +32,6 @@ function isDueToday(date: string | null): boolean {
   return date === new Date().toISOString().split("T")[0];
 }
 
-function getNextShipDay(): { label: string; isToday: boolean } {
-  const today = new Date();
-  const dow = today.getDay();
-  if (dow === 2) return { label: "Today (Tuesday)", isToday: true };
-  if (dow === 5) return { label: "Today (Friday)", isToday: true };
-  const daysUntilTue = (2 - dow + 7) % 7;
-  const daysUntilFri = (5 - dow + 7) % 7;
-  const next = new Date(today);
-  next.setDate(today.getDate() + Math.min(daysUntilTue, daysUntilFri));
-  return { label: next.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }), isToday: false };
-}
 
 function escapeCSV(val: string | null | undefined): string {
   const str = val ?? "";
@@ -396,7 +386,7 @@ export default function ShippingPage() {
                 {sorted.map((order) => {
                   const overdue = isOverdue(order.scheduled_ship_date);
                   const today = isDueToday(order.scheduled_ship_date);
-                  const tierKey = ((order as any).member_tier ?? "").toLowerCase();
+                  const tierKey = (order.member_tier ?? "").toLowerCase();
                   const tierLabel = TIER_LABELS[tierKey] ?? "—";
                   return (
                     <div key={order.id} className={cn("grid grid-cols-12 px-5 py-3.5 items-center", overdue && "bg-red-50/40", today && !overdue && "bg-amber-50/30")}>
@@ -406,7 +396,7 @@ export default function ShippingPage() {
                         </p>
                       </div>
                       <div className="col-span-3 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{(order as any).member_name ?? "Unknown"}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{order.member_name}</p>
                       </div>
                       <div className="col-span-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"

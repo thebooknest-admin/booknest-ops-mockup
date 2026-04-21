@@ -14,7 +14,7 @@ const BASE_HEADERS = {
   Prefer: "return=representation",
 };
 
-async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
+export async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const url = `${SUPABASE_URL}/rest/v1${path}`;
   return fetch(url, {
     ...options,
@@ -212,10 +212,10 @@ export async function getShipments(params?: {
 }): Promise<{ data: Shipment[]; total: number }> {
   const limit = params?.limit ?? 50;
   let qs = `?limit=${limit}&order=created_at.desc&select=id,member_id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,carrier,label_url,address_id,shipment_type,created_at,updated_at`;
-if (params?.status) qs += `&status=eq.${params.status}`;
-const res = await sbFetch(`/shipments${qs}`, {
-  headers: { Prefer: "count=exact" },
-});
+  if (params?.status) qs += `&status=eq.${params.status}`;
+  const res = await sbFetch(`/shipments${qs}`, {
+    headers: { Prefer: "count=exact" },
+  });
   const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
   const data: Shipment[] = await res.json();
   return { data, total };
@@ -374,13 +374,12 @@ export async function getBookTitlesWithCopies(params?: {
 
 export async function getDashboardStats() {
   const [membersRes, shipmentsRes, inventoryRes, returnsRes] = await Promise.all([
-  sbFetch("/members?select=id,subscription_status&limit=500"),
-  sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
-  getInventorySummary(),
-  sbFetch("/returns?select=id&status=eq.requested&limit=100"),
-]);
-const returns: { id: string }[] = await returnsRes.json();
-const pendingSwaps = returns.length;
+    sbFetch("/members?select=id,subscription_status&limit=500"),
+    sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
+    getInventorySummary(),
+    sbFetch("/returns?select=id&status=eq.requested", { headers: { Prefer: "count=exact", Range: "0-0" } }),
+  ]);
+  const pendingSwaps = parseInt(returnsRes.headers.get("content-range")?.split("/")[1] ?? "0", 10);
   const members: { id: string; subscription_status: string }[] = await membersRes.json();
   const shipments: { id: string; status: string; scheduled_ship_date: string | null; actual_ship_date: string | null }[] = await shipmentsRes.json();
 
@@ -400,7 +399,7 @@ const pendingSwaps = returns.length;
       s.scheduled_ship_date < today
   ).length;
 
-// Count shipped today by actual_ship_date
+  // Count shipped today by actual_ship_date
   const shippedToday = shipments.filter(
     (s) => s.status === "shipped" && s.actual_ship_date === today
   ).length;

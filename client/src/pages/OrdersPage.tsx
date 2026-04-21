@@ -46,7 +46,7 @@ export default function OrdersPage() {
     if (statusFilter && o.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      const memberName = ((o as any).member_name ?? "").toLowerCase();
+      const memberName = (o.member_name ?? "").toLowerCase();
       const orderNum = (o.order_number ?? o.shipment_number ?? "").toLowerCase();
       const tracking = (o.tracking_number ?? "").toLowerCase();
       if (!memberName.includes(q) && !orderNum.includes(q) && !tracking.includes(q)) return false;
@@ -158,7 +158,7 @@ export default function OrdersPage() {
             <div className="divide-y divide-border/50">
               {filtered.map((order) => {
                 const style = getStatusStyle(order.status);
-                const tierKey = ((order as any).member_tier ?? "").toLowerCase();
+                const tierKey = (order.member_tier ?? "").toLowerCase();
                 const tierLabel = TIER_LABELS[tierKey] ?? "—";
                 const shipDate = order.scheduled_ship_date
                   ? new Date(order.scheduled_ship_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -179,7 +179,7 @@ export default function OrdersPage() {
                     {/* Member */}
                     <div className="col-span-2 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">
-                        {(order as any).member_name ?? "Unknown"}
+                        {order.member_name}
                       </p>
                     </div>
 

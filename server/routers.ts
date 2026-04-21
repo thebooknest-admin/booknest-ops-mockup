@@ -19,28 +19,9 @@ import {
   getShipmentById,
   getShipments,
   updateShipmentStatus,
+  sbFetch,
 } from "./supabase";
 import { isbnRouter } from "./routers/isbn";
-
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
-
-const sbHeaders = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation",
-};
-
-async function sbFetch(
-  path: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: { ...sbHeaders, ...(options.headers ?? {}) },
-  });
-}
 
 export const appRouter = router({
   system: systemRouter,
@@ -128,9 +109,7 @@ export const appRouter = router({
           `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,cover_url,publisher,published_date,page_count,created_at,updated_at`
         );
         if (!titleRes.ok) {
-          const errText = await titleRes.text();
-          console.error("[getBookDetail] Supabase error:", errText);
-          throw new Error("Failed to fetch book title: " + errText);
+          throw new Error("Failed to fetch book title: " + await titleRes.text());
         }
         const titles: any[] = await titleRes.json();
         if (!titles[0]) return null;
@@ -139,10 +118,6 @@ export const appRouter = router({
         const copiesRes = await sbFetch(
           `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,created_at,updated_at`
         );
-        if (!copiesRes.ok) {
-          const errText = await copiesRes.text();
-          console.error("[getBookDetail] Supabase copies error:", errText);
-        }
         const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
 
         return { ...title, copies };
@@ -248,28 +223,23 @@ export const appRouter = router({
         });
         const memberIds = Array.from(new Set(data.map(s => s.member_id)));
         let memberMap: Record<string, string> = {};
-let memberTierMap: Record<string, string> = {};
-if (memberIds.length > 0) {
-  const res = await sbFetch(
-    `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
-  );
-  const members: {
-    id: string;
-    name: string;
-    tier: string;
-    age_group: string;
-  }[] = await res.json();
-  memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
-  memberTierMap = Object.fromEntries(members.map(m => [m.id, m.tier]));
-}
-return {
-  data: data.map(s => ({
-    ...s,
-    member_name: memberMap[s.member_id] ?? "Unknown",
-    member_tier: memberTierMap[s.member_id] ?? null,
-  })),
-  total,
-};
+        let memberTierMap: Record<string, string> = {};
+        if (memberIds.length > 0) {
+          const res = await sbFetch(
+            `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
+          );
+          const members: { id: string; name: string; tier: string; age_group: string }[] = await res.json();
+          memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
+          memberTierMap = Object.fromEntries(members.map(m => [m.id, m.tier]));
+        }
+        return {
+          data: data.map(s => ({
+            ...s,
+            member_name: memberMap[s.member_id] ?? "Unknown",
+            member_tier: memberTierMap[s.member_id] ?? null,
+          })),
+          total,
+        };
       }),
 
     byId: publicProcedure
@@ -329,7 +299,7 @@ return {
         await updateShipmentStatus(id, status, extra as any);
         return { success: true };
       }),
-listAll: publicProcedure.query(async () => {
+    listAll: publicProcedure.query(async () => {
       const { data } = await getShipments({ limit: 500 });
       const memberIds = Array.from(new Set(data.map(s => s.member_id)));
       let memberMap: Record<string, string> = {};
@@ -755,7 +725,6 @@ listAll: publicProcedure.query(async () => {
           interests: input.interests,
           topics_to_avoid: input.topics_to_avoid,
           welcome_form_completed: true,
-          welcome_form: "completed",
           updated_at: new Date().toISOString(),
           ...(input.child_name ? { child_name: input.child_name } : {}),
           ...(input.child_birthday
@@ -1038,7 +1007,7 @@ listAll: publicProcedure.query(async () => {
             child_birthday: s.child_birthday ?? null,
             age_group: s.reading_level ?? null,
             tier: s.subscription_tier ?? null,
-            status: "active",
+            subscription_status: "active",
             interests: s.interests ?? [],
             topics_to_avoid: s.topics_to_avoid ?? [],
             additional_notes: s.additional_notes ?? null,

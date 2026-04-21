@@ -56,7 +56,7 @@ interface PickModeProps {
 }
 
 function PickMode({ order, onComplete, onBack }: PickModeProps) {
-  const [scannedBooks, setScannedBooks] = useState<ScannedBook[]>([]);
+  const [scannedBooks, setScannedBooks] = useState<Record<number, ScannedBook>>({});
   const [scanInput, setScanInput] = useState("");
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [scanMessage, setScanMessage] = useState("");
@@ -70,7 +70,7 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
 
   const recommended = suggestions?.recommended ?? [];
   const booksNeeded = order.books_needed;
-  const allScanned = scannedBooks.length >= booksNeeded;
+  const allScanned = Object.keys(scannedBooks).length >= booksNeeded;
 
   // Auto-focus scan input
   useEffect(() => {
@@ -95,21 +95,21 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
 
     if (scannedSku === expectedSku) {
       // Check for duplicates
-      if (scannedBooks.some((b) => b.sku.toUpperCase() === scannedSku)) {
+      if (Object.values(scannedBooks).some((b) => b.sku.toUpperCase() === scannedSku)) {
         setScanState("error");
         setScanMessage("This book was already scanned!");
         setScanInput("");
         return;
       }
 
-      setScannedBooks((prev) => [
+      setScannedBooks((prev) => ({
         ...prev,
-        {
+        [activeSlot]: {
           book_title_id: expectedBook.book_title_id,
-          copy_id: expectedBook.copy_id,
-          sku: expectedBook.sku,
+          copy_id: expectedBook.copy_id!,
+          sku: expectedBook.sku!,
         },
-      ]);
+      }));
       setScanState("success");
       setScanMessage(`✓ ${expectedBook.title} confirmed!`);
       setScanInput("");
@@ -131,7 +131,11 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
   };
 
   const handleUnscan = (idx: number) => {
-    setScannedBooks((prev) => prev.filter((_, i) => i !== idx));
+    setScannedBooks((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
     setActiveSlot(idx);
     setScanState("idle");
     setScanMessage("");
@@ -183,10 +187,10 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
         <div className="flex-1 bg-muted rounded-full h-2">
           <div
             className="bg-green-500 h-2 rounded-full transition-all"
-            style={{ width: `${(scannedBooks.length / booksNeeded) * 100}%` }}
+            style={{ width: `${(Object.keys(scannedBooks).length / booksNeeded) * 100}%` }}
           />
         </div>
-        <span className="text-sm font-medium text-foreground">{scannedBooks.length}/{booksNeeded} scanned</span>
+        <span className="text-sm font-medium text-foreground">{Object.keys(scannedBooks).length}/{booksNeeded} scanned</span>
       </div>
 
       {/* Book slots */}
@@ -198,7 +202,7 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
       ) : (
         <div className="space-y-3">
           {recommended.map((book, idx) => {
-            const isScanned = idx < scannedBooks.length;
+            const isScanned = idx in scannedBooks;
             const isActive = idx === activeSlot && !allScanned;
             const isPending = idx > activeSlot;
 
@@ -307,7 +311,11 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
       {allScanned && (
         <div className="sticky bottom-6">
           <button
-            onClick={() => onComplete(scannedBooks)}
+            onClick={() => onComplete(
+              Object.entries(scannedBooks)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([, book]) => book)
+            )}
             className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all hover:opacity-90 active:scale-95"
             style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
           >

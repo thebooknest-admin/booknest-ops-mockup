@@ -10,23 +10,7 @@
 
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
-
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
-
-const sbHeaders = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation",
-};
-
-async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: { ...sbHeaders, ...(options.headers ?? {}) },
-  });
-}
+import { sbFetch } from "../supabase";
 
 export const packingRouter = router({
   /**

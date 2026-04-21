@@ -11,23 +11,7 @@
 
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
-
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
-
-const sbHeaders = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation",
-};
-
-async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: { ...sbHeaders, ...(options.headers ?? {}) },
-  });
-}
+import { sbFetch } from "../supabase";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
@@ -263,26 +247,9 @@ export const pickingRouter = router({
         })
         .sort((a, b) => b.score - a.score);
 
-      const recommended = scored.slice(0, booksNeeded);
       const allSuggestions = scored.slice(0, booksNeeded * 2);
 
-      // Fetch one specific in-house copy per recommended book
-      const recommendedWithCopies = await Promise.all(
-        recommended.map(async (book) => {
-          const copyRes = await sbFetch(
-            `/book_copies?book_title_id=eq.${book.book_title_id}&status=eq.in_house&select=id,sku,bin_id&limit=1&order=received_at.asc`
-          );
-          const [copy] = await copyRes.json();
-          return {
-            ...book,
-            copy_id: copy?.id ?? null,
-            sku: copy?.sku ?? null,
-            bin_id: copy?.bin_id ?? null,
-          };
-        })
-      );
-
-      // Fetch copy info for all suggestions
+      // Fetch one specific in-house copy per suggestion book (recommended is a subset)
       const allSuggestionsWithCopies = await Promise.all(
         allSuggestions.map(async (book) => {
           const copyRes = await sbFetch(
@@ -304,7 +271,7 @@ export const pickingRouter = router({
         tier: member.tier,
         age_group: member.age_group,
         books_needed: booksNeeded,
-        recommended: recommendedWithCopies,
+        recommended: allSuggestionsWithCopies.slice(0, booksNeeded),
         all_suggestions: allSuggestionsWithCopies,
       };
     }),
@@ -345,7 +312,7 @@ export const pickingRouter = router({
         const [address] = await addrRes.json();
 
         // Update shipment to packing status
-        await sbFetch(`/shipments?id=eq.${shipment_id}`, {
+        const shipPatch = await sbFetch(`/shipments?id=eq.${shipment_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             status: "packing",
@@ -354,6 +321,7 @@ export const pickingRouter = router({
           }),
           headers: { Prefer: "return=minimal" },
         });
+        if (!shipPatch.ok) throw new Error(`Failed to update shipment status: ${await shipPatch.text()}`);
 
         // Assign specific scanned copies to shipment
         for (let i = 0; i < book_title_ids.length; i++) {
@@ -362,7 +330,7 @@ export const pickingRouter = router({
           if (!titleId || !copyId) continue;
 
           // Mark copy as in_transit
-          await sbFetch(`/book_copies?id=eq.${copyId}`, {
+          const copyPatch = await sbFetch(`/book_copies?id=eq.${copyId}`, {
             method: "PATCH",
             body: JSON.stringify({
               status: "in_transit",
@@ -370,9 +338,10 @@ export const pickingRouter = router({
             }),
             headers: { Prefer: "return=minimal" },
           });
+          if (!copyPatch.ok) throw new Error(`Failed to update copy ${copyId}: ${await copyPatch.text()}`);
 
           // Create shipment_books record
-          await sbFetch("/shipment_books", {
+          const sbPost = await sbFetch("/shipment_books", {
             method: "POST",
             body: JSON.stringify({
               shipment_id: shipment_id,
@@ -384,12 +353,13 @@ export const pickingRouter = router({
             }),
             headers: { Prefer: "return=minimal" },
           });
+          if (!sbPost.ok) throw new Error(`Failed to create shipment_books record: ${await sbPost.text()}`);
         }
 
         // Update member's next_ship_date (advance by ~4 weeks)
         const nextDate = new Date();
         nextDate.setDate(nextDate.getDate() + 28);
-        await sbFetch(`/members?id=eq.${member_id}`, {
+        const memberPatch = await sbFetch(`/members?id=eq.${member_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             next_ship_date: nextDate.toISOString().split("T")[0],
@@ -397,6 +367,7 @@ export const pickingRouter = router({
           }),
           headers: { Prefer: "return=minimal" },
         });
+        if (!memberPatch.ok) throw new Error(`Failed to update member next_ship_date: ${await memberPatch.text()}`);
 
         results.push({
           member_id,
