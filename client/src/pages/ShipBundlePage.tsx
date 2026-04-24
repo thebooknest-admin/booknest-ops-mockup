@@ -43,6 +43,80 @@ const CHECKLIST_ITEMS = [
   },
 ];
 
+function TrackingEntry({ shipmentId, currentTracking, currentCarrier, onSaved }: {
+  shipmentId: string;
+  currentTracking?: string | null;
+  currentCarrier?: string | null;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(!currentTracking);
+  const [tracking, setTracking] = useState(currentTracking ?? "");
+  const [carrier, setCarrier] = useState(currentCarrier ?? "USPS");
+
+  const updateTracking = trpc.shipments.updateTracking.useMutation({
+    onSuccess: () => {
+      toast.success("Tracking saved!");
+      setEditing(false);
+      onSaved();
+    },
+    onError: (err) => toast.error("Failed to save: " + err.message),
+  });
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="mt-4 text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+      >
+        Edit tracking
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-5 text-left space-y-3 border-t border-border pt-5">
+      <p className="text-sm font-semibold text-foreground">Add Tracking</p>
+      <div className="space-y-2">
+        <select
+          value={carrier}
+          onChange={(e) => setCarrier(e.target.value)}
+          className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="USPS">USPS</option>
+          <option value="UPS">UPS</option>
+          <option value="FedEx">FedEx</option>
+          <option value="Other">Other</option>
+        </select>
+        <input
+          type="text"
+          placeholder="Tracking number"
+          value={tracking}
+          onChange={(e) => setTracking(e.target.value)}
+          className="w-full text-sm rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono"
+        />
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => updateTracking.mutate({ id: shipmentId, tracking_number: tracking, carrier })}
+          disabled={!tracking || updateTracking.isPending}
+          className="flex-1 text-sm font-semibold py-2 rounded-lg text-white disabled:opacity-40"
+          style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+        >
+          {updateTracking.isPending ? "Saving…" : "Save Tracking"}
+        </button>
+        {currentTracking && (
+          <button
+            onClick={() => setEditing(false)}
+            className="px-4 text-sm rounded-lg border border-border hover:bg-muted transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ShipBundlePage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -408,33 +482,38 @@ export default function ShipBundlePage() {
         </div>
       )}
 
-      {/* ── Already shipped ────────────────────────────────────────────────── */}
-      {isShipped && (
-        <div className="bg-card rounded-xl border border-border p-8 text-center">
-          <Truck
-            className="w-10 h-10 mx-auto mb-3"
-            style={{ color: "oklch(0.42 0.11 155)" }}
-          />
-          <h3 className="font-semibold text-foreground">
-            This bundle has been shipped
-          </h3>
-          {shipment.actual_ship_date && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Shipped on{" "}
-              {new Date(shipment.actual_ship_date).toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </p>
-          )}
-          {shipment.tracking_number && (
-            <p className="text-xs font-mono text-muted-foreground mt-2">
-              Tracking: {shipment.tracking_number}
-            </p>
-          )}
-        </div>
-      )}
+ {/* ── Already shipped ────────────────────────────────────────────────── */}
+{isShipped && (
+  <div className="bg-card rounded-xl border border-border p-8 text-center">
+    <Truck
+      className="w-10 h-10 mx-auto mb-3"
+      style={{ color: "oklch(0.42 0.11 155)" }}
+    />
+    <h3 className="font-semibold text-foreground">
+      This bundle has been shipped
+    </h3>
+    {shipment.actual_ship_date && (
+      <p className="text-sm text-muted-foreground mt-1">
+        Shipped on{" "}
+        {new Date(shipment.actual_ship_date).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </p>
+    )}
+    {shipment.tracking_number ? (
+      <p className="text-xs font-mono text-muted-foreground mt-2">
+        Tracking: {shipment.tracking_number}
+      </p>
+    ) : (
+      <p className="text-xs text-amber-600 mt-2">No tracking number on file</p>
+    )}
+
+    {/* Manual tracking entry */}
+    <TrackingEntry shipmentId={shipment.id} currentTracking={shipment.tracking_number} currentCarrier={shipment.carrier} onSaved={() => refetch()} />
+  </div>
+)}
     </div>
   );
 }

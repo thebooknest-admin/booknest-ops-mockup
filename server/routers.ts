@@ -381,6 +381,28 @@ export const appRouter = router({
         };
       }),
 
+      updateTracking: publicProcedure
+      .input(
+        z.object({
+          id: z.string(),
+          tracking_number: z.string(),
+          carrier: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/shipments?id=eq.${input.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            tracking_number: input.tracking_number,
+            carrier: input.carrier ?? 'USPS',
+            updated_at: new Date().toISOString(),
+          }),
+          headers: { Prefer: 'return=minimal' },
+        });
+        if (!res.ok) throw new Error(`Failed to update tracking: ${await res.text()}`);
+        return { success: true };
+      }),
+
     updateStatus: publicProcedure
       .input(
         z.object({
