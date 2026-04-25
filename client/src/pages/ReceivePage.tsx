@@ -1,38 +1,54 @@
-// BookNest Ops — Receive Books (multi-step wizard with live ISBN lookup + smart tag matching + age inference)
-// Design: Warm Linen Artisan Light — forest green primary, warm linen bg
+// BookNest Ops — Receive Books (merged with ISBN classifier)
+// ISBN lookup now uses trpc.isbn.classify — pre-fills tier, bin, and tags from classifier
 
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck, Copy
+  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck, Copy, Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import {
-  TAG_TAXONOMY, autoAssignTags, getCategoryForTag, buildBinName,
-  type BinCategory, type TagCategory
+  TAG_TAXONOMY, getCategoryForTag, buildBinName,
+  type BinCategory,
 } from "@/lib/tags";
-import {
-  inferAgeGroup, AGE_GROUP_INFO,
-  type AgeGroupKey, type AgeInferenceResult
-} from "@/lib/ageInference";
 
-const STEPS = ["Scan ISBN", "Confirm Details", "Age Group", "Tags & Bin", "Confirm"];
+const STEPS = ["Scan ISBN", "Confirm Details", "Tags & Bin", "Confirm"];
+
+// Map classifier tiers → display labels used by receive flow
+const TIER_TO_AGE_GROUP: Record<string, string> = {
+  "Hatchlings":   "Hatchlings (0-2)",
+  "Fledglings":   "Fledglings (3-5)",
+  "Soarers":      "Soarers (6-8)",
+  "Sky Readers":  "Sky Readers (9-12)",
+};
+
+// Map classifier bins → BinCategory IDs used by tag/bin system
+const BIN_TO_CATEGORY: Record<string, BinCategory> = {
+  Adventure: "ADVENTURE",
+  Humor:     "HUMOR",
+  Life:      "LIFE",
+  Learn:     "LEARN",
+  Identity:  "IDENTITY",
+  Nature:    "NATURE",
+  Seasonal:  "SEASONAL",
+};
 
 const AGE_GROUPS = ["Hatchlings (0-2)", "Fledglings (3-5)", "Soarers (6-8)", "Sky Readers (9-12)"];
 const AGE_EMOJIS: Record<string, string> = {
-  "Hatchlings (0-2)": "🐣",
-  "Fledglings (3-5)": "🐦",
-  "Soarers (6-8)": "🦅",
-  "Sky Readers (9-12)": "🌟",
+  "Hatchlings (0-2)":  "🐣",
+  "Fledglings (3-5)":  "🐦",
+  "Soarers (6-8)":     "🦅",
+  "Sky Readers (9-12)":"🌟",
 };
 
 const CONFIDENCE_COLORS = {
   high:   { bg: "oklch(0.96 0.04 155)", border: "oklch(0.82 0.09 155)", text: "oklch(0.30 0.12 155)", badge: "oklch(0.42 0.11 155)" },
   medium: { bg: "oklch(0.97 0.05 80)",  border: "oklch(0.84 0.10 80)",  text: "oklch(0.38 0.12 75)",  badge: "oklch(0.55 0.14 75)"  },
   low:    { bg: "oklch(0.97 0.02 260)", border: "oklch(0.85 0.05 260)", text: "oklch(0.38 0.08 260)", badge: "oklch(0.52 0.12 260)" },
+  "needs-review": { bg: "oklch(0.97 0.04 25)", border: "oklch(0.88 0.08 25)", text: "oklch(0.40 0.18 25)", badge: "oklch(0.55 0.18 25)" },
 };
 
 interface BookData {
@@ -43,108 +59,86 @@ interface BookData {
   publishYear: string;
   pages: string;
   coverUrl: string | null;
+  coverCandidates: string[];
   subjects: string[];
   openLibraryUrl: string | null;
 }
 
-async function lookupISBN(isbn: string): Promise<BookData> {
-  const clean = isbn.replace(/[^0-9X]/gi, "");
-  const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${clean}&format=json&jscmd=data`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("NETWORK");
-  const data = await res.json();
-  const key = `ISBN:${clean}`;
-  const book = data[key];
-  if (!book) throw new Error("NOT_FOUND");
+// ─── COVER IMAGE with fallback chain ─────────────────────────────────────────
 
-  return {
-    title: book.title || "Unknown Title",
-    author: book.authors?.map((a: { name: string }) => a.name).join(", ") || "Unknown Author",
-    isbn: clean,
-    publisher: book.publishers?.map((p: { name: string }) => p.name).join(", ") || "Unknown",
-    publishYear: book.publish_date || "—",
-    pages: book.number_of_pages ? String(book.number_of_pages) : "—",
-    coverUrl: book.cover?.large || book.cover?.medium || book.cover?.small || null,
-    subjects: (book.subjects || []).slice(0, 12).map((s: { name?: string } | string) =>
-      typeof s === "string" ? s : s.name || "").filter(Boolean),
-    openLibraryUrl: book.url || null,
-  };
+function CoverImage({ title, coverCandidates, coverUrl }: { title: string; coverCandidates: string[]; coverUrl: string | null }) {
+  const [idx, setIdx] = useState(0);
+  const candidates = coverCandidates?.length ? coverCandidates : coverUrl ? [coverUrl] : [];
+  if (!candidates.length) {
+    return (
+      <div className="w-24 h-32 rounded-lg border border-border flex flex-col items-center justify-center gap-1"
+        style={{ backgroundColor: "oklch(0.95 0.01 80)" }}>
+        <BookOpen className="w-8 h-8 text-muted-foreground/50" />
+        <span className="text-[10px] text-muted-foreground text-center px-1">No cover</span>
+      </div>
+    );
+  }
+  return (
+    <img src={candidates[idx]} alt={title}
+      className="w-24 h-32 object-cover rounded-lg shadow-md border border-border shrink-0"
+      onError={() => { if (idx < candidates.length - 1) setIdx(i => i + 1); }}
+    />
+  );
 }
 
-// ─── TAG SELECTOR COMPONENT ───────────────────────────────────────────────────
+// ─── TAG SELECTOR ─────────────────────────────────────────────────────────────
 
 function TagSelector({
-  selectedTags,
-  onToggle,
-  autoTags,
-  subjects,
+  selectedTags, onToggle, autoTags,
 }: {
-  selectedTags: string[];
-  onToggle: (tag: string) => void;
-  autoTags: string[];
-  subjects: string[];
+  selectedTags: string[]; onToggle: (tag: string) => void; autoTags: string[];
 }) {
   const [expandedCat, setExpandedCat] = useState<BinCategory | null>(null);
   const [search, setSearch] = useState("");
 
   const filteredTaxonomy = search.trim()
-    ? TAG_TAXONOMY.map(cat => ({
-        ...cat,
-        tags: cat.tags.filter(t => t.toLowerCase().includes(search.toLowerCase())),
-      })).filter(cat => cat.tags.length > 0)
+    ? TAG_TAXONOMY.map(cat => ({ ...cat, tags: cat.tags.filter(t => t.toLowerCase().includes(search.toLowerCase())) })).filter(cat => cat.tags.length > 0)
     : TAG_TAXONOMY;
 
   return (
     <div className="space-y-3">
-      {/* Auto-assigned banner */}
       {autoTags.length > 0 && (
         <div className="p-3 rounded-lg border text-xs leading-relaxed"
           style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
-          <span className="font-semibold">Auto-matched from Open Library subjects:</span>{" "}
-          {subjects.slice(0, 5).join(", ")}
-          <br />
-          <span className="font-semibold mt-1 block">Suggested tags:</span>{" "}
+          <span className="font-semibold flex items-center gap-1.5 mb-1"><Zap className="w-3 h-3" /> Classifier suggested tags:</span>
           {autoTags.map(t => (
             <span key={t} className="inline-flex items-center gap-1 mr-1.5 px-2 py-0.5 rounded-full font-medium"
-              style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.28 0.10 155)" }}>
-              {t}
-            </span>
+              style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.28 0.10 155)" }}>{t}</span>
           ))}
         </div>
       )}
 
-      {/* Selected tags summary */}
       <div className="flex flex-wrap gap-1.5 min-h-[2rem]">
-        {selectedTags.length === 0 ? (
-          <span className="text-xs text-muted-foreground italic">No tags selected yet — pick from categories below</span>
-        ) : selectedTags.map(tag => {
-          const cat = getCategoryForTag(tag);
-          return (
-            <button key={tag} onClick={() => onToggle(tag)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:opacity-80"
-              style={{ backgroundColor: cat?.color.bg, color: cat?.color.text }}>
-              {cat?.emoji} {tag}
-              <X className="w-3 h-3" />
-            </button>
-          );
-        })}
+        {selectedTags.length === 0
+          ? <span className="text-xs text-muted-foreground italic">No tags selected — pick from categories below</span>
+          : selectedTags.map(tag => {
+              const cat = getCategoryForTag(tag);
+              return (
+                <button key={tag} onClick={() => onToggle(tag)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:opacity-80"
+                  style={{ backgroundColor: cat?.color.bg, color: cat?.color.text }}>
+                  {cat?.emoji} {tag}<X className="w-3 h-3" />
+                </button>
+              );
+            })}
       </div>
 
-      {/* Tag count indicator */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
           {selectedTags.length}/4 tags selected
-          {selectedTags.length >= 4 && <span className="ml-1 font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>(max reached)</span>}
+          {selectedTags.length >= 4 && <span className="ml-1 font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>(max)</span>}
         </span>
         {selectedTags.length > 0 && (
           <button onClick={() => selectedTags.forEach(t => onToggle(t))}
-            className="text-xs text-muted-foreground hover:text-destructive transition-colors">
-            Clear all
-          </button>
+            className="text-xs text-muted-foreground hover:text-destructive transition-colors">Clear all</button>
         )}
       </div>
 
-      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
@@ -152,56 +146,38 @@ function TagSelector({
           className="w-full pl-9 pr-4 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
       </div>
 
-      {/* Category accordion */}
       <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
         {filteredTaxonomy.map(cat => {
           const isOpen = expandedCat === cat.id || !!search.trim();
           const selectedInCat = selectedTags.filter(t => cat.tags.includes(t));
           return (
             <div key={cat.id} className="rounded-xl border border-border overflow-hidden">
-              <button
-                onClick={() => setExpandedCat(isOpen && !search ? null : cat.id)}
+              <button onClick={() => setExpandedCat(isOpen && !search ? null : cat.id)}
                 className="w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
-                style={{ backgroundColor: isOpen ? cat.color.bg : undefined }}
-              >
+                style={{ backgroundColor: isOpen ? cat.color.bg : undefined }}>
                 <div className="flex items-center gap-2">
                   <span className="text-base">{cat.emoji}</span>
                   <span className="font-semibold text-sm" style={{ color: cat.color.text }}>{cat.label}</span>
                   {selectedInCat.length > 0 && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ backgroundColor: cat.color.border, color: cat.color.text }}>
-                      {selectedInCat.length}
-                    </span>
+                      style={{ backgroundColor: cat.color.border, color: cat.color.text }}>{selectedInCat.length}</span>
                   )}
                 </div>
-                {!search && (isOpen
-                  ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                  : <ChevronDown className="w-4 h-4 text-muted-foreground" />)}
+                {!search && (isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />)}
               </button>
               {isOpen && (
-                <div className="px-3 pb-3 pt-2 flex flex-wrap gap-1.5"
-                  style={{ backgroundColor: cat.color.bg + "80" }}>
+                <div className="px-3 pb-3 pt-2 flex flex-wrap gap-1.5" style={{ backgroundColor: cat.color.bg + "80" }}>
                   {cat.tags.map(tag => {
                     const isSelected = selectedTags.includes(tag);
                     const isAuto = autoTags.includes(tag);
                     const maxed = !isSelected && selectedTags.length >= 4;
                     return (
-                      <button key={tag} onClick={() => !maxed && onToggle(tag)}
-                        disabled={maxed}
+                      <button key={tag} onClick={() => !maxed && onToggle(tag)} disabled={maxed}
                         className={cn(
                           "px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
-                          isSelected
-                            ? "text-white border-transparent shadow-sm"
-                            : maxed
-                            ? "opacity-30 cursor-not-allowed border-border text-muted-foreground"
-                            : "border-border/60 hover:border-current hover:shadow-sm"
+                          isSelected ? "text-white border-transparent shadow-sm" : maxed ? "opacity-30 cursor-not-allowed border-border text-muted-foreground" : "border-border/60 hover:border-current hover:shadow-sm"
                         )}
-                        style={isSelected
-                          ? { backgroundColor: cat.color.text, borderColor: cat.color.text }
-                          : { color: cat.color.text, backgroundColor: "white" }
-                        }
-                        title={isAuto ? "Auto-matched from Open Library" : undefined}
-                      >
+                        style={isSelected ? { backgroundColor: cat.color.text, borderColor: cat.color.text } : { color: cat.color.text, backgroundColor: "white" }}>
                         {isAuto && !isSelected && <span className="mr-1 opacity-60">✦</span>}
                         {tag}
                       </button>
@@ -213,36 +189,22 @@ function TagSelector({
           );
         })}
       </div>
-      <p className="text-[10px] text-muted-foreground">✦ = auto-matched from Open Library subjects</p>
+      <p className="text-[10px] text-muted-foreground">✦ = suggested by classifier</p>
     </div>
   );
 }
 
-// ─── BIN OVERRIDE COMPONENT ───────────────────────────────────────────────────
+// ─── BIN OVERRIDE ─────────────────────────────────────────────────────────────
 
 function BinOverride({
-  ageGroup,
-  suggestedCategory,
-  selectedCategory,
-  onSelectCategory,
-  categoryScores,
-  isManualOverride,
-  onResetToAuto,
+  ageGroup, suggestedCategory, selectedCategory, onSelectCategory, isManualOverride, onResetToAuto,
 }: {
-  ageGroup: string;
-  suggestedCategory: BinCategory;
-  selectedCategory: BinCategory;
-  onSelectCategory: (cat: BinCategory) => void;
-  categoryScores: Record<BinCategory, number>;
-  isManualOverride: boolean;
-  onResetToAuto: () => void;
+  ageGroup: string; suggestedCategory: BinCategory; selectedCategory: BinCategory;
+  onSelectCategory: (cat: BinCategory) => void; isManualOverride: boolean; onResetToAuto: () => void;
 }) {
   const [overriding, setOverriding] = useState(false);
-  const maxScore = Math.max(...Object.values(categoryScores), 1);
-
   return (
     <div className="space-y-3">
-      {/* Current bin display */}
       <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "oklch(0.97 0.03 155)" }}>
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Assigned Bin</p>
@@ -251,15 +213,13 @@ function BinOverride({
               <button onClick={() => { onResetToAuto(); setOverriding(false); }}
                 className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
                 style={{ color: "oklch(0.52 0.12 260)" }}>
-                <RotateCcw className="w-3 h-3" />
-                Reset to auto
+                <RotateCcw className="w-3 h-3" />Reset to auto
               </button>
             )}
             <button onClick={() => setOverriding(!overriding)}
               className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
               style={{ color: "oklch(0.42 0.11 155)" }}>
-              <Pencil className="w-3 h-3" />
-              {overriding ? "Close" : "Override"}
+              <Pencil className="w-3 h-3" />{overriding ? "Close" : "Override"}
             </button>
           </div>
         </div>
@@ -267,62 +227,34 @@ function BinOverride({
           {buildBinName(ageGroup, selectedCategory)}
         </p>
         <div className="flex items-center gap-2">
-          {(() => {
-            const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory);
-            return cat ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>
-                {cat.emoji} {cat.label}
-              </span>
-            ) : null;
-          })()}
-          {isManualOverride && (
-            <span className="text-xs text-muted-foreground italic">(manually overridden)</span>
-          )}
-          {!isManualOverride && (
-            <span className="text-xs" style={{ color: "oklch(0.42 0.11 155)" }}>✓ updates with tags</span>
-          )}
+          {(() => { const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory); return cat ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+              style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>{cat.emoji} {cat.label}</span>
+          ) : null; })()}
+          {isManualOverride && <span className="text-xs text-muted-foreground italic">(manually overridden)</span>}
+          {!isManualOverride && <span className="text-xs" style={{ color: "oklch(0.42 0.11 155)" }}>✓ from classifier</span>}
         </div>
       </div>
-
-      {/* Override panel */}
       {overriding && (
         <div className="rounded-xl border border-border p-4 space-y-3 bg-card">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Select a different bin category
-          </p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Select a different bin category</p>
           <div className="grid grid-cols-2 gap-2">
             {TAG_TAXONOMY.map(cat => {
-              const score = categoryScores[cat.id] || 0;
-              const pct = Math.round((score / maxScore) * 100);
               const isSelected = selectedCategory === cat.id;
               const isSuggested = suggestedCategory === cat.id;
               return (
                 <button key={cat.id} onClick={() => { onSelectCategory(cat.id); setOverriding(false); }}
-                  className={cn(
-                    "p-3 rounded-xl border-2 text-left transition-all hover:shadow-sm",
-                    isSelected ? "border-current" : "border-border hover:border-current/40"
-                  )}
+                  className={cn("p-3 rounded-xl border-2 text-left transition-all hover:shadow-sm", isSelected ? "border-current" : "border-border hover:border-current/40")}
                   style={isSelected ? { borderColor: cat.color.text, backgroundColor: cat.color.bg } : {}}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm">{cat.emoji}</span>
                     <div className="flex items-center gap-1">
-                      {isSuggested && <span className="text-[9px] px-1 rounded font-bold"
-                        style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>AUTO</span>}
+                      {isSuggested && <span className="text-[9px] px-1 rounded font-bold" style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>AUTO</span>}
                       {isSelected && <Check className="w-3.5 h-3.5" style={{ color: cat.color.text }} />}
                     </div>
                   </div>
                   <p className="text-xs font-semibold" style={{ color: cat.color.text }}>{cat.label}</p>
-                  <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                    {buildBinName(ageGroup, cat.id)}
-                  </p>
-                  {/* Confidence bar */}
-                  {score > 0 && (
-                    <div className="mt-2 h-1 rounded-full bg-border overflow-hidden">
-                      <div className="h-full rounded-full transition-all"
-                        style={{ width: `${pct}%`, backgroundColor: cat.color.text }} />
-                    </div>
-                  )}
+                  <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{buildBinName(ageGroup, cat.id)}</p>
                 </button>
               );
             })}
@@ -337,109 +269,105 @@ function BinOverride({
 
 export default function ReceivePage() {
   const [step, setStep] = useState(0);
-  const [isbn, setIsbn] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [isbnInput, setIsbnInput] = useState("");
+  const [submittedIsbn, setSubmittedIsbn] = useState<string | null>(null);
   const [book, setBook] = useState<BookData | null>(null);
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [ageGroup, setAgeGroup] = useState("");
-  const [ageInference, setAgeInference] = useState<AgeInferenceResult | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [autoTags, setAutoTags] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<BinCategory>("LIFE");
   const [suggestedCategory, setSuggestedCategory] = useState<BinCategory>("LIFE");
   const [isManualCategoryOverride, setIsManualCategoryOverride] = useState(false);
-  const [categoryScores, setCategoryScores] = useState<Record<BinCategory, number>>({
-    ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
-    IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
-  });
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
   const [isbnCopied, setIsbnCopied] = useState(false);
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
 
-  // Live pending label count — refetched after each book is received
+  // ── tRPC: ISBN classify ──────────────────────────────────────────────────
+  const { isFetching: classifying, error: classifyError } = trpc.isbn.classify.useQuery(
+    { isbn: submittedIsbn! },
+    {
+      enabled: !!submittedIsbn && !isManualEntry,
+      retry: false,
+    }
+  );
+
+  // Use the data via useQuery ref so we can access it in useEffect
+  const classifyQuery = trpc.isbn.classify.useQuery(
+    { isbn: submittedIsbn! },
+    { enabled: !!submittedIsbn && !isManualEntry, retry: false }
+  );
+
+  useEffect(() => {
+    if (!classifyQuery.data) return;
+    const { book: b, classification } = classifyQuery.data;
+
+    setBook({
+      title: b.title,
+      author: b.authors.join(", "),
+      isbn: b.isbn,
+      publisher: "",
+      publishYear: b.publishedDate?.slice(0, 4) ?? "",
+      pages: b.pageCount ? String(b.pageCount) : "",
+      coverUrl: b.coverUrl,
+      coverCandidates: b.coverCandidates ?? [],
+      subjects: b.categories ?? [],
+      openLibraryUrl: null,
+    });
+
+    // Pre-fill tier
+    const mappedAge = TIER_TO_AGE_GROUP[classification.ageTier] ?? "Fledglings (3-5)";
+    setAgeGroup(mappedAge);
+
+    // Pre-fill bin
+    const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "LIFE";
+    setSelectedCategory(mappedBin);
+    setSuggestedCategory(mappedBin);
+    setIsManualCategoryOverride(false);
+
+    // Pre-fill tags from supportingTags
+    setAutoTags(classification.supportingTags);
+    setSelectedTags(classification.supportingTags.slice(0, 4));
+
+    setStep(1);
+  }, [classifyQuery.data]);
+
+  useEffect(() => {
+    if (classifyError) {
+      toast.error(classifyError.message || "Lookup failed. Check the ISBN and try again.");
+      setSubmittedIsbn(null);
+    }
+  }, [classifyError]);
+
+  // ── tRPC: pending labels ──────────────────────────────────────────────────
   const { data: pendingLabels, refetch: refetchPendingCount } = trpc.labels.pending.useQuery(
-    undefined,
-    { refetchOnWindowFocus: false }
+    undefined, { refetchOnWindowFocus: false }
   );
   const pendingCount = pendingLabels?.length ?? 0;
 
+  // ── tRPC: add book ────────────────────────────────────────────────────────
   const addBookMutation = trpc.receive.addBook.useMutation({
     onSuccess: (data) => {
       setLastSku(data.sku);
       toast.success(`✓ Book received — SKU: ${data.sku}`, { duration: 5000 });
       setReceivedCount(c => c + 1);
-      setStep(0);
-      setIsbn("");
-      setBook(null);
-      setAgeGroup("");
-      setSelectedTags([]);
-      setAutoTags([]);
-      setLookupError(null);
-      setAgeInference(null);
-      setIsManualCategoryOverride(false);
-      // Refresh pending label count so the banner stays accurate
+      handleReset();
       refetchPendingCount();
     },
-    onError: (err) => {
-      toast.error("Failed to save: " + err.message);
-    },
+    onError: (err) => toast.error("Failed to save: " + err.message),
   });
 
   useEffect(() => {
     if (step === 0 && isbnInputRef.current) isbnInputRef.current.focus();
   }, [step]);
 
-  const handleScan = async (e: React.FormEvent) => {
+  const handleScan = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = isbn.trim();
-    if (!trimmed) return;
-    setLoading(true);
-    setLookupError(null);
-    try {
-      const found = await lookupISBN(trimmed);
-      setBook(found);
-      setStep(1);
-      toast.success(`Found: ${found.title}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
-      setLookupError(msg === "NOT_FOUND"
-        ? "No book found for that ISBN. Check the number and try again."
-        : "Could not reach the book database. Check your connection.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Run age inference when we arrive at step 2
-  useEffect(() => {
-    if (step === 2 && book) {
-      const result = inferAgeGroup({
-        subjects: book.subjects,
-        title: book.title,
-        author: book.author,
-        publisher: book.publisher,
-        pages: book.pages,
-      });
-      setAgeInference(result);
-    }
-  }, [step, book]);
-
-  const handleAgeGroup = (ag: string) => {
-    setAgeGroup(ag);
-    setIsManualCategoryOverride(false);
-    // Run auto-tag matching when age group is selected
-    if (book) {
-      const result = autoAssignTags(book.subjects, book.title, book.author);
-      setAutoTags(result.suggestedTags);
-      setSelectedTags(result.suggestedTags.slice(0, 4));
-      setSuggestedCategory(result.suggestedCategory);
-      setSelectedCategory(result.suggestedCategory);
-      setCategoryScores(result.categoryScores);
-    }
-    setStep(3);
+    const val = isbnInput.trim();
+    if (!val) return;
+    setSubmittedIsbn(val);
   };
 
   const toggleTag = (tag: string) => {
@@ -448,40 +376,18 @@ export default function ReceivePage() {
     );
   };
 
-  // Recompute bin recommendation whenever selected tags change
-  useEffect(() => {
-    if (selectedTags.length === 0) return;
-    const catVotes: Record<BinCategory, number> = {
-      ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
-      IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
-    };
-    for (const tag of selectedTags) {
-      const cat = getCategoryForTag(tag);
-      if (cat) catVotes[cat.id] += 1;
-    }
-    const dominant = (Object.entries(catVotes)
-      .sort((a, b) => b[1] - a[1])[0]?.[0] || "LIFE") as BinCategory;
-    setSuggestedCategory(dominant);
-    if (!isManualCategoryOverride) {
-      setSelectedCategory(dominant);
-    }
-  }, [selectedTags, isManualCategoryOverride]);
-
   const handleConfirm = () => {
     if (!book) return;
-    const bin = buildBinName(ageGroup, selectedCategory);
-    const bookIsbn = book.isbn.trim() || `MANUAL-${Date.now()}`;
     addBookMutation.mutate({
-      isbn: bookIsbn,
+      isbn: book.isbn.trim() || `MANUAL-${Date.now()}`,
       title: book.title,
       author: book.author,
       cover_url: book.coverUrl ?? undefined,
-      publisher: book.publisher && book.publisher !== "Unknown" ? book.publisher : undefined,
-      published_date: book.publishYear && book.publishYear !== "—" ? book.publishYear : undefined,
-      page_count: book.pages && book.pages !== "—" ? parseInt(book.pages, 10) || undefined : undefined,
+      published_date: book.publishYear || undefined,
+      page_count: book.pages ? parseInt(book.pages, 10) || undefined : undefined,
       subjects: book.subjects,
       age_group: ageGroup,
-      bin_id: bin,
+      bin_id: buildBinName(ageGroup, selectedCategory),
       condition: "good",
       tags: selectedTags,
     });
@@ -489,31 +395,25 @@ export default function ReceivePage() {
 
   const handleReset = () => {
     setStep(0);
-    setIsbn("");
+    setIsbnInput("");
+    setSubmittedIsbn(null);
     setBook(null);
     setAgeGroup("");
     setSelectedTags([]);
     setAutoTags([]);
-    setLookupError(null);
-    setAgeInference(null);
     setIsManualEntry(false);
     setIsManualCategoryOverride(false);
   };
 
   const handleManualEntry = () => {
     setIsManualEntry(true);
+    setSubmittedIsbn(null);
     setBook({
-      title: "",
-      author: "",
-      isbn: isbn.trim().replace(/[^0-9X]/gi, ""),
-      publisher: "",
-      publishYear: "",
-      pages: "",
-      coverUrl: null,
-      subjects: [],
-      openLibraryUrl: null,
+      title: "", author: "",
+      isbn: isbnInput.trim().replace(/[^0-9X]/gi, ""),
+      publisher: "", publishYear: "", pages: "",
+      coverUrl: null, coverCandidates: [], subjects: [], openLibraryUrl: null,
     });
-    setLookupError(null);
     setStep(1);
   };
 
@@ -525,29 +425,23 @@ export default function ReceivePage() {
       <div className="flex items-start justify-between">
         <div className="page-header mb-0">
           <h1 className="page-title">Receive Books</h1>
-          <p className="page-subtitle">ISBN auto-fills details · subjects auto-match to your tag taxonomy</p>
+          <p className="page-subtitle">Scan an ISBN — tier, bin, and tags auto-fill from the classifier</p>
         </div>
         <div className="flex flex-col items-end gap-1">
           {receivedCount > 0 && (
             <>
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
                 style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
-                <Check className="w-3.5 h-3.5" />
-                {receivedCount} received today
+                <Check className="w-3.5 h-3.5" />{receivedCount} received today
               </div>
-              {lastSku && (
-                <p className="text-xs text-muted-foreground font-mono">Last SKU: {lastSku}</p>
-              )}
+              {lastSku && <p className="text-xs text-muted-foreground font-mono">Last SKU: {lastSku}</p>}
             </>
           )}
           {pendingCount > 0 && (
-            <button
-              onClick={() => navigate("/labels")}
+            <button onClick={() => navigate("/labels")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80"
-              style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)", color: "oklch(0.38 0.12 75)" }}
-            >
-              <Tag className="w-3 h-3" />
-              {pendingCount} label{pendingCount !== 1 ? "s" : ""} pending
+              style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)", color: "oklch(0.38 0.12 75)" }}>
+              <Tag className="w-3 h-3" />{pendingCount} label{pendingCount !== 1 ? "s" : ""} pending
             </button>
           )}
         </div>
@@ -579,61 +473,52 @@ export default function ReceivePage() {
       {step === 0 && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-4">
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: "oklch(0.92 0.04 155)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: "oklch(0.92 0.04 155)" }}>
               <Search className="w-4 h-4" style={{ color: "oklch(0.42 0.11 155)" }} />
             </div>
             <div>
               <h2 className="font-semibold text-foreground">Scan or Enter ISBN</h2>
-              <p className="text-xs text-muted-foreground">ISBN-10 or ISBN-13 accepted</p>
+              <p className="text-xs text-muted-foreground">ISBN-10 or ISBN-13 · tier, bin & tags auto-fill</p>
             </div>
           </div>
           <form onSubmit={handleScan} className="space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input ref={isbnInputRef} type="text" value={isbn}
-                onChange={e => { setIsbn(e.target.value); setLookupError(null); }}
+              <input ref={isbnInputRef} type="text" value={isbnInput}
+                onChange={e => { setIsbnInput(e.target.value); }}
                 placeholder="e.g. 9780061124952 or 0061124958"
                 autoFocus
                 className="w-full pl-10 pr-4 py-3 rounded-lg border border-border bg-background text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
-            {lookupError && (
+
+            {classifyError && (
               <div className="flex items-start gap-2.5 p-3 rounded-lg border"
                 style={{ backgroundColor: "oklch(0.97 0.04 25)", borderColor: "oklch(0.88 0.08 25)", color: "oklch(0.40 0.18 25)" }}>
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div className="flex-1">
-                  <p className="text-xs leading-relaxed">{lookupError}</p>
-                  <button
-                    type="button"
-                    onClick={handleManualEntry}
+                  <p className="text-xs leading-relaxed">{classifyError.message || "No book found for that ISBN."}</p>
+                  <button type="button" onClick={handleManualEntry}
                     className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border"
                     style={{ backgroundColor: "oklch(0.97 0.03 75)", borderColor: "oklch(0.84 0.08 75)", color: "oklch(0.35 0.10 75)" }}>
-                    <Pencil className="w-3 h-3" />
-                    Enter Details Manually
+                    <Pencil className="w-3 h-3" />Enter Details Manually
                   </button>
                 </div>
               </div>
             )}
-            <button type="submit" disabled={loading || !isbn.trim()}
+
+            <button type="submit" disabled={classifying || !isbnInput.trim()}
               className="w-full py-3 rounded-lg text-white font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Looking up ISBN…</> : <><BookOpen className="w-4 h-4" />Look Up Book</>}
+              {classifying
+                ? <><Loader2 className="w-4 h-4 animate-spin" />Classifying…</>
+                : <><BookOpen className="w-4 h-4" />Look Up & Classify</>}
             </button>
           </form>
-          <p className="text-xs text-muted-foreground text-center">
-            Powered by{" "}
-            <a href="https://openlibrary.org" target="_blank" rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-foreground">Open Library</a>
-            {" "}— title, author, cover, and subjects auto-fill.
-          </p>
           <div className="text-center">
-            <button
-              type="button"
-              onClick={handleManualEntry}
+            <button type="button" onClick={handleManualEntry}
               className="text-xs font-medium transition-colors hover:opacity-80 inline-flex items-center gap-1"
               style={{ color: "oklch(0.42 0.11 155)" }}>
-              <Pencil className="w-3 h-3" />
-              No ISBN? Enter details manually
+              <Pencil className="w-3 h-3" />No ISBN? Enter details manually
             </button>
           </div>
         </div>
@@ -643,101 +528,68 @@ export default function ReceivePage() {
       {step === 1 && book && !isManualEntry && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <h2 className="font-semibold text-foreground">Confirm Book Details</h2>
+
           <div className="flex gap-5">
             <div className="shrink-0">
-              {book.coverUrl ? (
-                <img src={book.coverUrl} alt={book.title}
-                  className="w-24 h-32 object-cover rounded-lg shadow-md border border-border"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              ) : (
-                <div className="w-24 h-32 rounded-lg border border-border flex flex-col items-center justify-center gap-1"
-                  style={{ backgroundColor: "oklch(0.95 0.01 80)" }}>
-                  <BookOpen className="w-8 h-8 text-muted-foreground/50" />
-                  <span className="text-[10px] text-muted-foreground text-center px-1">No cover</span>
-                </div>
-              )}
+              <CoverImage title={book.title} coverCandidates={book.coverCandidates} coverUrl={book.coverUrl} />
             </div>
             <div className="flex-1 min-w-0 space-y-3">
               <div>
                 <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</label>
-                <input
-                  value={book.title}
-                  onChange={e => setBook(prev => prev && ({ ...prev, title: e.target.value }))}
-                  className="w-full font-bold text-foreground text-base leading-tight mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
-                />
+                <input value={book.title} onChange={e => setBook(prev => prev && ({ ...prev, title: e.target.value }))}
+                  className="w-full font-bold text-foreground text-base leading-tight mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</label>
-                <input
-                  value={book.author}
-                  onChange={e => setBook(prev => prev && ({ ...prev, author: e.target.value }))}
-                  className="w-full font-medium text-foreground text-sm mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
-                />
+                <input value={book.author} onChange={e => setBook(prev => prev && ({ ...prev, author: e.target.value }))}
+                  className="w-full font-medium text-foreground text-sm mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">ISBN</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <p className="font-mono text-xs text-foreground">{book.isbn}</p>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(book.isbn);
-                        setIsbnCopied(true);
-                        setTimeout(() => setIsbnCopied(false), 1500);
-                      }}
-                      title="Copy ISBN"
+                    <button onClick={() => { navigator.clipboard.writeText(book.isbn); setIsbnCopied(true); setTimeout(() => setIsbnCopied(false), 1500); }}
                       className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
-                      {isbnCopied
-                        ? <Check className="w-3 h-3 text-green-600" />
-                        : <Copy className="w-3 h-3" />}
+                      {isbnCopied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
                     </button>
                   </div>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</label>
-                  <input
-                    value={book.pages}
-                    onChange={e => setBook(prev => prev && ({ ...prev, pages: e.target.value }))}
-                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Publisher</label>
-                  <input
-                    value={book.publisher}
-                    onChange={e => setBook(prev => prev && ({ ...prev, publisher: e.target.value }))}
-                    className="w-full text-xs text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
-                  />
+                  <input value={book.pages} onChange={e => setBook(prev => prev && ({ ...prev, pages: e.target.value }))}
+                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</label>
-                  <input
-                    value={book.publishYear}
-                    onChange={e => setBook(prev => prev && ({ ...prev, publishYear: e.target.value }))}
-                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5"
-                  />
+                  <input value={book.publishYear} onChange={e => setBook(prev => prev && ({ ...prev, publishYear: e.target.value }))}
+                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
                 </div>
               </div>
             </div>
           </div>
-          {book.subjects.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2">
-                Open Library Subjects <span className="normal-case font-normal">(used for tag matching)</span>
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {book.subjects.map(s => (
-                  <span key={s} className="px-2 py-0.5 rounded-full text-xs border border-border text-muted-foreground bg-muted/50">{s}</span>
-                ))}
-              </div>
+
+          {/* Classifier pre-fills summary */}
+          <div className="p-3 rounded-lg border text-xs space-y-1.5"
+            style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)" }}>
+            <p className="font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.32 0.10 155)" }}>
+              <Sparkles className="w-3.5 h-3.5" />Classifier results — edit in next step if needed
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.28 0.10 155)" }}>
+                {AGE_EMOJIS[ageGroup]} {ageGroup}
+              </span>
+              {(() => { const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory); return cat ? (
+                <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>
+                  {cat.emoji} {cat.label}
+                </span>
+              ) : null; })()}
+              {autoTags.map(t => (
+                <span key={t} className="px-2 py-0.5 rounded-full border border-border text-muted-foreground">{t}</span>
+              ))}
             </div>
-          )}
-          {book.openLibraryUrl && (
-            <a href={book.openLibraryUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-              <ExternalLink className="w-3 h-3" />View on Open Library
-            </a>
-          )}
+          </div>
+
           <div className="flex gap-3 pt-1">
             <button onClick={handleReset}
               className="flex items-center gap-1.5 flex-1 justify-center py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
@@ -756,8 +608,7 @@ export default function ReceivePage() {
       {step === 1 && book && isManualEntry && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: "oklch(0.92 0.04 155)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: "oklch(0.92 0.04 155)" }}>
               <Pencil className="w-4 h-4" style={{ color: "oklch(0.42 0.11 155)" }} />
             </div>
             <div>
@@ -765,53 +616,62 @@ export default function ReceivePage() {
               <p className="text-xs text-muted-foreground">Title and author are required</p>
             </div>
           </div>
-
           <div className="space-y-3">
             <div>
               <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Title *</label>
-              <input type="text" value={book.title}
-                onChange={e => setBook({ ...book, title: e.target.value })}
+              <input type="text" value={book.title} onChange={e => setBook({ ...book, title: e.target.value })}
                 placeholder="e.g. Where the Wild Things Are"
                 className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Author *</label>
-              <input type="text" value={book.author}
-                onChange={e => setBook({ ...book, author: e.target.value })}
+              <input type="text" value={book.author} onChange={e => setBook({ ...book, author: e.target.value })}
                 placeholder="e.g. Maurice Sendak"
                 className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">ISBN</label>
-              <input type="text" value={book.isbn}
-                onChange={e => setBook({ ...book, isbn: e.target.value.replace(/[^0-9X]/gi, "") })}
-                placeholder="Optional — enter if available"
+              <input type="text" value={book.isbn} onChange={e => setBook({ ...book, isbn: e.target.value.replace(/[^0-9X]/gi, "") })}
+                placeholder="Optional"
                 className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Publisher</label>
-                <input type="text" value={book.publisher}
-                  onChange={e => setBook({ ...book, publisher: e.target.value })}
+                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Published</label>
+                <input type="text" value={book.publishYear} onChange={e => setBook({ ...book, publishYear: e.target.value })}
                   placeholder="Optional"
                   className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium block mb-1">Pages</label>
-                <input type="text" value={book.pages}
-                  onChange={e => setBook({ ...book, pages: e.target.value.replace(/\D/g, "") })}
+                <input type="text" value={book.pages} onChange={e => setBook({ ...book, pages: e.target.value.replace(/\D/g, "") })}
                   placeholder="Optional"
                   className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
               </div>
             </div>
           </div>
 
+          {/* Age group selection for manual entry */}
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2.5">Age Group *</p>
+            <div className="grid grid-cols-2 gap-2">
+              {AGE_GROUPS.map(ag => (
+                <button key={ag} onClick={() => setAgeGroup(ag)}
+                  className={cn("p-3 rounded-xl border-2 text-left transition-all hover:shadow-sm",
+                    ageGroup === ag ? "border-primary" : "border-border hover:border-primary/30")}
+                  style={ageGroup === ag ? { borderColor: "oklch(0.42 0.11 155)", backgroundColor: "oklch(0.96 0.04 155)" } : {}}>
+                  <span className="text-xl mb-1 block">{AGE_EMOJIS[ag]}</span>
+                  <p className="font-semibold text-xs text-foreground">{ag.split(" (")[0]}</p>
+                  <p className="text-[10px] text-muted-foreground">{ag.match(/\(.*\)/)?.[0]}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-start gap-2.5 p-3 rounded-lg border"
             style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)", color: "oklch(0.32 0.10 155)" }}>
             <Info className="w-4 h-4 mt-0.5 shrink-0" />
-            <p className="text-xs leading-relaxed">
-              Without an ISBN lookup, tags won't be auto-suggested — you'll pick them manually in the next steps.
-            </p>
+            <p className="text-xs leading-relaxed">Without an ISBN lookup, tags won't be auto-suggested — you'll pick them manually in the next step.</p>
           </div>
 
           <div className="flex gap-3 pt-1">
@@ -820,7 +680,7 @@ export default function ReceivePage() {
               <RotateCcw className="w-3.5 h-3.5" />Start Over
             </button>
             <button onClick={() => setStep(2)}
-              disabled={!book.title.trim() || !book.author.trim()}
+              disabled={!book.title.trim() || !book.author.trim() || !ageGroup}
               className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-40"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
               Continue →
@@ -829,160 +689,34 @@ export default function ReceivePage() {
         </div>
       )}
 
-      {/* ── STEP 2: Age Group ── */}
-      {step === 2 && (
-        <div className="bg-card rounded-xl border border-border p-6 space-y-5">
-          <div>
-            <h2 className="font-semibold text-foreground">Select Age Group</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Tags will be auto-matched after you select the nest for <strong>{book?.title}</strong>
-            </p>
-          </div>
-
-          {/* ── AI Recommendation Card ── */}
-          {ageInference && (() => {
-            const rec = AGE_GROUP_INFO.find(g => g.key === ageInference.recommended)!;
-            const colors = CONFIDENCE_COLORS[ageInference.confidence];
-            return (
-              <div className="rounded-xl border-2 p-4 space-y-3"
-                style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
-                {/* Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 shrink-0" style={{ color: colors.badge }} />
-                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: colors.text }}>
-                      Smart Recommendation
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide text-white"
-                    style={{ backgroundColor: colors.badge }}>
-                    {ageInference.confidence} confidence
-                  </span>
-                </div>
-
-                {/* Recommended tier */}
-                <div className="flex items-center gap-3">
-                  <span className="text-4xl">{rec.emoji}</span>
-                  <div>
-                    <p className="font-bold text-lg leading-tight" style={{ color: colors.text }}>
-                      {rec.label}
-                    </p>
-                    <p className="text-sm" style={{ color: colors.text, opacity: 0.75 }}>Ages {rec.range}</p>
-                  </div>
-                  {/* Confidence bar */}
-                  <div className="ml-auto text-right">
-                    <p className="text-2xl font-bold" style={{ color: colors.badge }}>
-                      {ageInference.confidencePct}%
-                    </p>
-                    <p className="text-[10px] uppercase tracking-wide" style={{ color: colors.text, opacity: 0.6 }}>match</p>
-                  </div>
-                </div>
-
-                {/* Score bars for all tiers */}
-                <div className="space-y-1.5">
-                  {AGE_GROUP_INFO.map(g => {
-                    const score = ageInference.scores[g.key];
-                    const maxScore = Math.max(...Object.values(ageInference.scores), 1);
-                    const pct = Math.round((score / maxScore) * 100);
-                    const isTop = g.key === ageInference.recommended;
-                    return (
-                      <div key={g.key} className="flex items-center gap-2">
-                        <span className="text-sm w-4">{g.emoji}</span>
-                        <span className="text-xs w-20 shrink-0" style={{ color: colors.text, fontWeight: isTop ? 700 : 400 }}>
-                          {g.label}
-                        </span>
-                        <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: "oklch(0.88 0.02 80)" }}>
-                          <div className="h-1.5 rounded-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: isTop ? colors.badge : "oklch(0.75 0.04 80)",
-                            }} />
-                        </div>
-                        <span className="text-[10px] w-6 text-right" style={{ color: colors.text, opacity: 0.6 }}>{score}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Reasons */}
-                {ageInference.reasons.length > 0 && (
-                  <div className="pt-1 border-t" style={{ borderColor: colors.border }}>
-                    <div className="flex items-start gap-1.5">
-                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: colors.badge }} />
-                      <ul className="space-y-0.5">
-                        {ageInference.reasons.map((r, i) => (
-                          <li key={i} className="text-xs" style={{ color: colors.text, opacity: 0.85 }}>{r}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-
-                {/* One-click accept button */}
-                <button
-                  onClick={() => handleAgeGroup(rec.displayLabel)}
-                  className="w-full py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90"
-                  style={{ backgroundColor: colors.badge }}>
-                  <Check className="w-4 h-4" />
-                  Use {rec.emoji} {rec.label} — Accept Recommendation
-                </button>
-              </div>
-            );
-          })()}
-
-          {/* Manual override grid */}
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2.5">
-              {ageInference ? "Or choose manually:" : "Select a nest tier:"}
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {AGE_GROUPS.map(ag => {
-                const info = AGE_GROUP_INFO.find(g => g.displayLabel === ag)!;
-                const isRecommended = ageInference?.recommended === info?.key;
-                return (
-                  <button key={ag} onClick={() => handleAgeGroup(ag)}
-                    className={cn(
-                      "p-4 rounded-xl border-2 text-left transition-all hover:shadow-sm",
-                      isRecommended ? "border-primary/40" : "border-border hover:border-primary/30"
-                    )}>
-                    <div className="flex items-start justify-between">
-                      <span className="text-2xl mb-1 block">{AGE_EMOJIS[ag]}</span>
-                      {isRecommended && (
-                        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>AI Pick</span>
-                      )}
-                    </div>
-                    <p className="font-semibold text-sm text-foreground">{ag.split(" (")[0]}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{ag.match(/\(.*\)/)?.[0]}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button onClick={() => setStep(1)}
-            className="w-full py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
-            ← Back
-          </button>
-        </div>
-      )}
-
-      {/* ── STEP 3: Tags & Bin ── */}
-      {step === 3 && ageGroup && (
+      {/* ── STEP 2: Tags & Bin ── */}
+      {step === 2 && ageGroup && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <div>
             <h2 className="font-semibold text-foreground">Tags & Bin Assignment</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Tags auto-matched from Open Library subjects. Override any tag or bin below.
+              {autoTags.length > 0
+                ? "Tags pre-filled from classifier. Override anything below."
+                : "Select tags manually — no classifier data available."}
             </p>
           </div>
 
-          <TagSelector
-            selectedTags={selectedTags}
-            onToggle={toggleTag}
-            autoTags={autoTags}
-            subjects={book?.subjects || []}
-          />
+          {/* Age group override */}
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2">Age Group</p>
+            <div className="flex flex-wrap gap-2">
+              {AGE_GROUPS.map(ag => (
+                <button key={ag} onClick={() => setAgeGroup(ag)}
+                  className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all",
+                    ageGroup === ag ? "border-primary text-white" : "border-border text-muted-foreground hover:border-primary/40")}
+                  style={ageGroup === ag ? { backgroundColor: "oklch(0.42 0.11 155)", borderColor: "oklch(0.42 0.11 155)" } : {}}>
+                  {AGE_EMOJIS[ag]} {ag.split(" (")[0]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <TagSelector selectedTags={selectedTags} onToggle={toggleTag} autoTags={autoTags} />
 
           <div className="border-t border-border/60 pt-4">
             <h3 className="font-semibold text-sm text-foreground mb-3">Bin Assignment</h3>
@@ -991,19 +725,16 @@ export default function ReceivePage() {
               suggestedCategory={suggestedCategory}
               selectedCategory={selectedCategory}
               onSelectCategory={(cat) => { setSelectedCategory(cat); setIsManualCategoryOverride(true); }}
-              categoryScores={categoryScores}
               isManualOverride={isManualCategoryOverride}
-              onResetToAuto={() => setIsManualCategoryOverride(false)}
+              onResetToAuto={() => { setSelectedCategory(suggestedCategory); setIsManualCategoryOverride(false); }}
             />
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button onClick={() => setStep(2)}
-              className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
-              ← Back
-            </button>
-            <button onClick={() => setStep(4)} disabled={selectedTags.length === 0}
-              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-40 transition-colors"
+            <button onClick={() => setStep(1)}
+              className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">← Back</button>
+            <button onClick={() => setStep(3)}
+              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
               Continue →
             </button>
@@ -1011,149 +742,98 @@ export default function ReceivePage() {
         </div>
       )}
 
-      {/* ── STEP 4: Confirm ── */}
-      {step === 4 && (
+      {/* ── STEP 3: Confirm ── */}
+      {step === 3 && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <h2 className="font-semibold text-foreground">Confirm Receipt</h2>
 
-          {/* Book summary */}
-          <div className="flex gap-4 p-4 rounded-xl border border-border/60"
-            style={{ backgroundColor: "oklch(0.975 0.008 80)" }}>
-            {book?.coverUrl && (
-              <img src={book.coverUrl} alt={book.title}
-                className="w-14 h-20 object-cover rounded-md shadow-sm border border-border shrink-0"
-                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <div className="flex gap-4 p-4 rounded-xl border border-border/60" style={{ backgroundColor: "oklch(0.975 0.008 80)" }}>
+            {book && (
+              <CoverImage title={book.title} coverCandidates={book.coverCandidates} coverUrl={book.coverUrl} />
             )}
             <div className="flex-1 min-w-0">
               <p className="font-bold text-foreground leading-tight">{book?.title}</p>
               <p className="text-sm text-muted-foreground mt-0.5">{book?.author}</p>
               <p className="text-xs text-muted-foreground mt-1 font-mono">{book?.isbn}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{ageGroup}</p>
+              {book?.pages && <p className="text-xs text-muted-foreground">{book.pages} pages</p>}
             </div>
           </div>
 
-          {/* Tags */}
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2">Tags</p>
             <div className="flex flex-wrap gap-1.5">
-              {selectedTags.map(tag => {
-                const cat = getCategoryForTag(tag);
-                return (
-                  <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-                    style={{ backgroundColor: cat?.color.bg, color: cat?.color.text }}>
-                    {cat?.emoji} {tag}
-                  </span>
-                );
-              })}
+              {selectedTags.length === 0
+                ? <span className="text-xs text-muted-foreground italic">No tags</span>
+                : selectedTags.map(tag => {
+                    const cat = getCategoryForTag(tag);
+                    return (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                        style={{ backgroundColor: cat?.color.bg, color: cat?.color.text }}>
+                        {cat?.emoji} {tag}
+                      </span>
+                    );
+                  })}
             </div>
           </div>
 
-          {/* Bin */}
           <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "oklch(0.97 0.03 155)" }}>
             <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Bin</p>
-            <p className="text-2xl font-bold font-mono" style={{ color: "oklch(0.32 0.10 155)" }}>
-              {currentBin}
-            </p>
-            {(() => {
-              const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory);
-              return cat ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                  style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>
-                  {cat.emoji} {cat.label}
-                </span>
-              ) : null;
-            })()}
-          </div>
-
-          <div className="text-sm space-y-2 border-t border-border/60 pt-4">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Publisher</span>
-              <span className="font-medium text-right max-w-xs truncate">{book?.publisher}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Published</span>
-              <span className="font-medium">{book?.publishYear}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Pages</span>
-              <span className="font-medium">{book?.pages}</span>
-            </div>
+            <p className="text-2xl font-bold font-mono" style={{ color: "oklch(0.32 0.10 155)" }}>{currentBin}</p>
+            {(() => { const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory); return cat ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>{cat.emoji} {cat.label}</span>
+            ) : null; })()}
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button onClick={() => setStep(3)}
-              className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
-              ← Back
-            </button>
-            <button onClick={handleConfirm}
-              disabled={addBookMutation.isPending}
+            <button onClick={() => setStep(2)}
+              className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">← Back</button>
+            <button onClick={handleConfirm} disabled={addBookMutation.isPending}
               className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
               {addBookMutation.isPending
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-                : <><Check className="w-4 h-4" /> Confirm Receipt</>}
+                ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                : <><Check className="w-4 h-4" />Confirm Receipt</>}
             </button>
           </div>
         </div>
       )}
 
-      {step === 0 && receivedCount === 0 && (
-        <p className="text-center text-xs text-muted-foreground">
-          After each book is received, the scanner auto-resets for fast batch processing.
-        </p>
-      )}
-
-      {/* Label Queue shortcut — shown at step 0 once books have been received this session */}
+      {/* ── Bottom shortcuts ── */}
       {step === 0 && receivedCount > 0 && pendingCount > 0 && (
         <div className="rounded-xl border p-4 flex items-center justify-between gap-4"
           style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)" }}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
               <Tag className="w-4 h-4" style={{ color: "oklch(0.45 0.14 75)" }} />
             </div>
             <div>
-              <p className="text-sm font-semibold" style={{ color: "oklch(0.32 0.10 75)" }}>
-                {pendingCount} label{pendingCount !== 1 ? "s" : ""} waiting to print
-              </p>
-              <p className="text-xs" style={{ color: "oklch(0.50 0.10 75)" }}>
-                Including {receivedCount} just received this session
-              </p>
+              <p className="text-sm font-semibold" style={{ color: "oklch(0.32 0.10 75)" }}>{pendingCount} label{pendingCount !== 1 ? "s" : ""} waiting to print</p>
+              <p className="text-xs" style={{ color: "oklch(0.50 0.10 75)" }}>Including {receivedCount} just received this session</p>
             </div>
           </div>
-          <button
-            onClick={() => navigate("/labels")}
+          <button onClick={() => navigate("/labels")}
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
-            style={{ backgroundColor: "oklch(0.55 0.14 75)" }}
-          >
+            style={{ backgroundColor: "oklch(0.55 0.14 75)" }}>
             Go to Label Queue →
           </button>
         </div>
       )}
 
-      {/* QC Queue shortcut — shown when books have been received this session */}
       {receivedCount > 0 && (
-        <div
-          className="flex items-center gap-4 p-4 rounded-xl border"
-          style={{ backgroundColor: "oklch(0.96 0.02 155)", borderColor: "oklch(0.85 0.05 155)" }}
-        >
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
+        <div className="flex items-center gap-4 p-4 rounded-xl border"
+          style={{ backgroundColor: "oklch(0.96 0.02 155)", borderColor: "oklch(0.85 0.05 155)" }}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
             <ClipboardCheck className="w-4 h-4" style={{ color: "oklch(0.38 0.12 155)" }} />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold" style={{ color: "oklch(0.28 0.10 155)" }}>
-              {receivedCount} book{receivedCount !== 1 ? "s" : ""} waiting for QC
-            </p>
-            <p className="text-xs" style={{ color: "oklch(0.45 0.08 155)" }}>
-              Inspect, clean, and grade before shelving
-            </p>
+            <p className="text-sm font-semibold" style={{ color: "oklch(0.28 0.10 155)" }}>{receivedCount} book{receivedCount !== 1 ? "s" : ""} waiting for QC</p>
+            <p className="text-xs" style={{ color: "oklch(0.45 0.08 155)" }}>Inspect, clean, and grade before shelving</p>
           </div>
-          <button
-            onClick={() => navigate("/qc")}
+          <button onClick={() => navigate("/qc")}
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
-            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-          >
+            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
             Go to QC Queue →
           </button>
         </div>
