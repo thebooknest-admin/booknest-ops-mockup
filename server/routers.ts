@@ -724,10 +724,10 @@ export const appRouter = router({
       );
       return { count: total };
     }),
-   confirmPlaced: publicProcedure
+  confirmPlaced: publicProcedure
   .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
   .mutation(async ({ input }) => {
-    await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+    const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
       method: "PATCH",
       body: JSON.stringify({
         status: "in_house",
@@ -736,6 +736,7 @@ export const appRouter = router({
       }),
       headers: { Prefer: "return=minimal" },
     });
+    if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
     return { success: true };
   }),
     confirmAll: publicProcedure
