@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { BookOpen, Package, CheckCheck, Check } from "lucide-react";
+import { BookOpen, Package, CheckCheck, Check, Pencil, X } from "lucide-react";
 
 type StockItem = {
   id: string;
@@ -23,6 +23,13 @@ const CONDITION_COLOR: Record<string, string> = {
   poor: "bg-red-100 text-red-800",
 };
 
+// Split bin_id into prefix + number, e.g. "FLED-ADVENTURE-01" → ["FLED-ADVENTURE-", "01"]
+function splitBinId(binId: string): [string, string] {
+  const match = binId.match(/^(.+-)(\d+)$/);
+  if (match) return [match[1], match[2]];
+  return [binId, ""];
+}
+
 function StockCard({
   item,
   selected,
@@ -33,21 +40,44 @@ function StockCard({
   item: StockItem;
   selected: boolean;
   onToggle: () => void;
-  onConfirmSingle: () => void;
+  onConfirmSingle: (binId: string) => void;
   busy: boolean;
 }) {
+  const [editingBin, setEditingBin] = useState(false);
+  const [binPrefix, binSuffix] = splitBinId(item.bin_id);
+  const [binNumber, setBinNumber] = useState(binSuffix || "01");
+
+  const finalBinId = binPrefix + binNumber.padStart(2, "0");
+
+  const handlePlacedClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (editingBin) {
+      // Already in edit mode — confirm with current bin
+      onConfirmSingle(finalBinId);
+      setEditingBin(false);
+    } else {
+      setEditingBin(true);
+    }
+  };
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingBin(false);
+    setBinNumber(binSuffix || "01");
+  };
+
   return (
     <Card
       className={`border overflow-hidden transition-all cursor-pointer ${
         selected ? "border-green-500 bg-green-50/40" : "border-border"
       }`}
-      onClick={onToggle}
+      onClick={!editingBin ? onToggle : undefined}
     >
-      <CardContent className="p-3">
+      <CardContent className="p-3 space-y-2">
         <div className="flex items-center gap-3">
           {/* Checkbox */}
           <div
-            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+            className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
               selected ? "border-green-600 bg-green-600" : "border-muted-foreground/40 bg-background"
             }`}
           >
@@ -55,7 +85,7 @@ function StockCard({
           </div>
 
           {/* Cover */}
-          <div className="w-9 h-12 rounded overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+          <div className="w-9 h-12 rounded overflow-hidden bg-muted shrink-0 flex items-center justify-center">
             {item.book_title?.cover_url ? (
               <img src={item.book_title.cover_url} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -72,7 +102,7 @@ function StockCard({
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="font-mono text-xs text-muted-foreground">{item.sku}</span>
               <span className="text-muted-foreground">·</span>
-              <span className="text-xs font-medium text-foreground">{item.bin_id}</span>
+              <span className="text-xs font-medium text-foreground font-mono">{item.bin_id}</span>
               {item.condition && (
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded-full font-medium capitalize ${
@@ -85,20 +115,56 @@ function StockCard({
             </div>
           </div>
 
-          {/* Single confirm button */}
-          <Button
-            size="sm"
-            className="flex-shrink-0 bg-green-700 hover:bg-green-800 text-white text-xs px-3"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              onConfirmSingle();
-            }}
-          >
-            <Check className="w-3.5 h-3.5 mr-1" />
-            Placed
-          </Button>
+          {/* Placed button */}
+          {!editingBin && (
+            <Button
+              size="sm"
+              className="shrink-0 bg-green-700 hover:bg-green-800 text-white text-xs px-3"
+              disabled={busy}
+              onClick={handlePlacedClick}
+            >
+              <Check className="w-3.5 h-3.5 mr-1" />
+              Placed
+            </Button>
+          )}
         </div>
+
+        {/* Inline bin editor */}
+        {editingBin && (
+          <div
+            className="flex items-center gap-2 pt-1 border-t border-border/60"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Pencil className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">Shelving in:</span>
+            <span className="font-mono text-xs font-semibold text-foreground">{binPrefix}</span>
+            <input
+              type="text"
+              value={binNumber}
+              onChange={(e) => setBinNumber(e.target.value.replace(/\D/g, "").slice(0, 2))}
+              className="w-10 text-center font-mono text-sm font-bold border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500"
+              autoFocus
+              maxLength={2}
+              placeholder="01"
+            />
+            <div className="flex-1" />
+            <button
+              onClick={handleCancel}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <Button
+              size="sm"
+              className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
+              disabled={busy || !binNumber}
+              onClick={handlePlacedClick}
+            >
+              <Check className="w-3.5 h-3.5 mr-1" />
+              Confirm
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -221,7 +287,9 @@ export default function StockQueuePage() {
               Bin: {bin}
             </span>
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">{byBin[bin].length} book{byBin[bin].length !== 1 ? "s" : ""}</span>
+            <span className="text-xs text-muted-foreground">
+              {byBin[bin].length} book{byBin[bin].length !== 1 ? "s" : ""}
+            </span>
           </div>
           {byBin[bin].map((item) => (
             <StockCard
@@ -229,9 +297,9 @@ export default function StockQueuePage() {
               item={item}
               selected={selected.has(item.id)}
               onToggle={() => toggleSelect(item.id)}
-              onConfirmSingle={() => {
-                confirmOneMutation.mutate({ copy_id: item.id });
-                toast.success(`${item.sku} shelved in ${item.bin_id}`);
+              onConfirmSingle={(binId) => {
+                confirmOneMutation.mutate({ copy_id: item.id, bin_id: binId });
+                toast.success(`${item.sku} shelved in ${binId}`);
               }}
               busy={confirmOneMutation.isPending || confirmAllMutation.isPending}
             />

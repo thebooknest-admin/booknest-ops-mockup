@@ -724,19 +724,20 @@ export const appRouter = router({
       );
       return { count: total };
     }),
-    confirmPlaced: publicProcedure
-      .input(z.object({ copy_id: z.string() }))
-      .mutation(async ({ input }) => {
-        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "in_house",
-            stocked_at: new Date().toISOString(),
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true };
+   confirmPlaced: publicProcedure
+  .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
+  .mutation(async ({ input }) => {
+    await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "in_house",
+        stocked_at: new Date().toISOString(),
+        ...(input.bin_id ? { bin_id: input.bin_id } : {}),
       }),
+      headers: { Prefer: "return=minimal" },
+    });
+    return { success: true };
+  }),
     confirmAll: publicProcedure
       .input(z.object({ copy_ids: z.array(z.string()) }))
       .mutation(async ({ input }) => {
