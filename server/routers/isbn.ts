@@ -168,7 +168,12 @@ function mergeBookSources(isbn: string, sources: (RawBook | null)[]): BookMetada
     isbn, title: longest(valid.map(s => s.title).filter((t): t is string => !!t)) || "Unknown Title",
     authors: valid.map(s => s.authors).reduce((b, a) => a.length > b.length ? a : b, []),
     description: longest(valid.map(s => s.description)), coverUrl: mergedCover,
-    coverCandidates: [`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, ...(mergedCover ? [mergedCover] : [])],
+    coverCandidates: [
+      `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`,
+      `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`,
+      `https://books.google.com/books/content?vid=ISBN${isbn}&printsec=frontcover&img=1&zoom=1`,
+      ...(mergedCover ? [mergedCover] : []),
+    ],
     categories: Array.from(catSet), pageCount: firstNonNull(valid.map(s => s.pageCount)),
     publishedDate: firstNonNull(valid.map(s => s.publishedDate)), sources: valid.map(s => s.source),
   };
