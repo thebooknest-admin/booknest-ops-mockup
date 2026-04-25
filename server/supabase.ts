@@ -308,7 +308,7 @@ export async function getBookTitlesWithCopies(params?: {
   age_group?: string;
 }): Promise<{ data: BookTitleWithCopies[]; total: number }> {
   // Fetch book titles
-  const titlesResult = await getBookTitles({ ...params, limit: params?.limit ?? 500 });
+  const titlesResult = await getBookTitles({ ...params, limit: params?.limit ?? 5000 });
 
   if (titlesResult.data.length === 0) {
     return { data: [], total: 0 };
