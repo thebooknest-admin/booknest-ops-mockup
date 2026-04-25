@@ -4,9 +4,9 @@
  * 1. isbn.classify → look up a book by ISBN, return metadata + age tier/bin/tags
  *
  * Uses Google Books + Open Library for metadata, rule engine for classification,
- * and Claude Haiku as AI fallback when rules can't decide.
+ * and GPT-3.5-turbo as AI fallback when rules can't decide.
  *
- * Requires env var: ANTHROPIC_API_KEY
+ * Requires env var: OPENAI_API_KEY
  */
 
 import { z } from "zod";
@@ -250,18 +250,26 @@ function computeConfidence(trace: RuleTrace, book: BookMetadata): ConfidenceLeve
   return trace.signalsAligned >= 1 ? "medium" : "low";
 }
 async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; needsBin: boolean }) {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.OPENAI_API_KEY;
   if (!key) return { ageTier: "Fledglings" as AgeTier, themeBin: "Life" as ThemeBin, reasoning: "API key not configured" };
+
   const system = `You are a classifier for a children's book subscription called The Book Nest. Respond ONLY with valid JSON, no preamble or markdown.\n\nCHOOSE EXACTLY ONE age tier:\n- Hatchlings (0-2): Board books, first words, baby/toddler\n- Fledglings (3-5): Picture books, preschool read-alouds\n- Soarers (6-8): Early readers, early chapter books\n- Sky Readers (9-12): Middle grade, upper-elementary\n\nCHOOSE EXACTLY ONE primary bin:\n- Adventure: magic, quest, mystery, fantasy, exploration\n- Humor: funny, silly, goofy, pranks, absurd\n- Life: family, friendship, school, emotions, growing up\n- Learn: nonfiction, STEM, science, history, educational\n- Identity: diversity, culture, representation, heritage\n- Nature: animals, environment, wildlife, ecosystems\n- Seasonal: holidays, Christmas, Halloween, birthdays\n\nRespond ONLY: {"ageTier": "...", "themeBin": "...", "reasoning": "one short sentence"}`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
+
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 200, system, messages: [{ role: "user", content: userPrompt }] }),
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "system", content: system }, { role: "user", content: userPrompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+        max_tokens: 200,
+      }),
     });
     const data = await res.json() as any;
-    const parsed = JSON.parse(data.content?.[0]?.text?.replace(/```json|```/g, "").trim() ?? "{}");
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ?? "{}");
     return {
       ageTier: VALID_TIERS.includes(parsed.ageTier) ? parsed.ageTier as AgeTier : "Fledglings" as AgeTier,
       themeBin: VALID_BINS.includes(parsed.themeBin) ? parsed.themeBin as ThemeBin : "Life" as ThemeBin,

@@ -1,5 +1,5 @@
 // BookNest Ops — ISBN Lookup & Classifier
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,14 +39,14 @@ function CoverImage({ title, coverCandidates, coverUrl }: { title: string; cover
   const candidates = coverCandidates?.length ? coverCandidates : coverUrl ? [coverUrl] : [];
   if (!candidates.length) {
     return (
-      <div className="w-20 h-28 rounded-md bg-muted border flex items-center justify-center flex-shrink-0">
+      <div className="w-20 h-28 rounded-md bg-muted border flex items-center justify-center shrink-0">
         <BookOpen className="w-8 h-8 text-muted-foreground" />
       </div>
     );
   }
   return (
     <img src={candidates[idx]} alt={title}
-      className="w-20 h-28 object-cover rounded-md border flex-shrink-0"
+      className="w-20 h-28 object-cover rounded-md border shrink-0"
       onError={() => { if (idx < candidates.length - 1) setIdx(i => i + 1); }}
     />
   );
@@ -77,7 +77,7 @@ function RuleTrace({ trace }: { trace: any }) {
 function HistoryItem({ book, classification, onSelect }: { book: any; classification: any; onSelect: () => void }) {
   return (
     <button onClick={onSelect} className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-md hover:bg-muted transition-colors text-sm">
-      <BookOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <BookOpen className="w-4 h-4 text-muted-foreground shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="font-medium truncate text-foreground">{book.title}</p>
         <p className="text-xs text-muted-foreground">{classification.ageTier} · {classification.themeBin}</p>
@@ -93,21 +93,24 @@ export default function IsbnLookupPage() {
   const [selected, setSelected] = useState<{ book: any; classification: any; fromCache?: boolean } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { isFetching } = trpc.isbn.classify.useQuery(
+  const { data, isFetching, error } = trpc.isbn.classify.useQuery(
     { isbn: submittedIsbn! },
-    {
-      enabled: !!submittedIsbn,
-      retry: false,
-      onSuccess: (result: any) => {
-        setSelected(result);
-        setHistory(h => [result, ...h.filter(r => r.book.isbn !== result.book.isbn)].slice(0, 20));
-      },
-      onError: (e: any) => {
-        toast.error(e.message || "Lookup failed. Check the ISBN and try again.");
-        setSubmittedIsbn(null);
-      },
-    }
+    { enabled: !!submittedIsbn, retry: false }
   );
+
+  useEffect(() => {
+    if (data) {
+      setSelected(data);
+      setHistory(h => [data, ...h.filter(r => r.book.isbn !== data.book.isbn)].slice(0, 20));
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (error) {
+      toast.error(error.message || "Lookup failed. Check the ISBN and try again.");
+      setSubmittedIsbn(null);
+    }
+  }, [error]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -149,7 +152,7 @@ export default function IsbnLookupPage() {
           <Card>
             <CardContent className="p-4 animate-pulse">
               <div className="flex gap-4">
-                <div className="w-20 h-28 bg-muted rounded-md flex-shrink-0" />
+                <div className="w-20 h-28 bg-muted rounded-md shrink-0" />
                 <div className="flex-1 space-y-2 pt-1">
                   <div className="h-4 bg-muted rounded w-3/4" />
                   <div className="h-3 bg-muted rounded w-1/2" />
