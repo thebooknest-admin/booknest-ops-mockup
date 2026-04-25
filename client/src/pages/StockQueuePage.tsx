@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { BookOpen, Package, CheckCheck, Check, Pencil, X } from "lucide-react";
+import { BookOpen, Package, CheckCheck, Check, Pencil, X, Search } from "lucide-react";
 
 type StockItem = {
   id: string;
@@ -173,6 +173,19 @@ function StockCard({
 export default function StockQueuePage() {
   const { data: items = [], refetch, isLoading } = trpc.stock.queue.useQuery();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+
+  const filteredItems = search.trim()
+    ? items.filter((item) => {
+        const q = search.toLowerCase();
+        return (
+          item.book_title?.title?.toLowerCase().includes(q) ||
+          item.book_title?.author?.toLowerCase().includes(q) ||
+          item.sku?.toLowerCase().includes(q) ||
+          item.bin_id?.toLowerCase().includes(q)
+        );
+      })
+    : items;
 
   const confirmAllMutation = trpc.stock.confirmAll.useMutation({
     onSuccess: (result) => {
@@ -200,10 +213,10 @@ export default function StockQueuePage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === items.length) {
+    if (selected.size === filteredItems.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(items.map((i) => i.id)));
+      setSelected(new Set(filteredItems.map((i) => i.id)));
     }
   };
 
@@ -214,7 +227,7 @@ export default function StockQueuePage() {
 
   // Group by bin for easier shelving
   const byBin: Record<string, StockItem[]> = {};
-  for (const item of items) {
+  for (const item of filteredItems) {
     if (!byBin[item.bin_id]) byBin[item.bin_id] = [];
     byBin[item.bin_id].push(item);
   }
@@ -238,14 +251,36 @@ export default function StockQueuePage() {
         </Badge>
       </div>
 
-      {/* Batch action bar */}
+      {/* Search */}
       {items.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by title, author, SKU, or bin…"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Batch action bar */}
+      {filteredItems.length > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg border border-border">
           <button
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             onClick={toggleAll}
           >
-            {selected.size === items.length ? "Deselect all" : `Select all (${items.length})`}
+            {selected.size === filteredItems.length ? "Deselect all" : `Select all (${filteredItems.length})`}
           </button>
           <div className="flex-1" />
           {selected.size > 0 && (
@@ -276,6 +311,16 @@ export default function StockQueuePage() {
           <Package className="w-12 h-12 opacity-30" />
           <p className="text-base font-medium">Stock queue is clear</p>
           <p className="text-sm opacity-70">All QC-passed books have been shelved.</p>
+        </div>
+      )}
+
+      {!isLoading && items.length > 0 && filteredItems.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <Search className="w-10 h-10 opacity-30" />
+          <p className="text-base font-medium">No results for "{search}"</p>
+          <button onClick={() => setSearch("")} className="text-sm underline hover:text-foreground transition-colors">
+            Clear search
+          </button>
         </div>
       )}
 
