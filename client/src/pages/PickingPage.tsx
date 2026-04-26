@@ -5,7 +5,7 @@
  * 1. Queue view — list of all pending orders
  * 2. Click an order to enter Pick Mode
  * 3. Pick Mode shows suggested books with bin location and SKU
- * 4. Scan each book's SKU to confirm
+ * 4. Scan each book's SKU to confirm (or swap for an alternate)
  * 5. All books scanned → Complete Order → next member
  */
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -22,6 +22,7 @@ import {
   MapPin,
   Package,
   XCircle,
+  Shuffle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -61,6 +62,10 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [scanMessage, setScanMessage] = useState("");
   const [activeSlot, setActiveSlot] = useState(0);
+
+  // slotOverrides: map from slot index → index into all_suggestions
+  const [slotOverrides, setSlotOverrides] = useState<Record<number, number>>({});
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: suggestions, isLoading } = trpc.picking.suggestBooks.useQuery(
@@ -68,9 +73,52 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
     { staleTime: 5 * 60 * 1000 }
   );
 
-  const recommended = suggestions?.recommended ?? [];
+  const allSuggestions = suggestions?.all_suggestions ?? [];
   const booksNeeded = order.books_needed;
+
+  // Build the current slot→book mapping, applying any overrides
+  const slotBooks = Array.from({ length: booksNeeded }, (_, idx) => {
+    const overrideIdx = slotOverrides[idx];
+    if (overrideIdx !== undefined) return allSuggestions[overrideIdx] ?? null;
+    return allSuggestions[idx] ?? null;
+  });
+
   const allScanned = Object.keys(scannedBooks).length >= booksNeeded;
+
+  // Get the set of all_suggestions indices currently assigned to any slot
+  const usedSuggestionIndices = new Set(
+    Array.from({ length: booksNeeded }, (_, idx) => slotOverrides[idx] ?? idx)
+  );
+
+  // Swap a slot to the next unused suggestion
+  const handleSwap = (slotIdx: number) => {
+    if (slotIdx in scannedBooks) return; // can't swap already-scanned
+
+    const currentSuggestionIdx = slotOverrides[slotIdx] ?? slotIdx;
+
+    // Find the next unused suggestion after the current one
+    let next = currentSuggestionIdx + 1;
+    while (next < allSuggestions.length) {
+      if (!usedSuggestionIndices.has(next)) break;
+      next++;
+    }
+
+    if (next >= allSuggestions.length) {
+      toast.error("No more alternates available for this slot.");
+      return;
+    }
+
+    setSlotOverrides(prev => ({ ...prev, [slotIdx]: next }));
+
+    // Clear any scan state for this slot
+    if (activeSlot === slotIdx) {
+      setScanState("idle");
+      setScanMessage("");
+      setScanInput("");
+    }
+
+    toast.info(`Swapped to alternate: ${allSuggestions[next]?.title ?? "book"}`);
+  };
 
   // Auto-focus scan input
   useEffect(() => {
@@ -80,7 +128,7 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
   const handleScan = useCallback((sku: string) => {
     if (!sku.trim() || allScanned) return;
 
-    const expectedBook = recommended[activeSlot];
+    const expectedBook = slotBooks[activeSlot];
     if (!expectedBook) return;
 
     const scannedSku = sku.trim().toUpperCase();
@@ -94,7 +142,6 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
     }
 
     if (scannedSku === expectedSku) {
-      // Check for duplicates
       if (Object.values(scannedBooks).some((b) => b.sku.toUpperCase() === scannedSku)) {
         setScanState("error");
         setScanMessage("This book was already scanned!");
@@ -114,7 +161,6 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
       setScanMessage(`✓ ${expectedBook.title} confirmed!`);
       setScanInput("");
       setActiveSlot((prev) => prev + 1);
-
       setTimeout(() => setScanState("idle"), 2000);
     } else {
       setScanState("error");
@@ -122,12 +168,10 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
       setScanInput("");
       setTimeout(() => setScanState("idle"), 3000);
     }
-  }, [recommended, activeSlot, scannedBooks, allScanned]);
+  }, [slotBooks, activeSlot, scannedBooks, allScanned]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleScan(scanInput);
-    }
+    if (e.key === "Enter") handleScan(scanInput);
   };
 
   const handleUnscan = (idx: number) => {
@@ -190,7 +234,9 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
             style={{ width: `${(Object.keys(scannedBooks).length / booksNeeded) * 100}%` }}
           />
         </div>
-        <span className="text-sm font-medium text-foreground">{Object.keys(scannedBooks).length}/{booksNeeded} scanned</span>
+        <span className="text-sm font-medium text-foreground">
+          {Object.keys(scannedBooks).length}/{booksNeeded} scanned
+        </span>
       </div>
 
       {/* Book slots */}
@@ -201,14 +247,20 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {recommended.map((book, idx) => {
+          {slotBooks.map((book, idx) => {
+            if (!book) return null;
             const isScanned = idx in scannedBooks;
             const isActive = idx === activeSlot && !allScanned;
             const isPending = idx > activeSlot;
+            const isOverride = idx in slotOverrides;
+            const suggestionIdx = slotOverrides[idx] ?? idx;
+            const hasMoreAlternates = allSuggestions
+              .slice(suggestionIdx + 1)
+              .some((_, i) => !usedSuggestionIndices.has(suggestionIdx + 1 + i));
 
             return (
               <div
-                key={book.book_title_id}
+                key={`${book.book_title_id}-${idx}`}
                 className={cn(
                   "rounded-xl border p-4 transition-all",
                   isScanned ? "border-green-300 bg-green-50" :
@@ -229,8 +281,16 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
                   {/* Book info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-foreground">{book.title}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-foreground">{book.title}</p>
+                          {isOverride && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                              style={{ backgroundColor: "oklch(0.94 0.05 260)", color: "oklch(0.42 0.11 260)" }}>
+                              alt pick
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">{book.author}</p>
                         {book.match_reason && (
                           <p className="text-xs mt-1" style={{ color: "oklch(0.50 0.12 155)" }}>
@@ -238,20 +298,35 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
                           </p>
                         )}
                       </div>
-                      {isScanned && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                            <CheckCircle2 className="w-4 h-4" /> Scanned
-                          </span>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Swap button — only show for unscanned slots */}
+                        {!isScanned && (isActive || isPending) && hasMoreAlternates && (
                           <button
-                            onClick={() => handleUnscan(idx)}
-                            className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
-                            title="Undo scan"
+                            onClick={() => handleSwap(idx)}
+                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
+                            style={{ color: "oklch(0.42 0.11 260)", borderColor: "oklch(0.85 0.06 260)" }}
+                            title="Swap for an alternate book"
                           >
-                            <XCircle className="w-4 h-4" />
+                            <Shuffle className="w-3 h-3" />
+                            Swap
                           </button>
-                        </div>
-                      )}
+                        )}
+                        {isScanned && (
+                          <>
+                            <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                              <CheckCircle2 className="w-4 h-4" /> Scanned
+                            </span>
+                            <button
+                              onClick={() => handleUnscan(idx)}
+                              className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
+                              title="Undo scan"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {/* Location + SKU */}
@@ -366,7 +441,6 @@ export default function PickingPage() {
     });
   }, [confirmMutation]);
 
-  // Show pick mode if an order is active
   if (activeOrder) {
     return (
       <PickMode
@@ -446,7 +520,6 @@ export default function PickingPage() {
           {pendingOrders.map((order, idx) => {
             const ageColors = AGE_COLORS[order.age_group] ?? AGE_COLORS["Fledglings"];
             const isOverdue = order.next_ship_date && order.next_ship_date < new Date().toISOString().split("T")[0];
-
             return (
               <button
                 key={order.member_id}
@@ -474,9 +547,7 @@ export default function PickingPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-muted-foreground">
-                        Ship: {order.next_ship_date}
-                      </span>
+                      <span className="text-xs text-muted-foreground">Ship: {order.next_ship_date}</span>
                       {order.interests.length > 0 && (
                         <span className="text-xs text-muted-foreground">
                           {order.interests.slice(0, 2).join(", ")}{order.interests.length > 2 ? ` +${order.interests.length - 2}` : ""}
