@@ -5,11 +5,13 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   BookOpen, Check, Search, Loader2, AlertCircle, RotateCcw,
-  ExternalLink, ChevronDown, ChevronUp, Pencil, X, Sparkles, Info, Tag, ClipboardCheck, Copy, Zap
+  Pencil, X, Sparkles, Info, Tag, ClipboardCheck, Copy, Zap,
+  ChevronDown, ChevronUp, Keyboard, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
+import { useBarcodeScanner } from "@/components/useBarcodeScanner";
 import {
   TAG_TAXONOMY, getCategoryForTag, buildBinName,
   type BinCategory,
@@ -17,15 +19,13 @@ import {
 
 const STEPS = ["Scan ISBN", "Confirm Details", "Tags & Bin", "Confirm"];
 
-// Map classifier tiers → display labels used by receive flow
 const TIER_TO_AGE_GROUP: Record<string, string> = {
-  "Hatchlings":   "Hatchlings (0-2)",
-  "Fledglings":   "Fledglings (3-5)",
-  "Soarers":      "Soarers (6-8)",
-  "Sky Readers":  "Sky Readers (9-12)",
+  "Hatchlings":  "Hatchlings (0-2)",
+  "Fledglings":  "Fledglings (3-5)",
+  "Soarers":     "Soarers (6-8)",
+  "Sky Readers": "Sky Readers (9-12)",
 };
 
-// Map classifier bins → BinCategory IDs used by tag/bin system
 const BIN_TO_CATEGORY: Record<string, BinCategory> = {
   Adventure: "ADVENTURE",
   Humor:     "HUMOR",
@@ -42,13 +42,6 @@ const AGE_EMOJIS: Record<string, string> = {
   "Fledglings (3-5)":  "🐦",
   "Soarers (6-8)":     "🦅",
   "Sky Readers (9-12)":"🌟",
-};
-
-const CONFIDENCE_COLORS = {
-  high:   { bg: "oklch(0.96 0.04 155)", border: "oklch(0.82 0.09 155)", text: "oklch(0.30 0.12 155)", badge: "oklch(0.42 0.11 155)" },
-  medium: { bg: "oklch(0.97 0.05 80)",  border: "oklch(0.84 0.10 80)",  text: "oklch(0.38 0.12 75)",  badge: "oklch(0.55 0.14 75)"  },
-  low:    { bg: "oklch(0.97 0.02 260)", border: "oklch(0.85 0.05 260)", text: "oklch(0.38 0.08 260)", badge: "oklch(0.52 0.12 260)" },
-  "needs-review": { bg: "oklch(0.97 0.04 25)", border: "oklch(0.88 0.08 25)", text: "oklch(0.40 0.18 25)", badge: "oklch(0.55 0.18 25)" },
 };
 
 interface BookData {
@@ -113,7 +106,7 @@ function TagSelector({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5 min-h-[2rem]">
+      <div className="flex flex-wrap gap-1.5 min-h-8">
         {selectedTags.length === 0
           ? <span className="text-xs text-muted-foreground italic">No tags selected — pick from categories below</span>
           : selectedTags.map(tag => {
@@ -282,23 +275,24 @@ export default function ReceivePage() {
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
   const [isbnCopied, setIsbnCopied] = useState(false);
+  const [numpadMode, setNumpadMode] = useState(true);
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
 
-  // ── tRPC: ISBN classify ──────────────────────────────────────────────────
-  const { isFetching: classifying, error: classifyError } = trpc.isbn.classify.useQuery(
-    { isbn: submittedIsbn! },
-    {
-      enabled: !!submittedIsbn && !isManualEntry,
-      retry: false,
-    }
-  );
+  // ── Barcode scanner ───────────────────────────────────────────────────────
+  const { open: openScanner, ScannerModal } = useBarcodeScanner({
+    onScan: (isbn) => {
+      setIsbnInput(isbn);
+      setSubmittedIsbn(isbn);
+    },
+  });
 
-  // Use the data via useQuery ref so we can access it in useEffect
+  // ── tRPC: ISBN classify ───────────────────────────────────────────────────
   const classifyQuery = trpc.isbn.classify.useQuery(
     { isbn: submittedIsbn! },
     { enabled: !!submittedIsbn && !isManualEntry, retry: false }
   );
+  const { isFetching: classifying, error: classifyError } = classifyQuery;
 
   useEffect(() => {
     if (!classifyQuery.data) return;
@@ -317,17 +311,14 @@ export default function ReceivePage() {
       openLibraryUrl: null,
     });
 
-    // Pre-fill tier
     const mappedAge = TIER_TO_AGE_GROUP[classification.ageTier] ?? "Fledglings (3-5)";
     setAgeGroup(mappedAge);
 
-    // Pre-fill bin
     const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "LIFE";
     setSelectedCategory(mappedBin);
     setSuggestedCategory(mappedBin);
     setIsManualCategoryOverride(false);
 
-    // Pre-fill tags from supportingTags
     setAutoTags(classification.supportingTags);
     setSelectedTags(classification.supportingTags.slice(0, 4));
 
@@ -481,14 +472,46 @@ export default function ReceivePage() {
               <p className="text-xs text-muted-foreground">ISBN-10 or ISBN-13 · tier, bin & tags auto-fill</p>
             </div>
           </div>
+
           <form onSubmit={handleScan} className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input ref={isbnInputRef} type="text" value={isbnInput}
-                onChange={e => { setIsbnInput(e.target.value); }}
-                placeholder="e.g. 9780061124952 or 0061124958"
-                autoFocus
-                className="w-full pl-10 pr-4 py-3 rounded-lg border border-border bg-background text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+            {/* ISBN input + keyboard toggle + camera button */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  ref={isbnInputRef}
+                  type="text"
+                  inputMode={numpadMode ? "numeric" : "text"}
+                  value={isbnInput}
+                  onChange={e => setIsbnInput(e.target.value)}
+                  placeholder="Enter ISBN…"
+                  autoFocus
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-border bg-background text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                />
+              </div>
+
+              {/* Keyboard/numpad toggle */}
+              <button
+                type="button"
+                onClick={() => setNumpadMode(v => !v)}
+                title={numpadMode ? "Switch to full keyboard" : "Switch to numpad"}
+                className="flex items-center justify-center w-11 h-11 rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              >
+                {numpadMode
+                  ? <Keyboard className="w-4 h-4" />
+                  : <span className="text-xs font-bold font-mono">123</span>}
+              </button>
+
+              {/* Live camera scan button */}
+              <button
+                type="button"
+                onClick={openScanner}
+                title="Scan barcode with camera"
+                className="flex items-center justify-center w-11 h-11 rounded-lg text-white transition-colors shrink-0"
+                style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+              >
+                <ScanLine className="w-4 h-4" />
+              </button>
             </div>
 
             {classifyError && (
@@ -514,6 +537,7 @@ export default function ReceivePage() {
                 : <><BookOpen className="w-4 h-4" />Look Up & Classify</>}
             </button>
           </form>
+
           <div className="text-center">
             <button type="button" onClick={handleManualEntry}
               className="text-xs font-medium transition-colors hover:opacity-80 inline-flex items-center gap-1"
@@ -521,6 +545,9 @@ export default function ReceivePage() {
               <Pencil className="w-3 h-3" />No ISBN? Enter details manually
             </button>
           </div>
+
+          {/* Camera scanner modal */}
+          <ScannerModal />
         </div>
       )}
 
@@ -805,7 +832,7 @@ export default function ReceivePage() {
         <div className="rounded-xl border p-4 flex items-center justify-between gap-4"
           style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)" }}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
               <Tag className="w-4 h-4" style={{ color: "oklch(0.45 0.14 75)" }} />
             </div>
             <div>
@@ -814,7 +841,7 @@ export default function ReceivePage() {
             </div>
           </div>
           <button onClick={() => navigate("/labels")}
-            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
             style={{ backgroundColor: "oklch(0.55 0.14 75)" }}>
             Go to Label Queue →
           </button>
@@ -824,7 +851,7 @@ export default function ReceivePage() {
       {receivedCount > 0 && (
         <div className="flex items-center gap-4 p-4 rounded-xl border"
           style={{ backgroundColor: "oklch(0.96 0.02 155)", borderColor: "oklch(0.85 0.05 155)" }}>
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
             <ClipboardCheck className="w-4 h-4" style={{ color: "oklch(0.38 0.12 155)" }} />
           </div>
           <div className="flex-1">
@@ -832,7 +859,7 @@ export default function ReceivePage() {
             <p className="text-xs" style={{ color: "oklch(0.45 0.08 155)" }}>Inspect, clean, and grade before shelving</p>
           </div>
           <button onClick={() => navigate("/qc")}
-            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
             style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
             Go to QC Queue →
           </button>
