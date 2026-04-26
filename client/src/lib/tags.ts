@@ -31,6 +31,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Skyship", "Haunted", "Cursed Object", "Secret Society", "Double Agent",
       "Rescue Mission", "Time Loop", "Shadow World", "Labyrinth", "Mythical Beasts",
       "Sword & Sorcery", "Underdog Hero",
+      "Castles & Kingdoms", "Fairies", "Magical Creatures", "Running & Racing", "Wizards & Witches",
     ],
   },
   {
@@ -72,6 +73,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Finding Your Place", "Following Dreams", "Doing Hard Things", "Home & Belonging",
       "Trust", "Persistence", "Failure & Trying Again", "Belonging", "Loneliness",
       "Navigating Conflict", "Sharing", "First Day",
+      "Community Helpers", "Everyday Life", "Getting Dressed", "Imagination & Pretend Play", "Mealtime",
     ],
   },
   {
@@ -92,6 +94,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Food Science", "Architecture", "Art History", "Music Theory",
       "Economics for Kids", "Government & Civics", "Logic & Puzzles", "Human Rights",
       "Medical Science", "Environmental Science",
+      "Crafts & Making", "Dancing", "Drawing & Painting", "Music & Instruments", "Technology",
     ],
   },
   {
@@ -131,6 +134,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Fungi & Mushrooms", "Trees & Plants", "Pollinators", "Butterflies",
       "Migration", "Fossils", "Endangered Species", "Rewilding", "Composting",
       "Beekeeping", "Stargazing", "Tides & Moon", "Seasonal Animals", "Nocturnal Animals",
+      "Bears", "Cats", "Dogs", "Woodland Animals",
     ],
   },
   {
