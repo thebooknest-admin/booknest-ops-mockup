@@ -698,6 +698,28 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+      // Add this inside the qc: router({}) block in router.ts,
+// after the existing `fail` procedure:
+
+passAll: publicProcedure
+  .input(z.object({ copy_ids: z.array(z.string()) }))
+  .mutation(async ({ input }) => {
+    if (input.copy_ids.length === 0) return { success: true, count: 0 };
+    const now = new Date().toISOString();
+    const res = await sbFetch(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "pending_label",
+        label_status: "pending",
+        condition: "good",
+        qc_passed_at: now,
+        updated_at: now,
+      }),
+      headers: { Prefer: "return=minimal" },
+    });
+    if (!res.ok) throw new Error(`Failed to batch accept: ${await res.text()}`);
+    return { success: true, count: input.copy_ids.length };
+  }),
   }),
 
   // ─── Stock Queue ─────────────────────────────────────────────────────────────

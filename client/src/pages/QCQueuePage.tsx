@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { CheckCircle, XCircle, BookOpen, ClipboardCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle, XCircle, BookOpen, ClipboardCheck, ChevronDown, ChevronUp, CheckCheck } from "lucide-react";
 
 type QCItem = {
   id: string;
@@ -24,12 +24,8 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   const [notes, setNotes] = useState("");
 
   const passMutation = trpc.qc.pass.useMutation({
-    onSuccess: (data) => {
-      if (data.next_status === "pending_label") {
-        toast.success(`${item.sku} accepted — moved to Label Queue`);
-      } else {
-        toast.success(`${item.sku} accepted — moving to Stock Queue`);
-      }
+    onSuccess: () => {
+      toast.success(`${item.sku} accepted — moved to Label Queue`);
       onDone();
     },
     onError: (e) => toast.error(e.message),
@@ -44,15 +40,6 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
   });
 
   const isBusy = passMutation.isPending || failMutation.isPending;
-  const handleAccept = () => {
-    const shouldReprint = window.confirm("Reprint label for this book?\n\nOK = Yes (move to Label Queue)\nCancel = No (move to Stock Queue)");
-    passMutation.mutate({
-      copy_id: item.id,
-      condition: "good",
-      notes: notes || undefined,
-      reprint_label: shouldReprint,
-    });
-  };
 
   return (
     <Card className="border border-border overflow-hidden">
@@ -60,7 +47,7 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
         {/* Header row — always visible */}
         <div className="flex items-center gap-3 p-4">
           {/* Cover */}
-          <div className="w-10 h-14 rounded overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+          <div className="w-10 h-14 rounded overflow-hidden bg-muted shrink-0 flex items-center justify-center">
             {item.book_title?.cover_url ? (
               <img src={item.book_title.cover_url} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -81,13 +68,18 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
             </div>
           </div>
 
-          {/* Quick action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               size="sm"
               className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
               disabled={isBusy}
-              onClick={handleAccept}
+              onClick={() => passMutation.mutate({
+                copy_id: item.id,
+                condition: "good",
+                notes: notes || undefined,
+                reprint_label: true,
+              })}
             >
               <CheckCircle className="w-3.5 h-3.5 mr-1" />
               {passMutation.isPending ? "…" : "Accept"}
@@ -136,10 +128,24 @@ export default function QCQueuePage() {
   const queryClient = useQueryClient();
   const { data: items = [], isLoading } = trpc.qc.queue.useQuery();
 
+  const passAllMutation = trpc.qc.passAll.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.count} book${data.count !== 1 ? "s" : ""} accepted — moved to Label Queue`);
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: [["qc"]] });
     queryClient.invalidateQueries({ queryKey: [["labels"]] });
     queryClient.invalidateQueries({ queryKey: [["stock"]] });
+  };
+
+  const handleAcceptAll = () => {
+    if (items.length === 0) return;
+    if (!window.confirm(`Accept all ${items.length} book${items.length !== 1 ? "s" : ""} and move them to the Label Queue?`)) return;
+    passAllMutation.mutate({ copy_ids: items.map(i => i.id) });
   };
 
   return (
@@ -149,15 +155,28 @@ export default function QCQueuePage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">QC Queue</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Inspect and clean each book — accept it into stock or reject it for LFL donation.
+            Inspect and clean each book — accept to Label Queue or reject for LFL donation.
           </p>
         </div>
-        <Badge
-          variant="outline"
-          className="text-sm px-3 py-1 border-amber-300 bg-amber-50 text-amber-800"
-        >
-          {items.length} pending
-        </Badge>
+        <div className="flex items-center gap-2">
+          {items.length > 1 && (
+            <Button
+              size="sm"
+              className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
+              disabled={passAllMutation.isPending || isLoading}
+              onClick={handleAcceptAll}
+            >
+              <CheckCheck className="w-3.5 h-3.5 mr-1" />
+              {passAllMutation.isPending ? "Accepting…" : `Accept All (${items.length})`}
+            </Button>
+          )}
+          <Badge
+            variant="outline"
+            className="text-sm px-3 py-1 border-amber-300 bg-amber-50 text-amber-800"
+          >
+            {items.length} pending
+          </Badge>
+        </div>
       </div>
 
       {/* Loading */}
