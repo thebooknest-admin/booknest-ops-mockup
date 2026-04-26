@@ -524,6 +524,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        // ── Upsert book title ────────────────────────────────────────────────
         const titleRes = await sbFetch(
           "/book_titles?isbn=eq." + input.isbn + "&limit=1"
         );
@@ -562,6 +563,8 @@ export const appRouter = router({
           const newTitle: any[] = await newTitleRes.json();
           titleId = newTitle[0].id;
         }
+
+        // ── Build SKU prefix ─────────────────────────────────────────────────
         const normalizeAgeGroup = (ag: string): string => {
           const lower = ag
             .toLowerCase()
@@ -578,16 +581,28 @@ export const appRouter = router({
         };
         const agePrefix =
           SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
-        const maxSkuRes = await sbFetch(
-          `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.desc&limit=1`
+
+        // ── Find first unused SKU number (fills gaps, handles >9999) ─────────
+        const allSkusRes = await sbFetch(
+          `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.asc&limit=10000`
         );
-        const maxSkuData: { sku: string }[] = await maxSkuRes.json();
+        const allSkuData: { sku: string }[] = await allSkusRes.json();
+
+        const usedNumbers = new Set(
+          allSkuData
+            .map(r => {
+              const m = r.sku.match(/(\d+)$/);
+              return m ? parseInt(m[1], 10) : null;
+            })
+            .filter((n): n is number => n !== null)
+        );
+
         let nextNum = 1;
-        if (maxSkuData.length > 0 && maxSkuData[0].sku) {
-          const match = maxSkuData[0].sku.match(/(\d+)$/);
-          if (match) nextNum = parseInt(match[1], 10) + 1;
-        }
+        while (usedNumbers.has(nextNum)) nextNum++;
+
         const sku = `BN-${agePrefix}-${String(nextNum).padStart(4, "0")}`;
+
+        // ── Create book copy ─────────────────────────────────────────────────
         const copyRes = await sbFetch("/book_copies", {
           method: "POST",
           body: JSON.stringify({
@@ -724,21 +739,21 @@ export const appRouter = router({
       );
       return { count: total };
     }),
-  confirmPlaced: publicProcedure
-  .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
-  .mutation(async ({ input }) => {
-    const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "in_house",
-        stocked_at: new Date().toISOString(),
-        ...(input.bin_id ? { bin_id: input.bin_id } : {}),
+    confirmPlaced: publicProcedure
+      .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "in_house",
+            stocked_at: new Date().toISOString(),
+            ...(input.bin_id ? { bin_id: input.bin_id } : {}),
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
+        return { success: true };
       }),
-      headers: { Prefer: "return=minimal" },
-    });
-    if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
-    return { success: true };
-  }),
     confirmAll: publicProcedure
       .input(z.object({ copy_ids: z.array(z.string()) }))
       .mutation(async ({ input }) => {
