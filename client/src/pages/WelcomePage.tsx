@@ -16,10 +16,10 @@ import { trpc } from "@/lib/trpc";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const AGE_GROUPS = [
-  { value: "hatchlings",  range: "0–2 YEARS",  label: "Hatchlings", desc: "Board books, picture books, simple rhymes",       emoji: "🐣" },
-  { value: "fledglings",  range: "3–5 YEARS",  label: "Fledglings", desc: "Early readers, picture books, beginning stories", emoji: "🐦" },
-  { value: "soarers",     range: "6–8 YEARS",  label: "Soarers",    desc: "Chapter books, illustrated stories",               emoji: "🦅" },
-  { value: "sky_readers", range: "9–12 YEARS", label: "Sky Readers", desc: "Middle grade novels, longer chapter books",       emoji: "🌟" },
+  { value: "Hatchlings",  range: "0–2 YEARS",  label: "Hatchlings",  desc: "Board books, picture books, simple rhymes",       emoji: "🐣" },
+  { value: "Fledglings",  range: "3–5 YEARS",  label: "Fledglings",  desc: "Early readers, picture books, beginning stories", emoji: "🐦" },
+  { value: "Soarers",     range: "6–8 YEARS",  label: "Soarers",     desc: "Chapter books, illustrated stories",               emoji: "🦅" },
+  { value: "Sky Readers", range: "9–12 YEARS", label: "Sky Readers", desc: "Middle grade novels, longer chapter books",        emoji: "🌟" },
 ];
 
 const INTEREST_CATEGORIES = TAG_TAXONOMY.map(cat => ({
