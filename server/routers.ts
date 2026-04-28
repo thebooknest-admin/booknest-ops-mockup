@@ -930,8 +930,8 @@ welcome: router({
 
       // Update each child member row
       await Promise.all(
-        input.children.map(child =>
-          sbFetch(`/members?id=eq.${child.member_id}&household_id=eq.${household.id}`, {
+  input.children.map(child =>
+    sbFetch(`/members?id=eq.${child.member_id}`, {
             method: 'PATCH',
             body: JSON.stringify({
               child_name: child.child_name,
