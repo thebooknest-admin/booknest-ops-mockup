@@ -929,13 +929,8 @@ welcome: router({
       const now = new Date().toISOString();
 
       // Update each child member row
-  await Promise.all(
+await Promise.all(
   input.children.map(async child => {
-    console.log('Updating member:', child.member_id, 'with data:', JSON.stringify({
-      child_name: child.child_name,
-      age_group: child.age_group,
-      interests: child.interests,
-    }));
     const res = await sbFetch(`/members?id=eq.${child.member_id}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -948,9 +943,10 @@ welcome: router({
         welcome_form_completed: true,
         updated_at: now,
       }),
-      headers: { Prefer: 'return=minimal' },
+      headers: { Prefer: 'return=representation' },
     });
-    console.log('Member update status:', res.status, await res.text());
+    const text = await res.text();
+    console.log(`PATCH member ${child.member_id}: status=${res.status} body=${text}`);
   })
 );
 
