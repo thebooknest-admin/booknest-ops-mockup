@@ -930,8 +930,8 @@ welcome: router({
 
       // Update each child member row
 await Promise.all(
-  input.children.map(async child => {
-    const res = await sbFetch(`/members?id=eq.${child.member_id}`, {
+  input.children.map(async child =>
+    sbFetch(`/members?id=eq.${child.member_id}`, {
       method: 'PATCH',
       body: JSON.stringify({
         child_name: child.child_name,
@@ -943,11 +943,9 @@ await Promise.all(
         welcome_form_completed: true,
         updated_at: now,
       }),
-      headers: { Prefer: 'return=representation' },
-    });
-    const text = await res.text();
-    console.log(`PATCH member ${child.member_id}: status=${res.status} body=${text}`);
-  })
+      headers: { Prefer: 'return=minimal' },
+    })
+  )
 );
 
       // Update primary member name + email
