@@ -837,90 +837,144 @@ passAll: publicProcedure
       }),
   }),
 
-  // ─── Welcome Form ─────────────────────────────────────────────────────────
-  welcome: router({
-    getByEmail: publicProcedure
-      .input(z.object({ email: z.string().email() }))
-      .query(async ({ input }) => {
-        const res = await sbFetch(
-          `/members?email=eq.${encodeURIComponent(input.email)}&limit=1`
-        );
-        const data: any[] = await res.json();
-        if (!data[0]) return null;
-        const m = data[0];
-        return {
-          id: m.id,
-          name: m.name,
-          email: m.email,
-          age_group: m.age_group,
+// ─── Welcome Form ─────────────────────────────────────────────────────────
+welcome: router({
+  // Load household by token — returns all children needing profiles
+  load: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      // Look up household by token
+      const householdRes = await sbFetch(
+        `/households?welcome_token=eq.${input.token}&limit=1`
+      );
+      const households: any[] = await householdRes.json();
+      if (!households[0]) return null;
+      const household = households[0];
+
+      // Check token expiry
+      if (household.welcome_token_expires_at) {
+        const expires = new Date(household.welcome_token_expires_at);
+        if (expires < new Date()) {
+          return { expired: true };
+        }
+      }
+
+      // Already completed?
+      if (household.welcome_form_completed) {
+        return { already_completed: true };
+      }
+
+      // Get all members in this household ordered by sibling_order
+      const membersRes = await sbFetch(
+        `/members?household_id=eq.${household.id}&order=sibling_order.asc&limit=10`
+      );
+      const members: any[] = await membersRes.json();
+
+      return {
+        household_id: household.id,
+        children: members.map(m => ({
+          member_id: m.id,
+          is_primary: m.is_primary,
+          sibling_order: m.sibling_order,
+          books_per_box: m.books_per_box,
+          tier: m.tier,
+          // Pre-fill if already partially filled
+          child_name: m.child_name ?? '',
+          age_group: m.age_group ?? '',
           interests: m.interests ?? [],
           topics_to_avoid: m.topics_to_avoid ?? [],
-          welcome_form_completed: m.welcome_form_completed ?? false,
-        };
-      }),
+          birthday: m.birthday ?? '',
+          notes: m.notes ?? '',
+          welcome_form_completed: m.welcome_form_completed,
+        })),
+        // Parent info from primary member
+        parent_name: members.find(m => m.is_primary)?.name ?? '',
+        parent_email: members.find(m => m.is_primary)?.email ?? '',
+      };
+    }),
 
-    submit: publicProcedure
-      .input(
-        z.object({
-          parent_name: z.string(),
-          parent_email: z.string().email(),
-          child_name: z.string(),
-          child_birthday: z.string().optional(),
-          age_group: z.string(),
-          interests: z.array(z.string()),
-          topics_to_avoid: z.array(z.string()),
-          additional_notes: z.string().optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const findRes = await sbFetch(
-          `/members?email=eq.${encodeURIComponent(input.parent_email)}&limit=1`
-        );
-        const existing: any[] = await findRes.json();
+  // Submit all child profiles at once
+  submit: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        parent_name: z.string(),
+        parent_email: z.string().email(),
+        children: z.array(
+  z.object({
+    member_id: z.string(),
+    child_name: z.string(),
+    birthday: z.string().nullish(),
+    age_group: z.string(),
+    interests: z.array(z.string()),
+    topics_to_avoid: z.array(z.string()),
+    notes: z.string().nullish(),
+  })
+),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Verify token still valid
+      const householdRes = await sbFetch(
+        `/households?welcome_token=eq.${input.token}&limit=1`
+      );
+      const households: any[] = await householdRes.json();
+      if (!households[0]) throw new Error('Invalid or expired token');
+      const household = households[0];
 
-        const profileData = {
-          age_group: input.age_group,
-          interests: input.interests,
-          topics_to_avoid: input.topics_to_avoid,
-          welcome_form_completed: true,
-          updated_at: new Date().toISOString(),
-          ...(input.child_name ? { child_name: input.child_name } : {}),
-          ...(input.child_birthday
-            ? { child_birthday: input.child_birthday }
-            : {}),
-          ...(input.additional_notes ? { notes: input.additional_notes } : {}),
-        };
+      if (household.welcome_form_completed) {
+        throw new Error('Welcome form already completed');
+      }
 
-        if (existing.length > 0) {
-          const updateRes = await sbFetch(`/members?id=eq.${existing[0].id}`, {
-            method: "PATCH",
-            body: JSON.stringify(profileData),
-            headers: { Prefer: "return=minimal" },
-          });
-          if (!updateRes.ok) {
-            const errText = await updateRes.text();
-            throw new Error(`Failed to update member: ${errText}`);
-          }
-          return { success: true, member_id: existing[0].id, created: false };
-        } else {
-          const createRes = await sbFetch("/members", {
-            method: "POST",
+      const now = new Date().toISOString();
+
+      // Update each child member row
+      await Promise.all(
+        input.children.map(child =>
+          sbFetch(`/members?id=eq.${child.member_id}&household_id=eq.${household.id}`, {
+            method: 'PATCH',
             body: JSON.stringify({
-              name: input.parent_name,
-              email: input.parent_email,
-              subscription_status: "waitlist",
-              ...profileData,
+              child_name: child.child_name,
+              age_group: child.age_group,
+              interests: child.interests,
+              topics_to_avoid: child.topics_to_avoid,
+              birthday: child.birthday ?? null,
+              notes: child.notes ?? null,
+              welcome_form_completed: true,
+              updated_at: now,
             }),
-          });
-          if (!createRes.ok) {
-            const errText = await createRes.text();
-            throw new Error(`Failed to create member: ${errText}`);
-          }
-          const created: any[] = await createRes.json();
-          return { success: true, member_id: created[0]?.id, created: true };
+            headers: { Prefer: 'return=minimal' },
+          })
+        )
+      );
+
+      // Update primary member name + email
+      await sbFetch(
+        `/members?household_id=eq.${household.id}&is_primary=eq.true`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: input.parent_name,
+            email: input.parent_email,
+            updated_at: now,
+          }),
+          headers: { Prefer: 'return=minimal' },
         }
-      }),
-  }),
+      );
+
+      // Mark household complete
+      await sbFetch(`/households?id=eq.${household.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          welcome_form_completed: true,
+          updated_at: now,
+        }),
+        headers: { Prefer: 'return=minimal' },
+      });
+
+      return { success: true };
+    }),
+}),
 
   // ─── Returns ────────────────────────────────────────────────────────────────
   returns: router({
