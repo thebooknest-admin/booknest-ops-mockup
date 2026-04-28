@@ -929,24 +929,30 @@ welcome: router({
       const now = new Date().toISOString();
 
       // Update each child member row
-      await Promise.all(
-  input.children.map(child =>
-    sbFetch(`/members?id=eq.${child.member_id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              child_name: child.child_name,
-              age_group: child.age_group,
-              interests: child.interests,
-              topics_to_avoid: child.topics_to_avoid,
-              birthday: child.birthday ?? null,
-              notes: child.notes ?? null,
-              welcome_form_completed: true,
-              updated_at: now,
-            }),
-            headers: { Prefer: 'return=minimal' },
-          })
-        )
-      );
+  await Promise.all(
+  input.children.map(async child => {
+    console.log('Updating member:', child.member_id, 'with data:', JSON.stringify({
+      child_name: child.child_name,
+      age_group: child.age_group,
+      interests: child.interests,
+    }));
+    const res = await sbFetch(`/members?id=eq.${child.member_id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        child_name: child.child_name,
+        age_group: child.age_group,
+        interests: child.interests,
+        topics_to_avoid: child.topics_to_avoid,
+        birthday: child.birthday ?? null,
+        notes: child.notes ?? null,
+        welcome_form_completed: true,
+        updated_at: now,
+      }),
+      headers: { Prefer: 'return=minimal' },
+    });
+    console.log('Member update status:', res.status, await res.text());
+  })
+);
 
       // Update primary member name + email
       await sbFetch(
