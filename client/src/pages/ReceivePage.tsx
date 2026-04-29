@@ -44,6 +44,9 @@ const AGE_EMOJIS: Record<string, string> = {
   "Sky Readers (9-12)":"🌟",
 };
 
+const [isTooOld, setIsTooOld] = useState(false);
+const [tooOldReason, setTooOldReason] = useState("");
+
 interface BookData {
   title: string;
   author: string;
@@ -314,6 +317,9 @@ export default function ReceivePage() {
     const mappedAge = TIER_TO_AGE_GROUP[classification.ageTier] ?? "Fledglings (3-5)";
     setAgeGroup(mappedAge);
 
+    setIsTooOld(classification.isTooOld ?? false);
+setTooOldReason(classification.tooOldReason ?? "");
+
     const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "LIFE";
     setSelectedCategory(mappedBin);
     setSuggestedCategory(mappedBin);
@@ -394,6 +400,8 @@ export default function ReceivePage() {
     setAutoTags([]);
     setIsManualEntry(false);
     setIsManualCategoryOverride(false);
+    setIsTooOld(false);
+setTooOldReason("");
   };
 
   const handleManualEntry = () => {
@@ -551,86 +559,125 @@ export default function ReceivePage() {
         </div>
       )}
 
-      {/* ── STEP 1: Confirm Details ── */}
-      {step === 1 && book && !isManualEntry && (
-        <div className="bg-card rounded-xl border border-border p-6 space-y-5">
-          <h2 className="font-semibold text-foreground">Confirm Book Details</h2>
+     {/* ── STEP 1: Confirm Details ── */}
+{step === 1 && book && !isManualEntry && (
+  <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+    <h2 className="font-semibold text-foreground">Confirm Book Details</h2>
 
-          <div className="flex gap-5">
-            <div className="shrink-0">
-              <CoverImage title={book.title} coverCandidates={book.coverCandidates} coverUrl={book.coverUrl} />
-            </div>
-            <div className="flex-1 min-w-0 space-y-3">
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</label>
-                <input value={book.title} onChange={e => setBook(prev => prev && ({ ...prev, title: e.target.value }))}
-                  className="w-full font-bold text-foreground text-base leading-tight mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</label>
-                <input value={book.author} onChange={e => setBook(prev => prev && ({ ...prev, author: e.target.value }))}
-                  className="w-full font-medium text-foreground text-sm mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">ISBN</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <p className="font-mono text-xs text-foreground">{book.isbn}</p>
-                    <button onClick={() => { navigator.clipboard.writeText(book.isbn); setIsbnCopied(true); setTimeout(() => setIsbnCopied(false), 1500); }}
-                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
-                      {isbnCopied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</label>
-                  <input value={book.pages} onChange={e => setBook(prev => prev && ({ ...prev, pages: e.target.value }))}
-                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</label>
-                  <input value={book.publishYear} onChange={e => setBook(prev => prev && ({ ...prev, publishYear: e.target.value }))}
-                    className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Classifier pre-fills summary */}
-          <div className="p-3 rounded-lg border text-xs space-y-1.5"
-            style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)" }}>
-            <p className="font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.32 0.10 155)" }}>
-              <Sparkles className="w-3.5 h-3.5" />Classifier results — edit in next step if needed
+    {/* Too Old Warning */}
+    {isTooOld && (
+      <div className="flex items-start gap-3 p-4 rounded-xl border-2"
+        style={{ backgroundColor: "oklch(0.97 0.04 25)", borderColor: "oklch(0.75 0.18 25)" }}>
+        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "oklch(0.50 0.18 25)" }} />
+        <div className="flex-1 space-y-3">
+          <div>
+            <p className="font-semibold text-sm" style={{ color: "oklch(0.35 0.18 25)" }}>
+              ⚠️ This book may be outside your age range (13+)
             </p>
-            <div className="flex flex-wrap gap-2">
-              <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.28 0.10 155)" }}>
-                {AGE_EMOJIS[ageGroup]} {ageGroup}
-              </span>
-              {(() => { const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory); return cat ? (
-                <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>
-                  {cat.emoji} {cat.label}
-                </span>
-              ) : null; })()}
-              {autoTags.map(t => (
-                <span key={t} className="px-2 py-0.5 rounded-full border border-border text-muted-foreground">{t}</span>
-              ))}
-            </div>
+            <p className="text-xs mt-0.5" style={{ color: "oklch(0.45 0.14 25)" }}>
+              {tooOldReason}
+            </p>
           </div>
-
-          <div className="flex gap-3 pt-1">
-            <button onClick={handleReset}
-              className="flex items-center gap-1.5 flex-1 justify-center py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
-              <RotateCcw className="w-3.5 h-3.5" />Scan Again
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                toast.info("Book marked for donation — scan next book.");
+                handleReset();
+              }}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+              style={{ backgroundColor: "oklch(0.50 0.18 25)" }}
+            >
+              Donate Out
             </button>
-            <button onClick={() => setStep(2)}
-              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
-              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
-              Confirm & Continue →
+            <button
+              onClick={() => {
+                setIsTooOld(false);
+                toast.info("Overridden — verify age group manually.");
+              }}
+              className="flex-1 py-2 rounded-lg border-2 text-sm font-semibold transition-colors"
+              style={{ borderColor: "oklch(0.75 0.18 25)", color: "oklch(0.40 0.18 25)" }}
+            >
+              Override — Keep It
             </button>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
+    <div className="flex gap-5">
+      <div className="shrink-0">
+        <CoverImage title={book.title} coverCandidates={book.coverCandidates} coverUrl={book.coverUrl} />
+      </div>
+      <div className="flex-1 min-w-0 space-y-3">
+        <div>
+          <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Title</label>
+          <input value={book.title} onChange={e => setBook(prev => prev && ({ ...prev, title: e.target.value }))}
+            className="w-full font-bold text-foreground text-base leading-tight mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Author</label>
+          <input value={book.author} onChange={e => setBook(prev => prev && ({ ...prev, author: e.target.value }))}
+            className="w-full font-medium text-foreground text-sm mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">ISBN</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="font-mono text-xs text-foreground">{book.isbn}</p>
+              <button onClick={() => { navigator.clipboard.writeText(book.isbn); setIsbnCopied(true); setTimeout(() => setIsbnCopied(false), 1500); }}
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                {isbnCopied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pages</label>
+            <input value={book.pages} onChange={e => setBook(prev => prev && ({ ...prev, pages: e.target.value }))}
+              className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Published</label>
+            <input value={book.publishYear} onChange={e => setBook(prev => prev && ({ ...prev, publishYear: e.target.value }))}
+              className="w-full text-sm text-foreground mt-0.5 bg-transparent border-b border-border focus:border-foreground outline-none py-0.5" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Classifier pre-fills summary */}
+    <div className="p-3 rounded-lg border text-xs space-y-1.5"
+      style={{ backgroundColor: "oklch(0.97 0.03 155)", borderColor: "oklch(0.85 0.06 155)" }}>
+      <p className="font-semibold flex items-center gap-1.5" style={{ color: "oklch(0.32 0.10 155)" }}>
+        <Sparkles className="w-3.5 h-3.5" />Classifier results — edit in next step if needed
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: "oklch(0.92 0.06 155)", color: "oklch(0.28 0.10 155)" }}>
+          {AGE_EMOJIS[ageGroup]} {ageGroup}
+        </span>
+        {(() => { const cat = TAG_TAXONOMY.find(c => c.id === selectedCategory); return cat ? (
+          <span className="px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: cat.color.bg, color: cat.color.text }}>
+            {cat.emoji} {cat.label}
+          </span>
+        ) : null; })()}
+        {autoTags.map(t => (
+          <span key={t} className="px-2 py-0.5 rounded-full border border-border text-muted-foreground">{t}</span>
+        ))}
+      </div>
+    </div>
+
+    <div className="flex gap-3 pt-1">
+      <button onClick={handleReset}
+        className="flex items-center gap-1.5 flex-1 justify-center py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
+        <RotateCcw className="w-3.5 h-3.5" />Scan Again
+      </button>
+      <button onClick={() => setStep(2)}
+        className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
+        style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
+        Confirm & Continue →
+      </button>
+    </div>
+  </div>
+)}
       {/* ── STEP 1: Manual Entry ── */}
       {step === 1 && book && isManualEntry && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">

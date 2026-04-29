@@ -307,6 +307,23 @@ export const appRouter = router({
         const data = await res.json();
         return { success: true, book: data[0] };
       }),
+
+     inTransit: publicProcedure.query(async () => {
+  const res = await sbFetch(
+    `/book_copies?status=eq.in_transit&select=id,sku,bin_id,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
+  );
+  if (!res.ok) return [];
+  const copies: any[] = await res.json();
+  return copies.map((c) => ({
+    id: c.id,
+    sku: c.sku,
+    bin_id: c.bin_id,
+    book_title_id: c.book_title_id,
+    title: c.book_titles?.title ?? 'Unknown',
+    author: c.book_titles?.author ?? '',
+  }));
+}),
+ 
   }),
 
   // ─── Shipments / Orders ─────────────────────────────────────────────────────

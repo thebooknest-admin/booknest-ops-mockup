@@ -33,7 +33,10 @@ interface RuleTrace {
 }
 interface Classification {
   ageTier: AgeTier; ageTierRange: string; themeBin: ThemeBin;
-  supportingTags: string[]; confidence: ConfidenceLevel; reasoning: string; trace: RuleTrace;
+  supportingTags: string[]; confidence: ConfidenceLevel;
+  reasoning: string; trace: RuleTrace;
+  isTooOld: boolean;
+  tooOldReason: string;
 }
 
 const AGE_RANGES: Record<AgeTier, string> = { Hatchlings: "0–2", Fledglings: "3–5", Soarers: "6–8", "Sky Readers": "9–12" };
@@ -282,6 +285,22 @@ async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; ne
     };
   } catch { return { ageTier: "Fledglings" as AgeTier, themeBin: "Life" as ThemeBin, reasoning: "AI fallback error" }; }
 }
+
+function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
+  const text = getSearchText(book);
+  const tooOldSignals = [
+    "young adult", "teen fiction", "high school", "grade 9", "grade 10",
+    "grade 11", "grade 12", "ages 13", "ages 14", "ages 15", "ages 16",
+    "14 and up", "15 and up", "16 and up", "ya fiction", "ya novel",
+  ];
+  const matched = tooOldSignals.find(s => text.includes(s));
+  if (matched) return { tooOld: true, reason: `Detected "${matched}" in metadata` };
+  if (book.pageCount && book.pageCount > 400) {
+    return { tooOld: true, reason: `Page count (${book.pageCount}) suggests teen/adult content` };
+  }
+  return { tooOld: false, reason: "" };
+}
+
 async function classifyBook(book: BookMetadata): Promise<Classification> {
   const trace: RuleTrace = { tierSource: "", binSource: "", tagSources: [], usedAIFallback: false, tierUsedAI: false, binUsedAI: false, signalsAligned: 0, notes: [] };
   const tierResult = resolveAgeTier(book);
@@ -302,11 +321,14 @@ async function classifyBook(book: BookMetadata): Promise<Classification> {
   const confidence = computeConfidence(trace, book);
   const tags = resolveTags(book, themeBin);
   trace.tagSources = ["rule-based tag matching"];
+  const tooOldCheck = detectTooOld(book);
   return {
     ageTier, ageTierRange: AGE_RANGES[ageTier], themeBin, supportingTags: tags, confidence,
-    reasoning: [trace.tierSource && `Tier: ${trace.tierSource}`, trace.binSource && `Bin: ${trace.binSource}`].filter(Boolean).join(". ") || "Classified from available metadata.",
-    trace,
-  };
+  reasoning: [trace.tierSource && `Tier: ${trace.tierSource}`, trace.binSource && `Bin: ${trace.binSource}`].filter(Boolean).join(". ") || "Classified from available metadata.",
+  trace,
+  isTooOld: tooOldCheck.tooOld,
+  tooOldReason: tooOldCheck.reason,
+};
 }
 
 export const isbnRouter = router({

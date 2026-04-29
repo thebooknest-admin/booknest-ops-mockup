@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Search, BookOpen, RefreshCw } from "lucide-react";
+import { Search, BookOpen, RefreshCw, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BookDetailDrawer } from "@/components/BookDetailDrawer";
 
@@ -17,6 +17,12 @@ export default function InventoryPage() {
   const { data: summary } = trpc.inventory.summary.useQuery();
 
   const books = data?.data ?? [];
+
+  const [showInTransit, setShowInTransit] = useState(false);
+const { data: inTransitBooks } = trpc.inventory.inTransit.useQuery(
+  undefined,
+  { enabled: showInTransit }
+);
 
   // Static age group list — avoids duplicates from mixed casing in DB
   const AGE_FILTER_OPTIONS = [
@@ -87,11 +93,14 @@ export default function InventoryPage() {
             <p className="text-3xl font-bold text-foreground mt-1">{summary?.in_house ?? 0}</p>
             <p className="text-xs text-muted-foreground">available to ship</p>
           </div>
-          <div className="stat-card">
-            <span className="section-label">In Transit</span>
-            <p className="text-3xl font-bold text-foreground mt-1">{summary?.in_transit ?? 0}</p>
-            <p className="text-xs text-muted-foreground">with members</p>
-          </div>
+          <button
+  onClick={() => setShowInTransit(true)}
+  className="stat-card text-left hover:border-primary hover:shadow-sm transition-all cursor-pointer w-full"
+>
+  <span className="section-label">In Transit</span>
+  <p className="text-3xl font-bold text-foreground mt-1">{summary?.in_transit ?? 0}</p>
+  <p className="text-xs text-muted-foreground">with members · click to view</p>
+</button>
           <div className="stat-card">
             <span className="section-label">Returned</span>
             <p className="text-3xl font-bold text-foreground mt-1">{summary?.returned ?? 0}</p>
@@ -226,6 +235,53 @@ export default function InventoryPage() {
         bookId={selectedBookId}
         onClose={() => setSelectedBookId(null)}
       />
+     {/* In Transit Drawer */}
+{showInTransit && (
+  <div className="fixed inset-0 z-50 flex">
+    <div
+      className="flex-1 bg-black/40"
+      onClick={() => setShowInTransit(false)}
+    />
+    <div className="w-full max-w-md bg-background border-l border-border flex flex-col h-full shadow-xl">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div>
+          <h2 className="font-bold text-foreground">In Transit</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {inTransitBooks?.length ?? 0} books currently with members
+          </p>
+        </div>
+        <button
+          onClick={() => setShowInTransit(false)}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <XCircle className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto divide-y divide-border/50">
+        {!inTransitBooks ? (
+          <div className="p-8 text-center">
+            <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          </div>
+        ) : inTransitBooks.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-sm text-muted-foreground">No books in transit</p>
+          </div>
+        ) : (
+          inTransitBooks.map((book) => (
+            <div key={book.id} className="px-6 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{book.title}</p>
+                <p className="text-xs text-muted-foreground">{book.author}</p>
+              </div>
+              <span className="text-xs font-mono text-muted-foreground shrink-0">{book.sku}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  </div>
+)} 
     </>
   );
 }
