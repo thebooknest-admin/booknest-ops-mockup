@@ -104,9 +104,14 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
     }
 
     if (next >= allSuggestions.length) {
-      toast.error("No more alternates available for this slot.");
-      return;
-    }
+  toast.error("All available books in this age group have been shown. Consider checking other bins manually.");
+  return;
+}
+
+// Show a notice when entering fallback territory
+if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_index) {
+  toast.info("Now showing books from broader selection.");
+}
 
     setSlotOverrides(prev => ({ ...prev, [slotIdx]: next }));
 

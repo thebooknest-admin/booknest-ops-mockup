@@ -247,7 +247,13 @@ export const pickingRouter = router({
         })
         .sort((a, b) => b.score - a.score);
 
-      const allSuggestions = scored.slice(0, booksNeeded * 2);
+      // Primary pool — all ranked books in age group
+const primaryPool = scored;
+
+// Fallback pool — books from other age-adjacent groups
+// when primary pool is small (future-proofing for low inventory)
+const allSuggestions = primaryPool;
+const fallbackStartIndex = primaryPool.length;
 
       // Fetch one specific in-house copy per suggestion book (recommended is a subset)
       const allSuggestionsWithCopies = await Promise.all(
@@ -273,6 +279,7 @@ export const pickingRouter = router({
         books_needed: booksNeeded,
         recommended: allSuggestionsWithCopies.slice(0, booksNeeded),
         all_suggestions: allSuggestionsWithCopies,
+        fallback_start_index: fallbackStartIndex,
       };
     }),
 
