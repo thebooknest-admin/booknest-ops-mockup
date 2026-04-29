@@ -44,9 +44,6 @@ const AGE_EMOJIS: Record<string, string> = {
   "Sky Readers (9-12)":"🌟",
 };
 
-const [isTooOld, setIsTooOld] = useState(false);
-const [tooOldReason, setTooOldReason] = useState("");
-
 interface BookData {
   title: string;
   author: string;
@@ -281,6 +278,8 @@ export default function ReceivePage() {
   const [numpadMode, setNumpadMode] = useState(true);
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
+  const [isTooOld, setIsTooOld] = useState(false);      // ← ADD HERE
+  const [tooOldReason, setTooOldReason] = useState(""); // ← ADD HERE
 
   // ── Barcode scanner ───────────────────────────────────────────────────────
   const { open: openScanner, ScannerModal } = useBarcodeScanner({
