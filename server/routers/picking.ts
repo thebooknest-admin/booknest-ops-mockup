@@ -15,8 +15,8 @@ import { sbFetch } from "../supabase";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
-  "story-nest": 8,
   "cozy-nest": 6,
+  "story-nest": 8,
 };
 const DEFAULT_BOOK_COUNT = 4;
 
@@ -51,9 +51,13 @@ const AVOID_TO_THEMES: Record<string, string[]> = {
   "Political Topics": ["political"],
 };
 
-function getBookCount(tier: string | null): number {
+// ✅ FIXED: normalize tier string (handles "Cozy Nest", "cozy-nest", etc.)
+// Also accepts books_per_box from DB as the source of truth when available
+function getBookCount(tier: string | null, booksPerBox?: number | null): number {
+  if (booksPerBox) return booksPerBox;
   if (!tier) return DEFAULT_BOOK_COUNT;
-  return TIER_BOOK_COUNT[tier] ?? DEFAULT_BOOK_COUNT;
+  const normalized = tier.toLowerCase().replace(/\s+/g, "-");
+  return TIER_BOOK_COUNT[normalized] ?? DEFAULT_BOOK_COUNT;
 }
 
 export const pickingRouter = router({
@@ -79,9 +83,9 @@ export const pickingRouter = router({
 
       const memberIds = [...new Set(pendingShipments.map((s) => s.member_id))];
 
-      // Get member profiles
+      // ✅ FIXED: added books_per_box to select
       const membersRes = await sbFetch(
-        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,email,subscription_status&limit=200`
+        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,email,subscription_status,books_per_box&limit=200`
       );
       const members: any[] = await membersRes.json();
       const memberMap: Record<string, any> = {};
@@ -120,7 +124,7 @@ export const pickingRouter = router({
             topics_to_avoid: m.topics_to_avoid ?? [],
             interests: interestsByMember[m.id] ?? [],
             address: addressByMember[m.id] ?? null,
-            books_needed: getBookCount(m.tier),
+            books_needed: getBookCount(m.tier, m.books_per_box), // ✅ FIXED
             shipment_id: s.id,
             is_overdue: isOverdue,
           };
@@ -140,13 +144,15 @@ export const pickingRouter = router({
       })
     )
     .query(async ({ input }) => {
+      // ✅ FIXED: added books_per_box to select
       const memberRes = await sbFetch(
-        `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid&limit=1`
+        `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid,books_per_box&limit=1`
       );
       const [member] = await memberRes.json();
       if (!member) throw new Error("Member not found");
 
-      const booksNeeded = input.count ?? getBookCount(member.tier);
+      // ✅ FIXED: pass books_per_box as source of truth
+      const booksNeeded = input.count ?? getBookCount(member.tier, member.books_per_box);
 
       const interestsRes = await sbFetch(
         `/member_interests?member_id=eq.${input.member_id}&select=interest_category&limit=50`
@@ -248,14 +254,14 @@ export const pickingRouter = router({
         .sort((a, b) => b.score - a.score);
 
       // Primary pool — all ranked books in age group
-const primaryPool = scored;
+      const primaryPool = scored;
 
-// Fallback pool — books from other age-adjacent groups
-// when primary pool is small (future-proofing for low inventory)
-const allSuggestions = primaryPool;
-const fallbackStartIndex = primaryPool.length;
+      // Fallback pool — books from other age-adjacent groups
+      // when primary pool is small (future-proofing for low inventory)
+      const allSuggestions = primaryPool;
+      const fallbackStartIndex = primaryPool.length;
 
-      // Fetch one specific in-house copy per suggestion book (recommended is a subset)
+      // Fetch one specific in-house copy per suggestion book
       const allSuggestionsWithCopies = await Promise.all(
         allSuggestions.map(async (book) => {
           const copyRes = await sbFetch(
