@@ -335,7 +335,9 @@ export const isbnRouter = router({
   classify: publicProcedure
     .input(z.object({ isbn: z.string() }))
     .query(async ({ input }) => {
+      console.log('ISBN classify called with:', input.isbn);
       const cleaned = cleanIsbn(input.isbn);
+      console.log('Cleaned ISBN:', cleaned, 'Valid:', isValidIsbn(cleaned));
       if (!isValidIsbn(cleaned)) throw new Error("Invalid ISBN format. Please check the number.");
       const isbn13 = toIsbn13(cleaned);
       const cached = getCached(isbn13);
