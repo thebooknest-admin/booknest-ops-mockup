@@ -4,8 +4,9 @@
 
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { BoxIcon, CheckCircle2, Package, RefreshCw } from "lucide-react";
+import { ArrowRight, BoxIcon, CheckCircle2, Package, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 const TIER_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ const AGE_LABELS: Record<string, string> = {
 };
 
 export default function PackingPage() {
+  const [, navigate] = useLocation();
   const [markingIds, setMarkingIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, refetch, isRefetching } =
@@ -81,18 +83,27 @@ export default function PackingPage() {
               : `${orders.length} order${orders.length !== 1 ? "s" : ""} picked and ready to pack`}
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
-        >
-          <RefreshCw
-            className={cn(
-              "w-3.5 h-3.5",
-              (isLoading || isRefetching) && "animate-spin"
-            )}
-          />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+          >
+            <RefreshCw
+              className={cn(
+                "w-3.5 h-3.5",
+                (isLoading || isRefetching) && "animate-spin"
+              )}
+            />
+            Refresh
+          </button>
+          <button
+            onClick={() => navigate("/shipping")}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
+            style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+          >
+            Go to Shipping <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* ── Instructions banner ─────────────────────────────────────────────── */}
@@ -128,6 +139,13 @@ export default function PackingPage() {
             <p className="text-xs text-muted-foreground mt-1">
               Orders will appear here once picking is complete.
             </p>
+            <button
+              onClick={() => navigate("/shipping")}
+              className="mt-4 flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white mx-auto transition-colors"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+            >
+              Go to Shipping <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         ) : (
           <>

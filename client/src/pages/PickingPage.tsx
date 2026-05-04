@@ -483,7 +483,7 @@ export default function PickingPage() {
           </button>
           {completedShipments.length > 0 && (
             <button
-              onClick={() => navigate("/shipping")}
+              onClick={() => navigate("/packing")}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
@@ -509,7 +509,7 @@ export default function PickingPage() {
           <p className="text-sm text-muted-foreground mt-1">No pending orders to pick.</p>
           {completedShipments.length > 0 && (
             <button
-              onClick={() => navigate("/shipping")}
+              onClick={() => navigate("/packing")}
               className="mt-4 flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white mx-auto transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
