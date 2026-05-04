@@ -58,9 +58,53 @@ function DashboardRouter() {
     </PinGate>
   );
 }
+
+// Friendly fallback for the welcome subdomain when someone hits the wrong path
+function WelcomeSubdomainFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: "oklch(0.975 0.008 80)" }}
+    >
+      <div className="max-w-md text-center space-y-4">
+        <h1
+          className="text-2xl font-bold text-gray-900"
+          style={{ fontFamily: "'Playfair Display', serif" }}
+        >
+          Welcome to The Book Nest
+        </h1>
+        <p className="text-gray-500 text-sm">
+          This page is for new members. Please check your welcome email for your personal link.
+        </p>
+        <a
+          href="https://the-book-nest.com"
+          className="inline-block underline font-medium text-sm"
+          style={{ color: "oklch(0.35 0.12 155)" }}
+        >
+          Visit the-book-nest.com
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // Top-level router — /signup is OUTSIDE AppLayout (no sidebar, no nav)
 function Router() {
-  // make sure to consider if you need authentication for certain routes
+  // Hostname-based routing: welcome.the-book-nest.com is public-only
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const isWelcomeSubdomain = hostname.startsWith("welcome.");
+
+  if (isWelcomeSubdomain) {
+    return (
+      <Switch>
+        <Route path="/welcome" component={WelcomePage} />
+        <Route path="/signup" component={SignupPage} />
+        <Route component={WelcomeSubdomainFallback} />
+      </Switch>
+    );
+  }
+
+  // Default: full ops dashboard (works for ops.the-book-nest.com and the bare Railway URL)
   return (
     <Switch>
       {/* Public-facing sign-up form — completely isolated */}
