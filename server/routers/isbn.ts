@@ -130,7 +130,9 @@ const TIMEOUT_MS = 4000;
 async function fetchFromGoogleBooks(isbn: string): Promise<RawBook | null> {
   try {
     console.log('>>> fetchFromGoogleBooks start', isbn);
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
+    const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1${apiKey ? `&key=${apiKey}` : ""}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     console.log('>>> Google status:', res.status);
     if (!res.ok) return null;
     const data = await res.json() as any;
