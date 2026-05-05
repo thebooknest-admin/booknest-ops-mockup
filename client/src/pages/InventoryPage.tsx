@@ -10,21 +10,19 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [ageFilter, setAgeFilter] = useState("all");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [showInTransit, setShowInTransit] = useState(false);
 
   const { data, isLoading, refetch, isRefetching } = trpc.inventory.bookTitles.useQuery(undefined, {
     refetchInterval: 120_000,
   });
   const { data: summary } = trpc.inventory.summary.useQuery();
-
-  const books = data?.data ?? [];
-
-  const [showInTransit, setShowInTransit] = useState(false);
-  const { data: inTransitBooks } = trpc.inventory.inTransit.useQuery(
+  const { data: inTransitGroups } = trpc.inventory.inTransit.useQuery(
     undefined,
     { enabled: showInTransit }
   );
 
-  // Static age group list — avoids duplicates from mixed casing in DB
+  const books = data?.data ?? [];
+
   const AGE_FILTER_OPTIONS = [
     { label: "Hatchlings", value: "hatchlings" },
     { label: "Fledglings", value: "fledglings" },
@@ -32,7 +30,6 @@ export default function InventoryPage() {
     { label: "Soarers", value: "soarers" },
   ];
 
-  // Normalize age group for comparison (handles both "Sky Readers" and "sky_readers")
   const normalizeAge = (ag: string | null | undefined) =>
     (ag ?? "").toLowerCase().replace(/\s+/g, "_");
 
@@ -50,9 +47,13 @@ export default function InventoryPage() {
     return matchesSearch && matchesAge;
   });
 
+  const totalInFlight = inTransitGroups?.reduce((sum, g) => sum + g.books.length, 0) ?? summary?.in_transit ?? 0;
+  const totalMembers = inTransitGroups?.length ?? 0;
+
   return (
     <>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
@@ -163,7 +164,6 @@ export default function InventoryPage() {
             </div>
           ) : (
             <>
-              {/* Table Header */}
               <div className="grid grid-cols-12 px-5 py-3 bg-muted/30 border-b border-border">
                 <span className="col-span-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Author</span>
@@ -172,7 +172,6 @@ export default function InventoryPage() {
                 <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Copies</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">SKU(s)</span>
               </div>
-
               <div className="divide-y divide-border/50">
                 {filtered.map((book) => (
                   <button
@@ -180,31 +179,25 @@ export default function InventoryPage() {
                     onClick={() => setSelectedBookId(book.id)}
                     className="w-full grid grid-cols-12 px-5 py-3 items-center hover:bg-muted/30 transition-colors text-left group"
                   >
-                    {/* Title */}
                     <div className="col-span-4 min-w-0 pr-2">
                       <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
                         {book.title}
                       </p>
                     </div>
-                    {/* Author */}
                     <div className="col-span-2 min-w-0 pr-2">
                       <p className="text-sm text-muted-foreground truncate">{book.author}</p>
                     </div>
-                    {/* Age Group */}
                     <div className="col-span-1">
                       <span className="text-xs text-foreground capitalize">
                         {book.age_group?.replace("_", " ") ?? "—"}
                       </span>
                     </div>
-                    {/* Bin */}
                     <div className="col-span-2">
                       <span className="text-xs font-mono text-foreground">{book.bin_id ?? "—"}</span>
                     </div>
-                    {/* Copies */}
                     <div className="col-span-1 text-center">
                       <span className="text-sm font-bold text-foreground">{book.copy_count ?? 0}</span>
                     </div>
-                    {/* SKU(s) */}
                     <div className="col-span-2 min-w-0">
                       {book.sku_min ? (
                         <span className="text-xs font-mono text-muted-foreground">
@@ -236,19 +229,18 @@ export default function InventoryPage() {
         onClose={() => setSelectedBookId(null)}
       />
 
-      {/* In Flight Drawer */}
+      {/* In Flight Drawer — grouped by member */}
       {showInTransit && (
         <div className="fixed inset-0 z-50 flex">
-          <div
-            className="flex-1 bg-black/40"
-            onClick={() => setShowInTransit(false)}
-          />
+          <div className="flex-1 bg-black/40" onClick={() => setShowInTransit(false)} />
           <div className="w-full max-w-md bg-background border-l border-border flex flex-col h-full shadow-xl">
+
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
                 <h2 className="font-bold text-foreground">In Flight</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {inTransitBooks?.length ?? 0} books currently with members
+                  {totalInFlight} book{totalInFlight !== 1 ? "s" : ""} with {totalMembers} member{totalMembers !== 1 ? "s" : ""}
                 </p>
               </div>
               <button
@@ -258,31 +250,53 @@ export default function InventoryPage() {
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto divide-y divide-border/50">
-              {!inTransitBooks ? (
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto">
+              {!inTransitGroups ? (
                 <div className="p-8 text-center">
                   <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 </div>
-              ) : inTransitBooks.length === 0 ? (
+              ) : inTransitGroups.length === 0 ? (
                 <div className="p-8 text-center">
                   <p className="text-sm text-muted-foreground">No books in flight</p>
                 </div>
               ) : (
-                inTransitBooks.map((book) => (
-                  <div key={book.id} className="px-6 py-3 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{book.title}</p>
-                      <p className="text-xs text-muted-foreground">{book.author}</p>
-                      {book.member_name && (
-                        <p className="text-xs font-medium mt-0.5" style={{ color: "oklch(0.42 0.11 155)" }}>
-                          ✈ In Flight with {book.member_name}
+                <div className="divide-y divide-border/50">
+                  {inTransitGroups.map((group) => (
+                    <div key={group.member_id} className="px-6 py-4 space-y-2.5">
+                      {/* Member header */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                          ✈ {group.member_name}
                         </p>
-                      )}
+                        <span
+                          className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: "oklch(0.92 0.06 155)",
+                            color: "oklch(0.35 0.12 155)",
+                          }}
+                        >
+                          {group.books.length} book{group.books.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+
+                      {/* Books */}
+                      <div className="space-y-2 pl-2 border-l-2 border-border ml-1">
+                        {group.books.map((book) => (
+                          <div key={book.id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm text-foreground leading-snug truncate">{book.title}</p>
+                              <p className="text-xs text-muted-foreground">{book.author}</p>
+                            </div>
+                            <span className="text-xs font-mono text-muted-foreground shrink-0 mt-0.5">{book.sku}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <span className="text-xs font-mono text-muted-foreground shrink-0">{book.sku}</span>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           </div>

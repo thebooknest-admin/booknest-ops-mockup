@@ -308,7 +308,8 @@ export const appRouter = router({
         return { success: true, book: data[0] };
       }),
 
-     inTransit: publicProcedure.query(async () => {
+    // ── In Flight — books currently with members, grouped by member ─────────────
+inTransit: publicProcedure.query(async () => {
   // 1. Get all in_transit copies with book title
   const res = await sbFetch(
     `/book_copies?status=eq.in_transit&select=id,sku,bin_id,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
@@ -317,14 +318,13 @@ export const appRouter = router({
   const copies: any[] = await res.json();
   if (!copies.length) return [];
 
-  // 2. For each copy, find the most recent shipment_books row to get shipment_id
+  // 2. Find most recent shipment_books row per copy
   const copyIds = copies.map((c) => c.id).join(",");
   const sbRes = await sbFetch(
     `/shipment_books?book_copy_id=in.(${copyIds})&select=book_copy_id,shipment_id&order=created_at.desc&limit=1000`
   );
   const shipmentBooks: any[] = sbRes.ok ? await sbRes.json() : [];
 
-  // Map copy_id → most recent shipment_id (first hit wins since ordered desc)
   const copyToShipment: Record<string, string> = {};
   for (const sb of shipmentBooks) {
     if (!copyToShipment[sb.book_copy_id]) {
@@ -334,47 +334,58 @@ export const appRouter = router({
 
   // 3. Fetch members for those shipments
   const shipmentIds = [...new Set(Object.values(copyToShipment))];
-  const memberMap: Record<string, string> = {};
+  const copyToMemberId: Record<string, string> = {};
+  const memberNameMap: Record<string, string> = {};
+
   if (shipmentIds.length > 0) {
     const shipmentsRes = await sbFetch(
       `/shipments?id=in.(${shipmentIds.join(",")})&select=id,member_id&limit=500`
     );
     const shipments: any[] = shipmentsRes.ok ? await shipmentsRes.json() : [];
-    const memberIds = [...new Set(shipments.map((s) => s.member_id))];
     const shipmentToMember: Record<string, string> = Object.fromEntries(
       shipments.map((s) => [s.id, s.member_id])
     );
 
+    const memberIds = [...new Set(shipments.map((s) => s.member_id))];
     if (memberIds.length > 0) {
       const membersRes = await sbFetch(
         `/members?id=in.(${memberIds.join(",")})&select=id,child_name,name&limit=500`
       );
       const members: any[] = membersRes.ok ? await membersRes.json() : [];
-      const memberNameMap: Record<string, string> = Object.fromEntries(
-        members.map((m) => [m.id, m.child_name ?? m.name ?? "Unknown"])
-      );
-
-      // Build copy_id → member name
+      for (const m of members) {
+        memberNameMap[m.id] = m.child_name ?? m.name ?? "Unknown";
+      }
       for (const [copyId, shipmentId] of Object.entries(copyToShipment)) {
         const memberId = shipmentToMember[shipmentId];
-        if (memberId) memberMap[copyId] = memberNameMap[memberId] ?? "Unknown";
+        if (memberId) copyToMemberId[copyId] = memberId;
       }
     }
   }
 
-  // 4. Return enriched copies
-  return copies.map((c) => ({
-    id: c.id,
-    sku: c.sku,
-    bin_id: c.bin_id,
-    book_title_id: c.book_title_id,
-    title: c.book_titles?.title ?? "Unknown",
-    author: c.book_titles?.author ?? "",
-    member_name: memberMap[c.id] ?? null,
-  }));
+  // 4. Group copies by member
+  const grouped: Record<string, { member_id: string; member_name: string; books: any[] }> = {};
+  for (const c of copies) {
+    const memberId = copyToMemberId[c.id] ?? "unknown";
+    const memberName = memberId !== "unknown" ? (memberNameMap[memberId] ?? "Unknown") : "Unknown";
+    if (!grouped[memberId]) {
+      grouped[memberId] = { member_id: memberId, member_name: memberName, books: [] };
+    }
+    grouped[memberId].books.push({
+      id: c.id,
+      sku: c.sku,
+      bin_id: c.bin_id,
+      book_title_id: c.book_title_id,
+      title: c.book_titles?.title ?? "Unknown",
+      author: c.book_titles?.author ?? "",
+    });
+  }
+
+  return Object.values(grouped).sort((a, b) =>
+    a.member_name.localeCompare(b.member_name)
+  );
 }),
- 
-  }),
+
+  }),  // ← closes inventory router
 
   // ─── Shipments / Orders ─────────────────────────────────────────────────────
   shipments: router({
