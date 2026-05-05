@@ -347,6 +347,9 @@ export const isbnRouter = router({
       const cached = getCached(isbn13);
       if (cached) return { ...cached, fromCache: true };
       const [google, openlib] = await Promise.all([fetchFromGoogleBooks(isbn13), fetchFromOpenLibrary(isbn13)]);
+console.log('ISBN13:', isbn13);
+console.log('Google result:', JSON.stringify(google));
+console.log('OpenLib result:', JSON.stringify(openlib));
       const book = mergeBookSources(isbn13, [google, openlib]);
       if (!book) throw new Error("Book not found. Verify the ISBN and try again.");
       const classification = await classifyBook(book);
