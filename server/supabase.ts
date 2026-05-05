@@ -149,7 +149,6 @@ export async function getInventorySummary(): Promise<{
   by_bin: Record<string, number>;
   low_bins: string[];
 }> {
-  // Get all copies with status counts
   const res = await sbFetch("/book_copies?select=status,age_group,bin_id&limit=2000", {
     headers: { Prefer: "count=exact" },
   });
@@ -179,7 +178,6 @@ export async function getInventorySummary(): Promise<{
     }
   }
 
-  // Flag bins with < 3 copies
   summary.low_bins = Object.entries(summary.by_bin)
     .filter(([, count]) => count < 3)
     .map(([bin]) => bin);
@@ -296,6 +294,9 @@ export async function getBinConfigs(): Promise<BinConfig[]> {
 export interface BookTitleWithCopies extends BookTitle {
   copy_count: number;
   in_house_count: number;
+  in_transit_count: number;
+  pending_qc_count: number;
+  returned_count: number;
   bin_id: string | null;
   sku_min: string | null;
   sku_max: string | null;
@@ -307,18 +308,20 @@ export async function getBookTitlesWithCopies(params?: {
   search?: string;
   age_group?: string;
 }): Promise<{ data: BookTitleWithCopies[]; total: number }> {
-  // Fetch book titles
   const titlesResult = await getBookTitles({ ...params, limit: params?.limit ?? 5000 });
 
   if (titlesResult.data.length === 0) {
     return { data: [], total: 0 };
   }
 
-  // Fetch all copies in batches of 50 IDs to avoid URL length overflow
-  // (463 UUIDs in a single query string exceeds Node's header size limit)
   const titleIds = titlesResult.data.map((t) => t.id);
   const BATCH_SIZE = 50;
-  const allCopies: { book_title_id: string; status: string; bin_id: string | null; sku: string | null }[] = [];
+  const allCopies: {
+    book_title_id: string;
+    status: string;
+    bin_id: string | null;
+    sku: string | null;
+  }[] = [];
 
   for (let i = 0; i < titleIds.length; i += BATCH_SIZE) {
     const batch = titleIds.slice(i, i + BATCH_SIZE);
@@ -326,33 +329,54 @@ export async function getBookTitlesWithCopies(params?: {
       `/book_copies?book_title_id=in.(${batch.join(",")})&select=book_title_id,status,bin_id,sku&limit=2000`
     );
     if (copiesRes.ok) {
-      const batchCopies: { book_title_id: string; status: string; bin_id: string | null; sku: string | null }[] = await copiesRes.json();
+      const batchCopies: {
+        book_title_id: string;
+        status: string;
+        bin_id: string | null;
+        sku: string | null;
+      }[] = await copiesRes.json();
       allCopies.push(...batchCopies);
     }
   }
 
-  const copies = allCopies;
   const nonInventoryStatuses = new Set(["donated", "donated_lfl", "lost", "withdrawn"]);
 
-  // Build a map of title_id -> copy counts + SKU range
-  const copyMap: Record<string, { total: number; in_house: number; bin_id: string | null; skus: string[] }> = {};
-  for (const copy of copies) {
-    if (nonInventoryStatuses.has(copy.status)) {
-      continue;
-    }
+  // Build map of title_id → counts + SKU range
+  const copyMap: Record<string, {
+    total: number;
+    in_house: number;
+    in_transit: number;
+    pending_qc: number;
+    returned: number;
+    bin_id: string | null;
+    skus: string[];
+  }> = {};
+
+  for (const copy of allCopies) {
+    if (nonInventoryStatuses.has(copy.status)) continue;
+
     if (!copyMap[copy.book_title_id]) {
-      copyMap[copy.book_title_id] = { total: 0, in_house: 0, bin_id: null, skus: [] };
+      copyMap[copy.book_title_id] = {
+        total: 0,
+        in_house: 0,
+        in_transit: 0,
+        pending_qc: 0,
+        returned: 0,
+        bin_id: null,
+        skus: [],
+      };
     }
-    copyMap[copy.book_title_id].total++;
-    if (copy.status === "in_house") {
-      copyMap[copy.book_title_id].in_house++;
-    }
-    if (copy.bin_id && !copyMap[copy.book_title_id].bin_id) {
-      copyMap[copy.book_title_id].bin_id = copy.bin_id;
-    }
-    if (copy.sku) {
-      copyMap[copy.book_title_id].skus.push(copy.sku);
-    }
+
+    const entry = copyMap[copy.book_title_id];
+    entry.total++;
+
+    if (copy.status === "in_house") entry.in_house++;
+    else if (copy.status === "in_transit") entry.in_transit++;
+    else if (copy.status === "pending_qc") entry.pending_qc++;
+    else if (copy.status === "returned") entry.returned++;
+
+    if (copy.bin_id && !entry.bin_id) entry.bin_id = copy.bin_id;
+    if (copy.sku) entry.skus.push(copy.sku);
   }
 
   const data: BookTitleWithCopies[] = titlesResult.data.map((title) => {
@@ -362,6 +386,9 @@ export async function getBookTitlesWithCopies(params?: {
       ...title,
       copy_count: entry?.total ?? 0,
       in_house_count: entry?.in_house ?? 0,
+      in_transit_count: entry?.in_transit ?? 0,
+      pending_qc_count: entry?.pending_qc ?? 0,
+      returned_count: entry?.returned ?? 0,
       bin_id: entry?.bin_id ?? null,
       sku_min: skus.length > 0 ? skus[0] : null,
       sku_max: skus.length > 1 ? skus[skus.length - 1] : null,
@@ -370,7 +397,6 @@ export async function getBookTitlesWithCopies(params?: {
 
   return { data, total: titlesResult.total };
 }
-
 
 export async function getDashboardStats() {
   const [membersRes, shipmentsRes, inventoryRes, returnsRes] = await Promise.all([
@@ -387,7 +413,6 @@ export async function getDashboardStats() {
   const activeMembers = members.filter((m) => m.subscription_status === "active").length;
   const waitlistMembers = members.filter((m) => m.subscription_status === "waitlist").length;
 
-  // Status flow: picking → packing → packed → shipped
   const toPick = shipments.filter((s) => s.status === "picking").length;
   const toPack = shipments.filter((s) => s.status === "packing").length;
   const toShip = shipments.filter((s) => s.status === "packed").length;
@@ -399,7 +424,6 @@ export async function getDashboardStats() {
       s.scheduled_ship_date < today
   ).length;
 
-  // Count shipped today by actual_ship_date
   const shippedToday = shipments.filter(
     (s) => s.status === "shipped" && s.actual_ship_date === today
   ).length;

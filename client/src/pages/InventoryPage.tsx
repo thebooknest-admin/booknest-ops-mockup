@@ -164,53 +164,92 @@ export default function InventoryPage() {
             </div>
           ) : (
             <>
+              {/* Table Header — 12 cols: Title(4) Author(2) Age(1) Bin(1) Copies(1) SKU(1) Status(2) */}
               <div className="grid grid-cols-12 px-5 py-3 bg-muted/30 border-b border-border">
                 <span className="col-span-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</span>
                 <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Author</span>
                 <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Age</span>
-                <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Bin</span>
+                <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Bin</span>
                 <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Copies</span>
-                <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">SKU(s)</span>
+                <span className="col-span-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">SKU(s)</span>
+                <span className="col-span-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</span>
               </div>
+
               <div className="divide-y divide-border/50">
-                {filtered.map((book) => (
-                  <button
-                    key={book.id}
-                    onClick={() => setSelectedBookId(book.id)}
-                    className="w-full grid grid-cols-12 px-5 py-3 items-center hover:bg-muted/30 transition-colors text-left group"
-                  >
-                    <div className="col-span-4 min-w-0 pr-2">
-                      <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                        {book.title}
-                      </p>
-                    </div>
-                    <div className="col-span-2 min-w-0 pr-2">
-                      <p className="text-sm text-muted-foreground truncate">{book.author}</p>
-                    </div>
-                    <div className="col-span-1">
-                      <span className="text-xs text-foreground capitalize">
-                        {book.age_group?.replace("_", " ") ?? "—"}
-                      </span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-xs font-mono text-foreground">{book.bin_id ?? "—"}</span>
-                    </div>
-                    <div className="col-span-1 text-center">
-                      <span className="text-sm font-bold text-foreground">{book.copy_count ?? 0}</span>
-                    </div>
-                    <div className="col-span-2 min-w-0">
-                      {book.sku_min ? (
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {book.sku_max && book.sku_max !== book.sku_min
-                            ? `${book.sku_min} – ${book.sku_max.replace(/^.*-/, "")}`
-                            : book.sku_min}
+                {filtered.map((book) => {
+                  const hasNonStandard = (book.in_transit_count ?? 0) > 0 ||
+                    (book.pending_qc_count ?? 0) > 0 ||
+                    (book.returned_count ?? 0) > 0;
+
+                  return (
+                    <button
+                      key={book.id}
+                      onClick={() => setSelectedBookId(book.id)}
+                      className="w-full grid grid-cols-12 px-5 py-3 items-center hover:bg-muted/30 transition-colors text-left group"
+                    >
+                      {/* Title */}
+                      <div className="col-span-4 min-w-0 pr-2">
+                        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                          {book.title}
+                        </p>
+                      </div>
+                      {/* Author */}
+                      <div className="col-span-2 min-w-0 pr-2">
+                        <p className="text-sm text-muted-foreground truncate">{book.author}</p>
+                      </div>
+                      {/* Age Group */}
+                      <div className="col-span-1">
+                        <span className="text-xs text-foreground capitalize">
+                          {book.age_group?.replace("_", " ") ?? "—"}
                         </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">—</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
+                      </div>
+                      {/* Bin */}
+                      <div className="col-span-1">
+                        <span className="text-xs font-mono text-foreground">{book.bin_id ?? "—"}</span>
+                      </div>
+                      {/* Copies */}
+                      <div className="col-span-1 text-center">
+                        <span className="text-sm font-bold text-foreground">{book.copy_count ?? 0}</span>
+                      </div>
+                      {/* SKU(s) */}
+                      <div className="col-span-1 min-w-0">
+                        {book.sku_min ? (
+                          <span className="text-xs font-mono text-muted-foreground">
+                            {book.sku_max && book.sku_max !== book.sku_min
+                              ? `${book.sku_min} – ${book.sku_max.replace(/^.*-/, "")}`
+                              : book.sku_min}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">—</span>
+                        )}
+                      </div>
+                      {/* Status badges */}
+                      <div className="col-span-2 flex items-center gap-1 flex-wrap">
+                        {(book.in_transit_count ?? 0) > 0 && (
+                          <span
+                            className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{
+                              backgroundColor: "oklch(0.92 0.06 155)",
+                              color: "oklch(0.35 0.12 155)",
+                            }}
+                          >
+                            ✈ {book.in_transit_count} In Flight
+                          </span>
+                        )}
+                        {(book.pending_qc_count ?? 0) > 0 && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-amber-100 text-amber-700">
+                            {book.pending_qc_count} QC
+                          </span>
+                        )}
+                        {(book.returned_count ?? 0) > 0 && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-blue-50 text-blue-600">
+                            {book.returned_count} Returned
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
