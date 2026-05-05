@@ -77,7 +77,7 @@ const buildNavItems = (
     label: "Inventory",
     icon: Archive,
     children: [
-      { label: "Snapshot", href: "/inventory", icon: Archive },
+      { label: "All Inventory", href: "/inventory", icon: Archive },
       { label: "Receive Books", href: "/receive", icon: BookOpen },
       {
         label: "QC Queue",

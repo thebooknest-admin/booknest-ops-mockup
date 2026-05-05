@@ -85,7 +85,7 @@ export const pickingRouter = router({
 
       // ✅ FIXED: added books_per_box to select
       const membersRes = await sbFetch(
-        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,email,subscription_status,books_per_box&limit=200`
+        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,notes,email,subscription_status,books_per_box&limit=200`
       );
       const members: any[] = await membersRes.json();
       const memberMap: Record<string, any> = {};
@@ -123,6 +123,7 @@ export const pickingRouter = router({
             next_ship_date: s.scheduled_ship_date,
             topics_to_avoid: m.topics_to_avoid ?? [],
             interests: interestsByMember[m.id] ?? [],
+            notes: m.notes ?? null,
             address: addressByMember[m.id] ?? null,
             books_needed: getBookCount(m.tier, m.books_per_box), // ✅ FIXED
             shipment_id: s.id,

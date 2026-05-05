@@ -229,6 +229,12 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
             Avoid: {order.topics_to_avoid.join(", ")}
           </p>
         )}
+
+        {order.notes && (
+  <p className="text-xs text-amber-600 mt-1">
+    📝 {order.notes}
+  </p>
+)}
       </div>
 
       {/* Progress */}
