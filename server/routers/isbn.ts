@@ -134,8 +134,12 @@ async function fetchFromGoogleBooks(isbn: string): Promise<RawBook | null> {
     const data = await res.json() as any;
     if (!data.items?.length) return null;
     const vol = data.items[0].volumeInfo;
-    const allIds = (vol.industryIdentifiers || []).map((id: any) => id.identifier.replace(/-/g, ""));
-    if (!allIds.includes(isbn)) return null;
+
+    // ← REMOVE the strict allIds check, or soften it:
+    // The Google API already filtered by ISBN in the query, so if we got
+    // a result back it's almost certainly the right book. The identifier
+    // list is often incomplete (missing the ISBN-13, or only has ISBN-10).
+
     let coverUrl = vol.imageLinks?.thumbnail || vol.imageLinks?.smallThumbnail || null;
     if (coverUrl) coverUrl = coverUrl.replace("http://", "https://").replace("zoom=1", "zoom=2");
     const title = vol.subtitle ? `${vol.title ?? ""}: ${vol.subtitle}`.trim() : vol.title ?? null;
