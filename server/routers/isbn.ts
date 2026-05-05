@@ -129,27 +129,29 @@ function toIsbn13(isbn: string): string {
 const TIMEOUT_MS = 4000;
 async function fetchFromGoogleBooks(isbn: string): Promise<RawBook | null> {
   try {
+    console.log('>>> fetchFromGoogleBooks start', isbn);
     const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    console.log('>>> Google status:', res.status);
     if (!res.ok) return null;
     const data = await res.json() as any;
     if (!data.items?.length) return null;
     const vol = data.items[0].volumeInfo;
-
-    // ← REMOVE the strict allIds check, or soften it:
-    // The Google API already filtered by ISBN in the query, so if we got
-    // a result back it's almost certainly the right book. The identifier
-    // list is often incomplete (missing the ISBN-13, or only has ISBN-10).
-
     let coverUrl = vol.imageLinks?.thumbnail || vol.imageLinks?.smallThumbnail || null;
     if (coverUrl) coverUrl = coverUrl.replace("http://", "https://").replace("zoom=1", "zoom=2");
     const title = vol.subtitle ? `${vol.title ?? ""}: ${vol.subtitle}`.trim() : vol.title ?? null;
     return { isbn, title, authors: vol.authors || [], description: vol.description || "", coverUrl, categories: vol.categories || [], pageCount: vol.pageCount || null, publishedDate: vol.publishedDate || null, source: "google" };
-  } catch { return null; }
+  } catch (e) {
+    console.log('>>> Google fetch ERROR:', e);
+    return null;
+  }
 }
+
 async function fetchFromOpenLibrary(isbn: string): Promise<RawBook | null> {
   try {
+    console.log('>>> fetchFromOpenLibrary start', isbn);
     const fetchJson = async (url: string) => { const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) }); return r.ok ? r.json() : null; };
     const edition = await fetchJson(`https://openlibrary.org/isbn/${isbn}.json`) as any;
+    console.log('>>> OpenLib edition:', edition ? 'found' : 'null');
     if (!edition) return null;
     const [authorData, work] = await Promise.all([
       edition.authors?.length ? fetchJson(`https://openlibrary.org${edition.authors[0].key}.json`) : null,
@@ -162,8 +164,12 @@ async function fetchFromOpenLibrary(isbn: string): Promise<RawBook | null> {
     const coverUrl = edition.covers?.length ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg` : null;
     const title = edition.subtitle ? `${edition.title ?? ""}: ${edition.subtitle}`.trim() : edition.title ?? null;
     return { isbn, title, authors, description, coverUrl, categories: [...new Set(subjects)].slice(0, 15) as string[], pageCount: edition.number_of_pages || null, publishedDate: edition.publish_date || null, source: "openlibrary" };
-  } catch { return null; }
+  } catch (e) {
+    console.log('>>> OpenLib fetch ERROR:', e);
+    return null;
+  }
 }
+
 function mergeBookSources(isbn: string, sources: (RawBook | null)[]): BookMetadata | null {
   const valid = sources.filter((s): s is RawBook => s !== null);
   if (!valid.length) return null;
