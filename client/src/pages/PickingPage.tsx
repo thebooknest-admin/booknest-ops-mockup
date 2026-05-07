@@ -419,14 +419,20 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
 export default function PickingPage() {
   const [, navigate] = useLocation();
   const [activeOrderIdx, setActiveOrderIdx] = useState<number | null>(null);
-  const [completedShipments, setCompletedShipments] = useState<{ member_id: string; shipment_id: string; shipment_number: string }[]>([]);
+  const [completedShipments, setCompletedShipments] = useState<{ member_id: string; shipment_id: string; shipment_number: string; member_name: string }[]>([]);
 
   const { data: dailyData, isLoading, refetch, isRefetching } =
     trpc.picking.dailyOrders.useQuery(undefined, { refetchInterval: 5 * 60 * 1000 });
 
   const confirmMutation = trpc.picking.confirmPicks.useMutation({
     onSuccess: (result) => {
-      setCompletedShipments((prev) => [...prev, ...result.shipments]);
+  setCompletedShipments((prev) => [
+    ...prev,
+    ...result.shipments.map((s) => ({
+      ...s,
+      member_name: orders.find((o) => o.member_id === s.member_id)?.member_name ?? "Member",
+    })),
+  ]);
       setActiveOrderIdx(null);
       toast.success("Order confirmed!");
       refetch();
@@ -493,7 +499,7 @@ export default function PickingPage() {
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
-              Go to Shipping <ArrowRight className="w-3.5 h-3.5" />
+              Go to Packing <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -519,7 +525,7 @@ export default function PickingPage() {
               className="mt-4 flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white mx-auto transition-colors"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
-              Go to Shipping <ArrowRight className="w-4 h-4" />
+              Go to Packing <ArrowRight className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -582,7 +588,7 @@ export default function PickingPage() {
             <div key={s.shipment_id} className="bg-green-50 rounded-xl border border-green-200 px-5 py-3 flex items-center gap-3">
               <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
               <span className="text-sm font-medium text-foreground">
-                {orders.find((o) => o.member_id === s.member_id)?.member_name ?? "Member"}
+                {s.member_name}
               </span>
               <span className="text-xs text-muted-foreground font-mono">{s.shipment_number}</span>
             </div>
