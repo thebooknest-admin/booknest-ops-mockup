@@ -310,7 +310,7 @@ function toIsbn13(isbn: string): string {
   return prefix + String((10 - (sum % 10)) % 10);
 }
 
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 10000;
 async function fetchFromGoogleBooks(isbn: string): Promise<RawBook | null> {
   try {
     console.log('>>> fetchFromGoogleBooks start', isbn);
