@@ -35,9 +35,7 @@ function getNextShipDay(): { label: string; date: string; isToday: boolean } {
 
 function isOverdue(date: string | null | undefined): boolean {
   if (!date) return false;
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d < new Date();
+  return date < new Date().toISOString().split("T")[0];
 }
 
 function isDueToday(date: string | null | undefined): boolean {
