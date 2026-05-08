@@ -13,7 +13,17 @@ import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 
 type AgeTier = "Hatchlings" | "Fledglings" | "Soarers" | "Sky Readers";
-type ThemeBin = "Adventure" | "Humor" | "Life" | "Learn" | "Identity" | "Nature" | "Seasonal";
+type ThemeBin =
+  | "Adventure"
+  | "Laughs & Chaos"
+  | "Heart & Home"
+  | "Wonder & Imagination"
+  | "Wild & Wonderful"
+  | "Discovery Den"
+  | "Legends & Long Ago"
+  | "Seasons & Celebrations"
+  | "Big Worlds"
+  | "Tiny Tales";
 type ConfidenceLevel = "high" | "medium" | "low" | "needs-review";
 
 interface RawBook {
@@ -41,7 +51,18 @@ interface Classification {
 
 const AGE_RANGES: Record<AgeTier, string> = { Hatchlings: "0–2", Fledglings: "3–5", Soarers: "6–8", "Sky Readers": "9–12" };
 const VALID_TIERS: AgeTier[] = ["Hatchlings", "Fledglings", "Soarers", "Sky Readers"];
-const VALID_BINS: ThemeBin[] = ["Adventure", "Humor", "Life", "Learn", "Identity", "Nature", "Seasonal"];
+const VALID_BINS: ThemeBin[] = [
+  "Adventure",
+  "Laughs & Chaos",
+  "Heart & Home",
+  "Wonder & Imagination",
+  "Wild & Wonderful",
+  "Discovery Den",
+  "Legends & Long Ago",
+  "Seasons & Celebrations",
+  "Big Worlds",
+  "Tiny Tales",
+];
 const PAGE_COUNT_RULES: { max: number | null; tier: AgeTier }[] = [
   { max: 16, tier: "Hatchlings" }, { max: 40, tier: "Fledglings" },
   { max: 120, tier: "Soarers" }, { max: null, tier: "Sky Readers" },
@@ -63,32 +84,195 @@ const STRONG_CATEGORY_TO_TIER: { match: string; tier: AgeTier }[] = [
 ];
 const CATEGORY_TO_TIER = [...STRONG_CATEGORY_TO_TIER, { match: "juvenile fiction", tier: "Soarers" as AgeTier }];
 const BIN_KEYWORDS: Record<ThemeBin, string[]> = {
-  Adventure: ["magic","dragon","quest","mystery","spy","fantasy","exploration","adventure","treasure","pirate","wizard","knight"],
-  Humor: ["funny","silly","prank","goofy","comic","absurd","hilarious","humor","laugh","joke"],
-  Life: ["family","friendship","school","emotions","growing up","sibling","kindness","feelings","empathy"],
-  Learn: ["facts","science","history","nonfiction","educational","learn","stem","math","alphabet","biography"],
-  Identity: ["culture","diversity","identity","heritage","representation","immigration","bilingual","self-acceptance"],
-  Nature: ["animal","animals","environment","weather","outdoors","ecosystems","nature","wildlife","forest","ocean","caterpillar","butterfly","bug","insect","bird","plant","tree","flower","garden","metamorphosis","life cycle"],
-  Seasonal: ["holiday","christmas","halloween","easter","thanksgiving","hanukkah","valentine","seasonal"],
+  Adventure: [
+    "quest",
+    "adventure",
+    "treasure",
+    "pirate",
+    "exploration",
+    "journey",
+    "survival",
+    "hero",
+    "heroes",
+    "mystery",
+  ],
+
+  "Laughs & Chaos": [
+    "funny",
+    "humor",
+    "silly",
+    "goofy",
+    "giggles",
+    "prank",
+    "chaos",
+    "rhyming",
+    "absurd",
+    "joke",
+  ],
+
+  "Heart & Home": [
+    "family",
+    "friendship",
+    "school",
+    "feelings",
+    "kindness",
+    "emotions",
+    "growing up",
+    "community",
+    "bedtime",
+    "empathy",
+  ],
+
+  "Wonder & Imagination": [
+    "magic",
+    "fantasy",
+    "dragon",
+    "dragons",
+    "unicorn",
+    "fairy",
+    "wizards",
+    "dreams",
+    "mythical",
+    "imagination",
+  ],
+
+  "Wild & Wonderful": [
+    "animals",
+    "animal",
+    "nature",
+    "wildlife",
+    "ocean",
+    "forest",
+    "dinosaurs",
+    "farm",
+    "bugs",
+    "weather",
+  ],
+
+  "Discovery Den": [
+    "science",
+    "stem",
+    "history",
+    "space",
+    "math",
+    "technology",
+    "engineering",
+    "facts",
+    "nonfiction",
+    "experiments",
+  ],
+
+  "Legends & Long Ago": [
+    "folklore",
+    "fable",
+    "fairy tale",
+    "mythology",
+    "legends",
+    "historical",
+    "ancient",
+    "retelling",
+    "classic",
+  ],
+
+  "Seasons & Celebrations": [
+    "christmas",
+    "halloween",
+    "easter",
+    "birthday",
+    "summer",
+    "winter",
+    "spring",
+    "fall",
+    "holiday",
+    "celebration",
+  ],
+
+  "Big Worlds": [
+    "diversity",
+    "culture",
+    "identity",
+    "representation",
+    "acceptance",
+    "belonging",
+    "inclusion",
+    "different perspectives",
+    "heritage",
+  ],
+
+  "Tiny Tales": [
+    "bedtime",
+    "calming",
+    "quiet",
+    "gentle",
+    "cozy",
+    "read aloud",
+    "routine",
+    "soft",
+    "short stories",
+  ],
 };
-const BIN_PRECEDENCE: Record<ThemeBin, number> = { Seasonal: 7, Humor: 6, Learn: 5, Adventure: 4, Identity: 3, Life: 2, Nature: 1 };
+const BIN_PRECEDENCE: Record<ThemeBin, number> = {
+  "Seasons & Celebrations": 10,
+  "Laughs & Chaos": 9,
+  "Discovery Den": 8,
+  Adventure: 7,
+  "Wonder & Imagination": 6,
+  "Heart & Home": 5,
+  "Wild & Wonderful": 4,
+  "Big Worlds": 3,
+  "Legends & Long Ago": 2,
+  "Tiny Tales": 1,
+};
 const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
-  { match: "humor", bin: "Humor" }, { match: "comic", bin: "Humor" }, { match: "funny", bin: "Humor" },
-  { match: "family", bin: "Life" }, { match: "friendship", bin: "Life" }, { match: "social", bin: "Life" }, { match: "emotions", bin: "Life" },
-  { match: "nonfiction", bin: "Learn" }, { match: "science", bin: "Learn" }, { match: "history", bin: "Learn" }, { match: "educational", bin: "Learn" },
-  { match: "fantasy", bin: "Adventure" }, { match: "adventure", bin: "Adventure" }, { match: "mystery", bin: "Adventure" },
-  { match: "animal", bin: "Nature" }, { match: "nature", bin: "Nature" }, { match: "wildlife", bin: "Nature" }, { match: "plants", bin: "Nature" },
-  { match: "holiday", bin: "Seasonal" }, { match: "christmas", bin: "Seasonal" },
-  { match: "multicultural", bin: "Identity" }, { match: "diversity", bin: "Identity" },
+  { match: "humor", bin: "Laughs & Chaos" },
+  { match: "comic", bin: "Laughs & Chaos" },
+  { match: "funny", bin: "Laughs & Chaos" },
+
+  { match: "family", bin: "Heart & Home" },
+  { match: "friendship", bin: "Heart & Home" },
+  { match: "school", bin: "Heart & Home" },
+  { match: "emotions", bin: "Heart & Home" },
+
+  { match: "fantasy", bin: "Wonder & Imagination" },
+  { match: "magic", bin: "Wonder & Imagination" },
+  { match: "dragons", bin: "Wonder & Imagination" },
+
+  { match: "animals", bin: "Wild & Wonderful" },
+  { match: "nature", bin: "Wild & Wonderful" },
+  { match: "wildlife", bin: "Wild & Wonderful" },
+
+  { match: "science", bin: "Discovery Den" },
+  { match: "nonfiction", bin: "Discovery Den" },
+  { match: "history", bin: "Discovery Den" },
+  { match: "stem", bin: "Discovery Den" },
+
+  { match: "folklore", bin: "Legends & Long Ago" },
+  { match: "mythology", bin: "Legends & Long Ago" },
+  { match: "fairy tale", bin: "Legends & Long Ago" },
+
+  { match: "holiday", bin: "Seasons & Celebrations" },
+  { match: "christmas", bin: "Seasons & Celebrations" },
+  { match: "halloween", bin: "Seasons & Celebrations" },
+
+  { match: "diversity", bin: "Big Worlds" },
+  { match: "representation", bin: "Big Worlds" },
+  { match: "culture", bin: "Big Worlds" },
+
+  { match: "bedtime", bin: "Tiny Tales" },
+  { match: "calming", bin: "Tiny Tales" },
+  { match: "quiet", bin: "Tiny Tales" },
 ];
 const BIN_TAGS: Record<ThemeBin, string[]> = {
-  Adventure: ["Exploration","Quest","Survival","Journey","Treasure","Pirates","Space","Time Travel","Fantasy","Magic","Dragons","Mythology","Superheroes","Secret Worlds","Detective","Mystery","Spy","Wilderness","Ocean Voyage","Historical Adventure","Action","Brave Hero","Epic Battle","Portal Fantasy","Expedition","Legends"],
-  Humor: ["Silly","Funny","Giggle-Worthy","Slapstick","Animal Antics","Mischief Makers","School Shenanigans","Goofy Characters","Wordplay","Puns","Bathroom Humor","Pranks","Awkward Moments","Graphic Novel","Comic Style","Lighthearted","Unexpected Twist","Ridiculous Situations","Talking Animals","Over-the-Top","Quirky","Wild Imagination","Friendship Fails"],
-  Life: ["Family","Siblings","Friendship","Kindness","Responsibility","Growing Up","School Life","Community","Teamwork","Courage","Empathy","Bedtime","New Experiences","Moving","New Baby","Loss & Grief","Adoption","Divorce","Celebrations","Traditions","Self-Discovery","Manners","Problem Solving","Feelings","Mental Health","Social Skills","Patience","Honesty"],
-  Learn: ["Alphabet","Numbers","Counting","Shapes","Colors","Sight Words","Early Reader","STEM","Science","Space Facts","Dinosaurs","Animals","Ocean Life","History","Geography","Biographies","Inventors","Coding","Engineering","Math","Experiments","Weather","Human Body","Nature Facts","Nonfiction","Vocabulary Builder","Phonics","Cultural Learning"],
-  Identity: ["Diversity","Cultural Stories","Black Joy","Latinx Stories","Asian Stories","Indigenous Stories","Disability Representation","Neurodiversity","LGBTQ+","Strong Girls","Boy Empowerment","Body Positivity","Confidence","Self-Acceptance","Family Heritage","Immigration","Language & Bilingual","Faith-Based","Traditions","Leadership","First Generation","Gender Expression","Overcoming Obstacles","Role Models","Empowerment","Representation Matters","Social Justice"],
-  Nature: ["Animals","Farm","Zoo","Pets","Wildlife","Forest","Ocean","Bugs & Insects","Dinosaurs","Gardening","Camping","Hiking","National Parks","Conservation","Environment","Earth Day","Weather","Seasons","Water Cycle","Life Cycles","Ecosystems","Birds","Arctic","Jungle","Desert","Volcanoes","Rocks & Minerals"],
-  Seasonal: ["Spring","Summer","Fall","Winter","Back to School","Halloween","Thanksgiving","Christmas","Hanukkah","Easter","Valentine's Day","St. Patrick's Day","Fourth of July","New Year","Lunar New Year","Ramadan","Diwali","Birthdays","Snow Day","Beach Day","Harvest","Graduation","Mother's Day","Father's Day","Earth Day","First Day of School"],
+  Adventure: ["Quest", "Exploration", "Pirates", "Treasure", "Mystery", "Adventure", "Fantasy", "Magic", "Heroes", "Journey", "Wilderness", "Survival"],
+  "Laughs & Chaos": ["Silly", "Goofy", "Pranks", "Wordplay", "Giggles", "Chaos", "Funny", "Rhyming", "Interactive", "High Energy", "Absurd"],
+  "Heart & Home": ["Family", "Friendship", "School", "Feelings", "Kindness", "Confidence", "Empathy", "Bedtime", "Community", "Growing Up", "New Experiences", "Emotional Growth"],
+  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles"],
+  "Wild & Wonderful": ["Animals", "Pets", "Ocean", "Forest", "Dinosaurs", "Nature", "Wildlife", "Bugs", "Farm", "Gardening", "Camping", "Weather"],
+  "Discovery Den": ["STEM", "Science", "Space", "Vehicles", "History", "Math", "Technology", "Engineering", "Experiments", "Human Body", "Facts", "Nonfiction"],
+  "Legends & Long Ago": ["Fairy Tales", "Folklore", "Fables", "Mythology", "Classics", "Historical Fiction", "Legends", "Ancient Worlds", "Moral Lessons", "Retellings"],
+  "Seasons & Celebrations": ["Christmas", "Halloween", "Easter", "Birthdays", "Back to School", "Summer", "Winter", "Spring", "Fall", "Traditions", "Celebrations"],
+  "Big Worlds": ["Inclusion", "Diversity", "Cultures", "Acceptance", "Belonging", "Identity", "Representation", "Different Perspectives", "Confidence", "Empathy"],
+  "Tiny Tales": ["Bedtime", "Calming", "Gentle Humor", "Read Aloud", "Quiet Stories", "Cozy", "Routine", "Short Stories", "Early Learning", "Soft Illustrations"],
 };
 const CLASSICS_TAGS = ["Timeless","Household Staple","Must Read","Fan Favorite","Bestseller","Award Winner","Caldecott","Newbery","Vintage","Generational Favorite","Childhood Classic","Fairy Tale","Folktale","Fable","Nursery Rhymes"];
 const MAX_TAGS = 5;
@@ -238,8 +422,31 @@ function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } |
 }
 function resolveBin(book: BookMetadata): { bin: ThemeBin; source: string } | null {
   const text = getSearchText(book);
-  const scores: Record<ThemeBin, number> = { Adventure: 0, Humor: 0, Life: 0, Learn: 0, Identity: 0, Nature: 0, Seasonal: 0 };
-  const matched: Record<ThemeBin, string[]> = { Adventure: [], Humor: [], Life: [], Learn: [], Identity: [], Nature: [], Seasonal: [] };
+  const scores: Record<ThemeBin, number> = {
+  Adventure: 0,
+  "Laughs & Chaos": 0,
+  "Heart & Home": 0,
+  "Wonder & Imagination": 0,
+  "Wild & Wonderful": 0,
+  "Discovery Den": 0,
+  "Legends & Long Ago": 0,
+  "Seasons & Celebrations": 0,
+  "Big Worlds": 0,
+  "Tiny Tales": 0,
+};
+
+const matched: Record<ThemeBin, string[]> = {
+  Adventure: [],
+  "Laughs & Chaos": [],
+  "Heart & Home": [],
+  "Wonder & Imagination": [],
+  "Wild & Wonderful": [],
+  "Discovery Den": [],
+  "Legends & Long Ago": [],
+  "Seasons & Celebrations": [],
+  "Big Worlds": [],
+  "Tiny Tales": [],
+};
   for (const bin of VALID_BINS) { const m = findAllKeywords(text, BIN_KEYWORDS[bin]); scores[bin] += m.length; matched[bin] = m; }
   for (const cat of book.categories) { const lower = cat.toLowerCase(); for (const entry of CATEGORY_TO_BIN) { if (lower.includes(entry.match)) scores[entry.bin] += 2; } }
   const max = Math.max(...Object.values(scores));
@@ -271,7 +478,7 @@ function computeConfidence(trace: RuleTrace, book: BookMetadata): ConfidenceLeve
 }
 async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; needsBin: boolean }) {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return { ageTier: "Fledglings" as AgeTier, themeBin: "Life" as ThemeBin, reasoning: "API key not configured" };
+  if (!key) return { ageTier: "Fledglings" as AgeTier, themeBin: "Heart & Home" as ThemeBin, reasoning: "API key not configured" };
 
   const system = `You are a classifier for a children's book subscription called The Book Nest. Respond ONLY with valid JSON, no preamble or markdown.\n\nCHOOSE EXACTLY ONE age tier:\n- Hatchlings (0-2): Board books, first words, baby/toddler\n- Fledglings (3-5): Picture books, preschool read-alouds\n- Soarers (6-8): Early readers, early chapter books\n- Sky Readers (9-12): Middle grade, upper-elementary\n\nCHOOSE EXACTLY ONE primary bin:\n- Adventure: magic, quest, mystery, fantasy, exploration\n- Humor: funny, silly, goofy, pranks, absurd\n- Life: family, friendship, school, emotions, growing up\n- Learn: nonfiction, STEM, science, history, educational\n- Identity: diversity, culture, representation, heritage\n- Nature: animals, environment, wildlife, ecosystems\n- Seasonal: holidays, Christmas, Halloween, birthdays\n\nRespond ONLY: {"ageTier": "...", "themeBin": "...", "reasoning": "one short sentence"}`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
@@ -320,7 +527,7 @@ async function classifyBook(book: BookMetadata): Promise<Classification> {
   if (tierResult) { ageTier = tierResult.tier; trace.tierSource = tierResult.source; }
   else trace.notes.push("Rules could not determine age tier");
   const binResult = resolveBin(book);
-  let themeBin: ThemeBin = "Life";
+  let themeBin: ThemeBin = "Heart & Home";
   if (binResult) { themeBin = binResult.bin; trace.binSource = binResult.source; }
   else trace.notes.push("Rules could not determine bin");
   if (!tierResult || !binResult) {

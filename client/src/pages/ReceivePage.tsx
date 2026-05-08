@@ -28,12 +28,15 @@ const TIER_TO_AGE_GROUP: Record<string, string> = {
 
 const BIN_TO_CATEGORY: Record<string, BinCategory> = {
   Adventure: "ADVENTURE",
-  Humor:     "HUMOR",
-  Life:      "LIFE",
-  Learn:     "LEARN",
-  Identity:  "IDENTITY",
-  Nature:    "NATURE",
-  Seasonal:  "SEASONAL",
+  "Laughs & Chaos": "LAUGHS_CHAOS",
+  "Heart & Home": "HEART_HOME",
+  "Wonder & Imagination": "WONDER_IMAGINATION",
+  "Wild & Wonderful": "WILD_WONDERFUL",
+  "Discovery Den": "DISCOVERY_DEN",
+  "Legends & Long Ago": "LEGENDS_LONG_AGO",
+  "Seasons & Celebrations": "SEASONS_CELEBRATIONS",
+  "Big Worlds": "BIG_WORLDS",
+  "Tiny Tales": "TINY_TALES",
 };
 
 const AGE_GROUPS = ["Hatchlings (0-2)", "Fledglings (3-5)", "Soarers (6-8)", "Sky Readers (9-12)"];
@@ -106,7 +109,7 @@ function TagSelector({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5 min-h-[2rem]">
+      <div className="flex flex-wrap gap-1.5 min-h-8">
         {selectedTags.length === 0
           ? <span className="text-xs text-muted-foreground italic">No tags selected — pick from categories below</span>
           : selectedTags.map(tag => {
@@ -269,8 +272,8 @@ export default function ReceivePage() {
   const [ageGroup, setAgeGroup] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [autoTags, setAutoTags] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<BinCategory>("LIFE");
-  const [suggestedCategory, setSuggestedCategory] = useState<BinCategory>("LIFE");
+  const [selectedCategory, setSelectedCategory] = useState<BinCategory>("HEART_HOME");
+  const [suggestedCategory, setSuggestedCategory] = useState<BinCategory>("HEART_HOME");
   const [isManualCategoryOverride, setIsManualCategoryOverride] = useState(false);
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
@@ -319,7 +322,7 @@ export default function ReceivePage() {
     setIsTooOld(classification.isTooOld ?? false);
 setTooOldReason(classification.tooOldReason ?? "");
 
-    const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "LIFE";
+    const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "HEART_HOME";
     setSelectedCategory(mappedBin);
     setSuggestedCategory(mappedBin);
     setIsManualCategoryOverride(false);
@@ -502,7 +505,7 @@ setTooOldReason("");
                 type="button"
                 onClick={() => setNumpadMode(v => !v)}
                 title={numpadMode ? "Switch to full keyboard" : "Switch to numpad"}
-                className="flex items-center justify-center w-11 h-11 rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex-shrink-0"
+                className="flex items-center justify-center w-11 h-11 rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
               >
                 {numpadMode
                   ? <Keyboard className="w-4 h-4" />
@@ -514,7 +517,7 @@ setTooOldReason("");
                 type="button"
                 onClick={openScanner}
                 title="Scan barcode with camera"
-                className="flex items-center justify-center w-11 h-11 rounded-lg text-white transition-colors flex-shrink-0"
+                className="flex items-center justify-center w-11 h-11 rounded-lg text-white transition-colors shrink-0"
                 style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
               >
                 <ScanLine className="w-4 h-4" />
@@ -878,7 +881,7 @@ setTooOldReason("");
         <div className="rounded-xl border p-4 flex items-center justify-between gap-4"
           style={{ backgroundColor: "oklch(0.97 0.04 75)", borderColor: "oklch(0.84 0.10 75)" }}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "oklch(0.90 0.08 75)" }}>
               <Tag className="w-4 h-4" style={{ color: "oklch(0.45 0.14 75)" }} />
             </div>
             <div>
@@ -887,7 +890,7 @@ setTooOldReason("");
             </div>
           </div>
           <button onClick={() => navigate("/labels")}
-            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
             style={{ backgroundColor: "oklch(0.55 0.14 75)" }}>
             Go to Label Queue →
           </button>
@@ -897,7 +900,7 @@ setTooOldReason("");
       {receivedCount > 0 && (
         <div className="flex items-center gap-4 p-4 rounded-xl border"
           style={{ backgroundColor: "oklch(0.96 0.02 155)", borderColor: "oklch(0.85 0.05 155)" }}>
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "oklch(0.88 0.06 155)" }}>
             <ClipboardCheck className="w-4 h-4" style={{ color: "oklch(0.38 0.12 155)" }} />
           </div>
           <div className="flex-1">
@@ -905,7 +908,7 @@ setTooOldReason("");
             <p className="text-xs" style={{ color: "oklch(0.45 0.08 155)" }}>Inspect, clean, and grade before shelving</p>
           </div>
           <button onClick={() => navigate("/qc")}
-            className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
             style={{ backgroundColor: "oklch(0.42 0.11 155)" }}>
             Go to QC Queue →
           </button>
