@@ -480,7 +480,37 @@ async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; ne
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { ageTier: "Fledglings" as AgeTier, themeBin: "Heart & Home" as ThemeBin, reasoning: "API key not configured" };
 
-  const system = `You are a classifier for a children's book subscription called The Book Nest. Respond ONLY with valid JSON, no preamble or markdown.\n\nCHOOSE EXACTLY ONE age tier:\n- Hatchlings (0-2): Board books, first words, baby/toddler\n- Fledglings (3-5): Picture books, preschool read-alouds\n- Soarers (6-8): Early readers, early chapter books\n- Sky Readers (9-12): Middle grade, upper-elementary\n\nCHOOSE EXACTLY ONE primary bin:\n- Adventure: magic, quest, mystery, fantasy, exploration\n- Humor: funny, silly, goofy, pranks, absurd\n- Life: family, friendship, school, emotions, growing up\n- Learn: nonfiction, STEM, science, history, educational\n- Identity: diversity, culture, representation, heritage\n- Nature: animals, environment, wildlife, ecosystems\n- Seasonal: holidays, Christmas, Halloween, birthdays\n\nRespond ONLY: {"ageTier": "...", "themeBin": "...", "reasoning": "one short sentence"}`;
+  const system = `You are a classifier for a children's book subscription called The Book Nest.
+
+Respond ONLY with valid JSON.
+No markdown.
+No explanation outside JSON.
+
+AVAILABLE AGE TIERS:
+- Hatchlings (0-2): board books, baby books, toddler books, first words
+- Fledglings (3-5): picture books, preschool stories, read-alouds
+- Soarers (6-8): early readers, beginner chapter books
+- Sky Readers (9-12): middle grade, upper elementary
+
+AVAILABLE THEMES:
+- Adventure
+- Laughs & Chaos
+- Heart & Home
+- Wonder & Imagination
+- Wild & Wonderful
+- Discovery Den
+- Legends & Long Ago
+- Seasons & Celebrations
+- Big Worlds
+- Tiny Tales
+
+Return ONLY this JSON shape:
+
+{
+  "ageTier": "Fledglings",
+  "themeBin": "Heart & Home",
+  "reasoning": "Short explanation"
+}`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
 
   try {
@@ -499,10 +529,15 @@ async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; ne
     const parsed = JSON.parse(data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ?? "{}");
     return {
       ageTier: VALID_TIERS.includes(parsed.ageTier) ? parsed.ageTier as AgeTier : "Fledglings" as AgeTier,
-      themeBin: VALID_BINS.includes(parsed.themeBin) ? parsed.themeBin as ThemeBin : "Life" as ThemeBin,
+      themeBin: VALID_BINS.includes(parsed.themeBin)
+  ? parsed.themeBin as ThemeBin
+  : "Heart & Home" as ThemeBin,
       reasoning: parsed.reasoning || "AI classification",
     };
-  } catch { return { ageTier: "Fledglings" as AgeTier, themeBin: "Life" as ThemeBin, reasoning: "AI fallback error" }; }
+  } catch {
+  return {
+    ageTier: "Fledglings" as AgeTier,
+    themeBin: "Heart & Home" as ThemeBin, reasoning: "AI fallback error" }; }
 }
 
 function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
