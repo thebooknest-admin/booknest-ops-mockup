@@ -409,10 +409,38 @@ function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } |
     }
   }
   if (book.pageCount != null) {
-    for (const rule of PAGE_COUNT_RULES) {
-      if (rule.max === null || book.pageCount <= rule.max) return { tier: rule.tier, source: `page count: ${book.pageCount}` };
+  const text = getSearchText(book);
+
+  // Picture books often run 32-48 pages
+  const pictureBookSignals = [
+    "picture book",
+    "caldecott",
+    "read-aloud",
+    "illustrated",
+    "bedtime",
+    "preschool",
+  ];
+
+  const looksLikePictureBook = pictureBookSignals.some(signal =>
+    text.includes(signal)
+  );
+
+  if (looksLikePictureBook && book.pageCount <= 56) {
+    return {
+      tier: "Fledglings",
+      source: `picture book signal + page count (${book.pageCount})`,
+    };
+  }
+
+  for (const rule of PAGE_COUNT_RULES) {
+    if (rule.max === null || book.pageCount <= rule.max) {
+      return {
+        tier: rule.tier,
+        source: `page count: ${book.pageCount}`,
+      };
     }
   }
+}
   for (const entry of CATEGORY_TO_TIER) {
     for (const cat of book.categories) {
       if (cat.toLowerCase().includes(entry.match)) return { tier: entry.tier, source: `category "${entry.match}"` };
