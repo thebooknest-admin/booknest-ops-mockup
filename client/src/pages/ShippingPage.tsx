@@ -1,5 +1,5 @@
 // BookNest Ops — Shipping Queue
-// Labels via Pirateship. Ship days: Tuesday & Friday.
+// Labels via Shippo. Ship days: Tuesday & Friday.
 // Click "Ship" to open a modal showing the full address + tracking number input.
 // Confirming tracking marks the shipment as shipped automatically.
 
@@ -123,20 +123,20 @@ function ShipModal({ order, onClose, onConfirm, isPending }: ShipModalProps) {
             </div>
           </div>
 
-          {/* Pirateship link */}
+          {/* Shippo ship link */}
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Create Label</p>
             <a
-               href="https://www.pirateship.com/ship"
+               href="https://app.goshippo.com/orders"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-border hover:bg-muted/50 transition-colors group"
             >
-              <span className="text-sm font-medium text-foreground">Open Pirateship</span>
+              <span className="text-sm font-medium text-foreground">Open Shippo</span>
               <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
             </a>
             <p className="text-xs text-muted-foreground">
-              Create the label in Pirateship, then paste the tracking number below.
+              Create the label in Shippo, then paste the tracking number below.
             </p>
           </div>
 
