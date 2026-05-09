@@ -609,14 +609,16 @@ If a book is classified as 13+:
 - still choose the closest matching theme
 - still provide supporting tags
 
+
 Return ONLY this JSON shape:
+The values shown in the JSON shape are examples only. Choose the actual ageTier, themeBin, supportingTags, restricted, and reasoning based on the book being classified.
 
 {
   "ageTier": "Fledglings",
   "themeBin": "Heart & Home",
   "supportingTags": ["School", "Funny", "Growing Up"],
   "restricted": false,
-  "reasoning": "Short explanation"
+  "reasoning": "Briefly explain why the age tier and theme were chosen."
 }`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
 
