@@ -145,12 +145,14 @@ function BookSummaryCard({
   selectedCategory,
   selectedTags,
   currentBin,
+  isTooOld,
 }: {
   book: BookData | null;
   ageGroup: string;
   selectedCategory: BinCategory;
   selectedTags: string[];
   currentBin: string;
+  isTooOld: boolean;
 }) {
   const cat = getCategoryMeta(selectedCategory);
 
@@ -198,11 +200,22 @@ function BookSummaryCard({
             <p className="text-base font-bold text-foreground leading-tight mt-1 line-clamp-3">
               {book.title}
             </p>
+          
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
               {book.author}
             </p>
           </div>
-
+{isTooOld && (
+  <span
+    className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] font-bold"
+    style={{
+      backgroundColor: "oklch(0.94 0.05 25)",
+      color: "oklch(0.45 0.16 25)",
+    }}
+  >
+    ⚠ Restricted / 13+
+  </span>
+)}
           {book.isbn && (
             <p className="text-[11px] text-muted-foreground font-mono">
               {book.isbn}
@@ -1184,18 +1197,23 @@ export default function ReceivePage() {
                   <div className="flex-1 space-y-3">
                     <div>
                       <p
-                        className="font-semibold text-sm"
-                        style={{ color: "oklch(0.35 0.18 25)" }}
-                      >
-                        This book may be outside your age range.
-                      </p>
+  className="font-semibold text-sm"
+  style={{ color: "oklch(0.35 0.18 25)" }}
+>
+  Restricted / Teen Content Detected
+</p>
 
-                      <p
-                        className="text-xs mt-0.5"
-                        style={{ color: "oklch(0.45 0.14 25)" }}
-                      >
-                        {tooOldReason}
-                      </p>
+                      <div
+  className="text-xs mt-1 space-y-1"
+  style={{ color: "oklch(0.45 0.14 25)" }}
+>
+  <p>{tooOldReason}</p>
+
+  <p>
+    This title falls outside Book Nest age ranges and should
+    not be included in member boxes.
+  </p>
+</div>
                     </div>
 
                     <div className="flex gap-2">
@@ -1210,7 +1228,7 @@ export default function ReceivePage() {
                           backgroundColor: "oklch(0.50 0.18 25)",
                         }}
                       >
-                        Donate out
+                        Move to restricted inventory
                       </button>
 
                       <button
@@ -1224,7 +1242,7 @@ export default function ReceivePage() {
                           color: "oklch(0.40 0.18 25)",
                         }}
                       >
-                        Keep it
+                        Override Manually
                       </button>
                     </div>
                   </div>
@@ -1886,6 +1904,7 @@ export default function ReceivePage() {
           selectedCategory={selectedCategory}
           selectedTags={selectedTags}
           currentBin={currentBin}
+          isTooOld={isTooOld}
         />
       </div>
 

@@ -12,7 +12,12 @@
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 
-type AgeTier = "Hatchlings" | "Fledglings" | "Soarers" | "Sky Readers";
+type AgeTier =
+  | "Hatchlings"
+  | "Fledglings"
+  | "Soarers"
+  | "Sky Readers"
+  | "13+";
 type ThemeBin =
   | "Adventure"
   | "Laughs & Chaos"
@@ -49,8 +54,20 @@ interface Classification {
   tooOldReason: string;
 }
 
-const AGE_RANGES: Record<AgeTier, string> = { Hatchlings: "0–2", Fledglings: "3–5", Soarers: "6–8", "Sky Readers": "9–12" };
-const VALID_TIERS: AgeTier[] = ["Hatchlings", "Fledglings", "Soarers", "Sky Readers"];
+const AGE_RANGES: Record<AgeTier, string> = {
+  Hatchlings: "0–2",
+  Fledglings: "3–5",
+  Soarers: "6–8",
+  "Sky Readers": "9–12",
+  "13+": "13+",
+};
+const VALID_TIERS: AgeTier[] = [
+  "Hatchlings",
+  "Fledglings",
+  "Soarers",
+  "Sky Readers",
+  "13+",
+];
 const VALID_BINS: ThemeBin[] = [
   "Adventure",
   "Laughs & Chaos",
@@ -72,6 +89,7 @@ const TIER_KEYWORD_OVERRIDES: Record<AgeTier, string[]> = {
   Fledglings: ["picture book", "read-aloud", "read aloud"],
   Soarers: ["early reader", "chapter book", "easy reader", "beginning reader"],
   "Sky Readers": ["middle grade", "middle-grade", "novel"],
+  "13+": ["young adult", "teen", "ya fiction", "ya novel", "mature"],
 };
 const STRONG_CATEGORY_TO_TIER: { match: string; tier: AgeTier }[] = [
   { match: "board book", tier: "Hatchlings" }, { match: "picture book", tier: "Fledglings" },
@@ -80,7 +98,7 @@ const STRONG_CATEGORY_TO_TIER: { match: string; tier: AgeTier }[] = [
   { match: "read-aloud", tier: "Fledglings" }, { match: "early reader", tier: "Soarers" },
   { match: "beginning reader", tier: "Soarers" }, { match: "first chapter", tier: "Soarers" },
   { match: "chapter book", tier: "Soarers" }, { match: "middle grade", tier: "Sky Readers" },
-  { match: "young adult", tier: "Sky Readers" },
+  { match: "young adult", tier: "13+" },
 ];
 const CATEGORY_TO_TIER = [...STRONG_CATEGORY_TO_TIER, { match: "juvenile fiction", tier: "Soarers" as AgeTier }];
 const BIN_KEYWORDS: Record<ThemeBin, string[]> = {
@@ -519,6 +537,13 @@ AVAILABLE AGE TIERS:
 - Fledglings (3-5): picture books, preschool stories, read-alouds
 - Soarers (6-8): early readers, beginner chapter books
 - Sky Readers (9-12): middle grade, upper elementary
+- 13+: teen, YA, mature middle grade, older audiences
+
+IMPORTANT SAFETY RULES:
+- If a book appears intended for teens, young adults, or mature readers, classify it as "13+".
+- Books with explicit romance, mature themes, dark violence, horror, heavy emotional content, or teen-targeted marketing should be "13+".
+- Never force YA or mature content into Sky Readers.
+- Sky Readers should remain safe for upper elementary/tween readers.
 
 AGE TIER GUIDANCE:
 - Do not use page count alone.
@@ -527,6 +552,7 @@ AGE TIER GUIDANCE:
 - Middle grade novels are usually Sky Readers.
 - If a book is commonly read aloud to preschool/kindergarten children, prefer Fledglings.
 - If a book is meant for independent early readers, prefer Soarers.
+- If uncertain between Sky Readers and 13+, lean toward 13+ for safety.
 
 AVAILABLE THEMES:
 - Adventure
@@ -578,12 +604,18 @@ Use fewer than 3 only if the metadata is extremely limited.
 
 Prefer broad useful discovery tags over hyper-specific niche tags.
 
+If a book is classified as 13+:
+- set "restricted" to true
+- still choose the closest matching theme
+- still provide supporting tags
+
 Return ONLY this JSON shape:
 
 {
   "ageTier": "Fledglings",
   "themeBin": "Heart & Home",
   "supportingTags": ["School", "Funny", "Growing Up"],
+  "restricted": false,
   "reasoning": "Short explanation"
 }`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
@@ -638,6 +670,65 @@ function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
   return { tooOld: false, reason: "" };
 }
 
+function detectRestrictedContent(book: BookMetadata): {
+  restricted: boolean;
+  reason: string;
+} {
+  const restrictedKeywords = [
+    "young adult",
+    "ya fiction",
+    "ya novel",
+    "teen",
+    "teen fiction",
+    "mature",
+    "explicit",
+    "dark romance",
+    "romantic relationship",
+    "explicit romance",
+    "adult romance",
+    "spicy",
+    "high school",
+    "new adult",
+    "college romance",
+    "psychological thriller",
+    "graphic violence",
+    "grade 9",
+    "grade 10",
+    "grade 11",
+    "grade 12",
+    "ages 13",
+    "ages 14",
+    "ages 15",
+    "ages 16",
+    "14 and up",
+    "15 and up",
+    "16 and up",
+  ];
+
+  const text = `
+    ${book.title}
+    ${book.description}
+    ${book.categories?.join(" ")}
+    ${book.authors?.join(" ")}
+  `.toLowerCase();
+
+  const matched = restrictedKeywords.find((keyword) =>
+    text.includes(keyword)
+  );
+
+  if (matched) {
+    return {
+      restricted: true,
+      reason: `Detected "${matched}" in metadata`,
+    };
+  }
+
+  return {
+    restricted: false,
+    reason: "",
+  };
+}
+
 async function classifyBook(book: BookMetadata): Promise<Classification> {
   const trace: RuleTrace = { tierSource: "", binSource: "", tagSources: [], usedAIFallback: false, tierUsedAI: false, binUsedAI: false, signalsAligned: 0, notes: [] };
   const tierResult = resolveAgeTier(book);
@@ -677,13 +768,30 @@ if (tags.length < 3) {
   }
 }
   trace.tagSources.push("rule-based tag matching");
-  const tooOldCheck = detectTooOld(book);
-  return {
-    ageTier, ageTierRange: AGE_RANGES[ageTier], themeBin, supportingTags: tags, confidence,
-  reasoning: [trace.tierSource && `Tier: ${trace.tierSource}`, trace.binSource && `Bin: ${trace.binSource}`].filter(Boolean).join(". ") || "Classified from available metadata.",
+const tooOldCheck = detectTooOld(book);
+const restrictedCheck = detectRestrictedContent(book);
+
+if (restrictedCheck.restricted) {
+  ageTier = "13+";
+  trace.notes.push(restrictedCheck.reason);
+}
+
+return {
+  ageTier,
+  ageTierRange: AGE_RANGES[ageTier],
+  themeBin,
+  supportingTags: tags,
+  confidence,
+  reasoning:
+    [
+      trace.tierSource && `Tier: ${trace.tierSource}`,
+      trace.binSource && `Bin: ${trace.binSource}`,
+    ]
+      .filter(Boolean)
+      .join(". ") || "Classified from available metadata.",
   trace,
-  isTooOld: tooOldCheck.tooOld,
-  tooOldReason: tooOldCheck.reason,
+  isTooOld: tooOldCheck.tooOld || restrictedCheck.restricted,
+  tooOldReason: restrictedCheck.reason || tooOldCheck.reason,
 };
 }
 
