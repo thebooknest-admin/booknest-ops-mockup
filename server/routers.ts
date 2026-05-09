@@ -984,6 +984,7 @@ welcome: router({
     child_name: z.string(),
     birthday: z.string().nullish(),
     age_group: z.string(),
+    favorite_themes: z.array(z.string()).default([]),
     interests: z.array(z.string()),
     topics_to_avoid: z.array(z.string()),
     notes: z.string().nullish(),
@@ -1014,6 +1015,7 @@ await Promise.all(
       body: JSON.stringify({
         child_name: child.child_name,
         age_group: child.age_group,
+        favorite_themes: child.favorite_themes,
         interests: child.interests,
         topics_to_avoid: child.topics_to_avoid,
         birthday: child.birthday ?? null,
@@ -1255,6 +1257,7 @@ await Promise.all(
           child_birthday: z.string().optional(),
           reading_level: z.string(),
           interests: z.array(z.string()),
+          favorite_themes: z.array(z.string()).default([]),
           topics_to_avoid: z.array(z.string()),
           subscription_tier: z.string(),
           how_heard: z.string().optional(),
