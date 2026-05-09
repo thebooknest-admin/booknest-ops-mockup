@@ -520,6 +520,14 @@ AVAILABLE AGE TIERS:
 - Soarers (6-8): early readers, beginner chapter books
 - Sky Readers (9-12): middle grade, upper elementary
 
+AGE TIER GUIDANCE:
+- Do not use page count alone.
+- Picture books can be 32-56 pages and still be Fledglings.
+- Early chapter books and beginner readers are usually Soarers.
+- Middle grade novels are usually Sky Readers.
+- If a book is commonly read aloud to preschool/kindergarten children, prefer Fledglings.
+- If a book is meant for independent early readers, prefer Soarers.
+
 AVAILABLE THEMES:
 - Adventure
 - Laughs & Chaos
@@ -532,11 +540,50 @@ AVAILABLE THEMES:
 - Big Worlds
 - Tiny Tales
 
+THEME GUIDANCE:
+- Adventure: quests, mysteries, exploration, brave journeys, action
+- Laughs & Chaos: silly, goofy, funny, prank-filled, absurd, high-energy stories
+- Heart & Home: family, friendship, school, feelings, growing up, everyday life
+- Wonder & Imagination: magic, fantasy, dreams, dragons, unicorns, pretend play
+- Wild & Wonderful: animals, pets, nature, dinosaurs, farms, bugs, outdoors
+- Discovery Den: nonfiction, STEM, facts, history, science, vehicles, how things work
+- Legends & Long Ago: classics, fairy tales, folklore, mythology, fables, historical stories
+- Seasons & Celebrations: holidays, birthdays, traditions, seasonal books
+- Big Worlds: diversity, culture, identity, inclusion, representation, belonging
+- Tiny Tales: bedtime, calming, gentle, short, soothing, cozy read-alouds
+
+TAG GUIDANCE:
+Choose 3-7 high-confidence supporting tags whenever possible.
+
+Include:
+- emotional themes
+- reader experience themes
+- setting/location themes
+- childhood/social themes
+- genre and tone signals
+- recurring kid-interest topics
+
+Do NOT only use literal keywords from the description.
+Infer likely themes from:
+- title
+- series
+- author
+- genre
+- intended audience
+- common reader experience
+
+Avoid under-tagging.
+Most books should receive at least 3 supporting tags.
+Use fewer than 3 only if the metadata is extremely limited.
+
+Prefer broad useful discovery tags over hyper-specific niche tags.
+
 Return ONLY this JSON shape:
 
 {
   "ageTier": "Fledglings",
   "themeBin": "Heart & Home",
+  "supportingTags": ["School", "Funny", "Growing Up"],
   "reasoning": "Short explanation"
 }`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
