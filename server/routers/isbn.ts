@@ -275,7 +275,7 @@ const BIN_TAGS: Record<ThemeBin, string[]> = {
   "Tiny Tales": ["Bedtime", "Calming", "Gentle Humor", "Read Aloud", "Quiet Stories", "Cozy", "Routine", "Short Stories", "Early Learning", "Soft Illustrations"],
 };
 const CLASSICS_TAGS = ["Timeless","Household Staple","Must Read","Fan Favorite","Bestseller","Award Winner","Caldecott","Newbery","Vintage","Generational Favorite","Childhood Classic","Fairy Tale","Folktale","Fable","Nursery Rhymes"];
-const MAX_TAGS = 5;
+const MAX_TAGS = 7;
 
 const cache = new Map<string, { book: BookMetadata; classification: Classification }>();
 const MAX_CACHE = 500;
@@ -603,12 +603,20 @@ Return ONLY this JSON shape:
     const data = await res.json() as any;
     const parsed = JSON.parse(data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ?? "{}");
     return {
-      ageTier: VALID_TIERS.includes(parsed.ageTier) ? parsed.ageTier as AgeTier : "Fledglings" as AgeTier,
-      themeBin: VALID_BINS.includes(parsed.themeBin)
-  ? parsed.themeBin as ThemeBin
-  : "Heart & Home" as ThemeBin,
-      reasoning: parsed.reasoning || "AI classification",
-    };
+  ageTier: VALID_TIERS.includes(parsed.ageTier)
+    ? parsed.ageTier as AgeTier
+    : "Fledglings" as AgeTier,
+
+  themeBin: VALID_BINS.includes(parsed.themeBin)
+    ? parsed.themeBin as ThemeBin
+    : "Heart & Home" as ThemeBin,
+
+  supportingTags: Array.isArray(parsed.supportingTags)
+    ? parsed.supportingTags.slice(0, MAX_TAGS)
+    : [],
+
+  reasoning: parsed.reasoning || "AI classification",
+};
   } catch {
   return {
     ageTier: "Fledglings" as AgeTier,
@@ -648,8 +656,27 @@ async function classifyBook(book: BookMetadata): Promise<Classification> {
   }
   trace.signalsAligned = countAlignedSignals(trace.tierSource, trace.binSource);
   const confidence = computeConfidence(trace, book);
-  const tags = resolveTags(book, themeBin);
-  trace.tagSources = ["rule-based tag matching"];
+  let tags = resolveTags(book, themeBin);
+
+if (tags.length < 3) {
+  trace.usedAIFallback = true;
+
+  const ai = await runAIFallback(book, {
+    needsTier: false,
+    needsBin: false,
+  });
+
+  const aiTags = Array.isArray((ai as any).supportingTags)
+    ? (ai as any).supportingTags
+    : [];
+
+  tags = Array.from(new Set([...tags, ...aiTags])).slice(0, MAX_TAGS);
+
+  if (aiTags.length > 0) {
+    trace.tagSources.push("AI tag enrichment");
+  }
+}
+  trace.tagSources.push("rule-based tag matching");
   const tooOldCheck = detectTooOld(book);
   return {
     ageTier, ageTierRange: AGE_RANGES[ageTier], themeBin, supportingTags: tags, confidence,
