@@ -17,7 +17,7 @@ import {
   type BinCategory,
 } from "@/lib/tags";
 
-const STEPS = ["Scan ISBN", "Confirm Details", "Tags & Bin", "Confirm"];
+const STEPS = ["Scan ISBN", "Confirm Details", "Theme & Tags", "Confirm"];
 
 const TIER_TO_AGE_GROUP: Record<string, string> = {
   "Hatchlings":  "Hatchlings (0-2)",
@@ -203,7 +203,7 @@ function BinOverride({
     <div className="space-y-3">
       <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: "oklch(0.97 0.03 155)" }}>
         <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Assigned Bin</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Assigned Theme</p>
           <div className="flex items-center gap-2">
             {isManualOverride && (
               <button onClick={() => { onResetToAuto(); setOverriding(false); }}
@@ -769,12 +769,10 @@ setTooOldReason("");
       {step === 2 && ageGroup && (
         <div className="bg-card rounded-xl border border-border p-6 space-y-5">
           <div>
-            <h2 className="font-semibold text-foreground">Tags & Bin Assignment</h2>
+            <h2 className="font-semibold text-foreground">Theme & Tags</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {autoTags.length > 0
-                ? "Tags pre-filled from classifier. Override anything below."
-                : "Select tags manually — no classifier data available."}
-            </p>
+  Review the AI suggestions, then adjust the theme or tags before saving.
+</p>
           </div>
 
           {/* Age group override */}
@@ -795,7 +793,7 @@ setTooOldReason("");
           <TagSelector selectedTags={selectedTags} onToggle={toggleTag} autoTags={autoTags} />
 
           <div className="border-t border-border/60 pt-4">
-            <h3 className="font-semibold text-sm text-foreground mb-3">Bin Assignment</h3>
+            <h3 className="font-semibold text-sm text-foreground mb-3">Primary Theme</h3>
             <BinOverride
               ageGroup={ageGroup}
               suggestedCategory={suggestedCategory}
