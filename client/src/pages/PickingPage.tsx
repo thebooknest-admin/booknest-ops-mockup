@@ -62,6 +62,9 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
   const [scanState, setScanState] = useState<ScanState>("idle");
   const [scanMessage, setScanMessage] = useState("");
   const [activeSlot, setActiveSlot] = useState(0);
+  const [birthdayBookAdded, setBirthdayBookAdded] = useState(false);
+  const [birthdayGiftAdded, setBirthdayGiftAdded] = useState(false);
+
 
   // slotOverrides: map from slot index → index into all_suggestions
   const [slotOverrides, setSlotOverrides] = useState<Record<number, number>>({});
@@ -230,6 +233,28 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
           </p>
         )}
 
+{order.birthday_box && (
+  <div
+    className="mt-3 rounded-xl border px-4 py-3"
+    style={{
+      backgroundColor: "oklch(0.97 0.04 85)",
+      borderColor: "oklch(0.88 0.08 85)",
+    }}
+  >
+    <p
+      className="text-sm font-semibold"
+      style={{ color: "oklch(0.55 0.14 75)" }}
+    >
+      🎂 Birthday Box
+    </p>
+
+    <p className="text-xs mt-1 text-muted-foreground">
+      Birthday falls within this shipment window.
+      Add a birthday-themed book if available and include a birthday gift.
+    </p>
+  </div>
+)}
+
         {order.notes && (
   <p className="text-xs text-amber-600 mt-1">
     📝 {order.notes}
@@ -394,15 +419,50 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
       )}
 
       {/* Complete button */}
+      {order.birthday_box && allScanned && (
+  <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 space-y-3">
+    <p className="text-sm font-semibold text-yellow-800">
+      🎂 Birthday Checklist
+    </p>
+
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={birthdayBookAdded}
+        onChange={(e) => setBirthdayBookAdded(e.target.checked)}
+      />
+      Birthday book added
+    </label>
+
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={birthdayGiftAdded}
+        onChange={(e) => setBirthdayGiftAdded(e.target.checked)}
+      />
+      Birthday gift added
+    </label>
+  </div>
+)}
       {allScanned && (
         <div className="sticky bottom-6">
           <button
+          disabled={
+  order.birthday_box &&
+  (!birthdayBookAdded || !birthdayGiftAdded)
+}
             onClick={() => onComplete(
               Object.entries(scannedBooks)
                 .sort(([a], [b]) => Number(a) - Number(b))
                 .map(([, book]) => book)
             )}
-            className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all hover:opacity-90 active:scale-95"
+           className={cn(
+  "w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all",
+  order.birthday_box &&
+    (!birthdayBookAdded || !birthdayGiftAdded)
+    ? "opacity-50 cursor-not-allowed"
+    : "hover:opacity-90 active:scale-95"
+)}
             style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
           >
             <Package className="w-5 h-5" />
@@ -562,6 +622,17 @@ export default function PickingPage() {
                           <AlertTriangle className="w-3 h-3" /> Overdue
                         </span>
                       )}
+                      {order.birthday_box && (
+  <span
+    className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+    style={{
+      backgroundColor: "oklch(0.96 0.05 85)",
+      color: "oklch(0.55 0.14 75)",
+    }}
+  >
+    🎂 Birthday Box
+  </span>
+)}
                     </div>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-muted-foreground">Ship: {order.next_ship_date}</span>

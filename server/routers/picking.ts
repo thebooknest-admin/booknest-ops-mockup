@@ -60,6 +60,35 @@ function getBookCount(tier: string | null, booksPerBox?: number | null): number 
   return TIER_BOOK_COUNT[normalized] ?? DEFAULT_BOOK_COUNT;
 }
 
+function getBirthdayBoxInfo(birthday: string | null, shipmentDate: string | null) {
+  if (!birthday || !shipmentDate) return null;
+
+  const birthDate = new Date(birthday);
+  const shipDate = new Date(shipmentDate);
+
+  const birthdayThisYear = new Date(
+    shipDate.getFullYear(),
+    birthDate.getMonth(),
+    birthDate.getDate()
+  );
+
+  const windowStart = new Date(shipDate);
+  windowStart.setDate(shipDate.getDate() - 7);
+
+  const windowEnd = new Date(shipDate);
+  windowEnd.setDate(shipDate.getDate() + 7);
+
+  if (birthdayThisYear >= windowStart && birthdayThisYear <= windowEnd) {
+    return {
+      is_birthday_box: true,
+      birthday: birthdayThisYear.toISOString().split("T")[0],
+      message: "Add birthday book if available + birthday gift",
+    };
+  }
+
+  return null;
+}
+
 export const pickingRouter = router({
   /**
    * Returns all shipments in 'picking' status.
@@ -85,7 +114,7 @@ export const pickingRouter = router({
 
       // ✅ FIXED: added books_per_box to select
       const membersRes = await sbFetch(
-        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,next_ship_date,topics_to_avoid,notes,email,subscription_status,books_per_box&limit=200`
+        `/members?id=in.(${memberIds.join(",")})&welcome_form_completed=eq.true&select=id,name,tier,age_group,birthday,next_ship_date,topics_to_avoid,notes,email,subscription_status,books_per_box&limit=200`
       );
       const members: any[] = await membersRes.json();
       const memberMap: Record<string, any> = {};
@@ -115,6 +144,10 @@ export const pickingRouter = router({
         .map((s) => {
           const m = memberMap[s.member_id];
           const isOverdue = s.scheduled_ship_date < today;
+          const birthdayBox = getBirthdayBoxInfo(
+  m.birthday ?? null,
+  s.scheduled_ship_date ?? null
+);
           return {
             member_id: m.id,
             member_name: m.name,
@@ -127,6 +160,7 @@ export const pickingRouter = router({
             address: addressByMember[m.id] ?? null,
             books_needed: getBookCount(m.tier, m.books_per_box), // ✅ FIXED
             shipment_id: s.id,
+            birthday_box: birthdayBox,
             is_overdue: isOverdue,
           };
         });
