@@ -7,7 +7,7 @@ import { useSearch } from "wouter";
 import { toast } from "sonner";
 import {
   BookOpen, User, Check, X, ChevronDown, ChevronUp,
-  Baby, Sparkles, ShieldX, MessageSquare, Loader2, Heart, Bird
+  Baby, Sparkles, Info, ShieldX, MessageSquare, Loader2, Heart, Bird
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TAG_TAXONOMY } from "@/lib/tags";
@@ -22,12 +22,108 @@ const AGE_GROUPS = [
   { value: "Sky Readers", range: "9–12 YEARS", label: "Sky Readers", desc: "Middle grade and longer chapter books", emoji: "🌟" },
 ];
 
-const THEME_OPTIONS = TAG_TAXONOMY.map(cat => ({
-  id: cat.id,
-  label: cat.label,
-  emoji: cat.emoji,
-  color: cat.color,
-}));
+const THEME_OPTIONS = [
+  {
+    id: "adventure",
+    label: "Adventure",
+    emoji: "🗺️",
+    description: "Quest stories, mysteries, brave journeys, and exciting adventures.",
+    color: {
+      bg: "oklch(0.95 0.04 220)",
+      text: "oklch(0.45 0.12 220)",
+    },
+  },
+  {
+    id: "laughs",
+    label: "Laughs & Chaos",
+    emoji: "😂",
+    description: "Funny, silly, goofy, and wildly energetic stories.",
+    color: {
+      bg: "oklch(0.97 0.05 40)",
+      text: "oklch(0.55 0.16 40)",
+    },
+  },
+  {
+    id: "heart",
+    label: "Heart & Home",
+    emoji: "💛",
+    description: "Friendship, family, school, feelings, and everyday life.",
+    color: {
+      bg: "oklch(0.96 0.05 90)",
+      text: "oklch(0.55 0.15 90)",
+    },
+  },
+  {
+    id: "wonder",
+    label: "Wonder & Imagination",
+    emoji: "✨",
+    description: "Magic, fantasy, dragons, imagination, and dreamy adventures.",
+    color: {
+      bg: "oklch(0.96 0.04 300)",
+      text: "oklch(0.52 0.14 300)",
+    },
+  },
+  {
+    id: "wild",
+    label: "Wild & Wonderful",
+    emoji: "🦊",
+    description: "Animals, bugs, nature, dinosaurs, and outdoor discoveries.",
+    color: {
+      bg: "oklch(0.96 0.05 140)",
+      text: "oklch(0.45 0.12 140)",
+    },
+  },
+  {
+    id: "discovery",
+    label: "Discovery Den",
+    emoji: "🧠",
+    description: "Science, nonfiction, learning, STEM, and how-things-work books.",
+    color: {
+      bg: "oklch(0.96 0.04 260)",
+      text: "oklch(0.50 0.14 260)",
+    },
+  },
+  {
+    id: "legends",
+    label: "Legends & Long Ago",
+    emoji: "🏰",
+    description: "Fairy tales, folklore, classics, myths, and historical stories.",
+    color: {
+      bg: "oklch(0.96 0.05 20)",
+      text: "oklch(0.52 0.13 20)",
+    },
+  },
+  {
+    id: "seasons",
+    label: "Seasons & Celebrations",
+    emoji: "🍂",
+    description: "Holidays, birthdays, traditions, and seasonal favorites.",
+    color: {
+      bg: "oklch(0.97 0.05 60)",
+      text: "oklch(0.55 0.15 60)",
+    },
+  },
+  {
+    id: "bigworlds",
+    label: "Big Worlds",
+    emoji: "🌎",
+    description: "Culture, identity, diversity, belonging, and global perspectives.",
+    color: {
+      bg: "oklch(0.95 0.04 200)",
+      text: "oklch(0.45 0.12 200)",
+    },
+  },
+  {
+    id: "tiny",
+    label: "Tiny Tales",
+    emoji: "🌙",
+    description: "Gentle bedtime stories, calming reads, and cozy moments.",
+    color: {
+      bg: "oklch(0.96 0.03 260)",
+      text: "oklch(0.45 0.10 260)",
+    },
+  },
+];
 
 const INTEREST_OPTIONS = [
   "Animals",
@@ -185,18 +281,30 @@ function ThemePickerPublic({
             <div className="flex items-start gap-3">
               <span className="text-xl">{theme.emoji}</span>
               <div className="flex-1">
-                <p
-                  className="font-bold text-sm"
-                  style={isSelected ? { color: theme.color.text } : {}}
-                >
-                  {theme.label}
-                </p>
-                {isSelected && (
-                  <p className="text-xs mt-1" style={{ color: theme.color.text }}>
-                    Selected
-                  </p>
-                )}
-              </div>
+
+  <div className="flex items-center gap-1">
+    <p
+      className="font-bold text-sm"
+      style={isSelected ? { color: theme.color.text } : {}}
+    >
+      {theme.label}
+    </p>
+
+    <div className="group relative">
+      <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 transition-colors" />
+
+      <div className="absolute left-1/2 top-6 z-20 hidden w-52 -translate-x-1/2 rounded-xl bg-gray-900 px-3 py-2 text-xs text-white shadow-xl group-hover:block">
+        {theme.description}
+      </div>
+    </div>
+  </div>
+
+  {isSelected && (
+    <p className="text-xs mt-1" style={{ color: theme.color.text }}>
+      Selected
+    </p>
+  )}
+</div>
               {isSelected && (
                 <Check className="w-4 h-4" style={{ color: theme.color.text }} />
               )}
