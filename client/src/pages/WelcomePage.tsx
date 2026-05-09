@@ -16,26 +16,67 @@ import { trpc } from "@/lib/trpc";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const AGE_GROUPS = [
-  { value: "Hatchlings",  range: "0–2 YEARS",  label: "Hatchlings",  desc: "Board books, picture books, simple rhymes",       emoji: "🐣" },
-  { value: "Fledglings",  range: "3–5 YEARS",  label: "Fledglings",  desc: "Early readers, picture books, beginning stories", emoji: "🐦" },
-  { value: "Soarers",     range: "6–8 YEARS",  label: "Soarers",     desc: "Chapter books, illustrated stories",               emoji: "🦅" },
-  { value: "Sky Readers", range: "9–12 YEARS", label: "Sky Readers", desc: "Middle grade novels, longer chapter books",        emoji: "🌟" },
+  { value: "Hatchlings",  range: "0–2 YEARS",  label: "Hatchlings",  desc: "Board books, first words, simple rhymes", emoji: "🐣" },
+  { value: "Fledglings",  range: "3–5 YEARS",  label: "Fledglings",  desc: "Picture books, preschool stories, read-alouds", emoji: "🐦" },
+  { value: "Soarers",     range: "6–8 YEARS",  label: "Soarers",     desc: "Early readers and beginner chapter books", emoji: "🦅" },
+  { value: "Sky Readers", range: "9–12 YEARS", label: "Sky Readers", desc: "Middle grade and longer chapter books", emoji: "🌟" },
 ];
 
-const INTEREST_CATEGORIES = TAG_TAXONOMY.map(cat => ({
+const THEME_OPTIONS = TAG_TAXONOMY.map(cat => ({
   id: cat.id,
   label: cat.label,
   emoji: cat.emoji,
   color: cat.color,
-  popularTags: cat.tags.slice(0, 8),
-  allTags: cat.tags,
 }));
 
+const INTEREST_OPTIONS = [
+  "Animals",
+  "Dinosaurs",
+  "Dogs",
+  "Cats",
+  "Ocean",
+  "Bugs",
+  "Farm",
+  "Nature",
+  "Space",
+  "Science",
+  "Trucks",
+  "Vehicles",
+  "Construction",
+  "Sports",
+  "Art",
+  "Music",
+  "Magic",
+  "Dragons",
+  "Unicorns",
+  "Princesses",
+  "Superheroes",
+  "Funny Stories",
+  "Silly Stories",
+  "Adventure",
+  "Mystery",
+  "School Stories",
+  "Friendship",
+  "Family",
+  "Bedtime Stories",
+  "Holidays",
+  "Fairy Tales",
+  "Classics",
+  "Learning Books",
+  "Chapter Books",
+];
+
 const AVOID_SUGGESTIONS = [
-  "Scary / Horror", "Violence", "Death & Grief", "Divorce", "Bathroom Humor",
-  "War", "Bullying", "Religious Content", "LGBTQ+ themes", "Romance",
-  "Scary Animals", "Clowns", "Spiders / Bugs", "Ghosts / Supernatural",
-  "Peer Pressure", "Illness", "Political Topics",
+  "Scary Stories",
+  "Violence",
+  "Death & Grief",
+  "Divorce",
+  "Bullying",
+  "Bathroom Humor",
+  "Religious Content",
+  "Romance",
+  "War",
+  "Spiders / Bugs",
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,6 +86,7 @@ interface ChildFormData {
   child_name: string;
   birthday: string;
   age_group: string;
+  favorite_themes: string[];
   interests: string[];
   topics_to_avoid: string[];
   notes: string;
@@ -100,71 +142,125 @@ const inputClass =
 
 // ─── Interest Picker ──────────────────────────────────────────────────────────
 
-function InterestPicker({ selected, onChange }: {
+function ThemePickerPublic({
+  selected,
+  onChange,
+}: {
   selected: string[];
-  onChange: (tags: string[]) => void;
+  onChange: (themes: string[]) => void;
 }) {
-  const [openCat, setOpenCat] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
-
-  const toggle = (tag: string) => {
-    onChange(selected.includes(tag) ? selected.filter(t => t !== tag) : [...selected, tag]);
+  const toggle = (theme: string) => {
+    onChange(
+      selected.includes(theme)
+        ? selected.filter(t => t !== theme)
+        : [...selected, theme]
+    );
   };
 
   return (
-    <div className="space-y-2">
-      {INTEREST_CATEGORIES.map(cat => {
-        const selectedInCat = cat.allTags.filter(t => selected.includes(t));
-        const isOpen = openCat === cat.id;
-        const tagsToShow = showAll[cat.id] ? cat.allTags : cat.popularTags;
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {THEME_OPTIONS.map(theme => {
+        const isSelected = selected.includes(theme.label);
+
         return (
-          <div key={cat.id} className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button"
-              onClick={() => setOpenCat(isOpen ? null : cat.id)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors">
-              <div className="flex items-center gap-2.5">
-                <span className="text-lg">{cat.emoji}</span>
-                <span className="font-semibold text-sm text-gray-800">{cat.label}</span>
-                {selectedInCat.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold text-white"
-                    style={{ backgroundColor: "oklch(0.35 0.12 155)" }}>
-                    {selectedInCat.length} selected
-                  </span>
-                )}
-              </div>
-              {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            </button>
-            {isOpen && (
-              <div className="px-4 pb-4 pt-2 space-y-3" style={{ backgroundColor: cat.color.bg }}>
-                <div className="flex flex-wrap gap-2">
-                  {tagsToShow.map(tag => {
-                    const isSel = selected.includes(tag);
-                    return (
-                      <button key={tag} type="button" onClick={() => toggle(tag)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
-                          isSel ? "text-white border-transparent" : "bg-white/80 border-gray-200 hover:border-emerald-400"
-                        )}
-                        style={isSel ? { backgroundColor: "oklch(0.35 0.12 155)" } : { color: cat.color.text }}>
-                        {isSel && <Check className="w-3 h-3 inline mr-1" />}
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-                {cat.allTags.length > 8 && (
-                  <button type="button"
-                    onClick={() => setShowAll(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}
-                    className="text-xs font-medium underline underline-offset-2"
-                    style={{ color: cat.color.text }}>
-                    {showAll[cat.id] ? "Show fewer" : `Show all ${cat.allTags.length} ${cat.label} tags`}
-                  </button>
-                )}
-              </div>
+          <button
+            key={theme.id}
+            type="button"
+            onClick={() => toggle(theme.label)}
+            className={cn(
+              "rounded-xl border-2 p-4 text-left transition-all",
+              isSelected
+                ? "border-transparent shadow-md"
+                : "border-gray-200 bg-white hover:border-emerald-300 hover:shadow-sm"
             )}
-          </div>
+            style={
+              isSelected
+                ? {
+                    backgroundColor: theme.color.bg,
+                    borderColor: theme.color.text,
+                  }
+                : {}
+            }
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-xl">{theme.emoji}</span>
+              <div className="flex-1">
+                <p
+                  className="font-bold text-sm"
+                  style={isSelected ? { color: theme.color.text } : {}}
+                >
+                  {theme.label}
+                </p>
+                {isSelected && (
+                  <p className="text-xs mt-1" style={{ color: theme.color.text }}>
+                    Selected
+                  </p>
+                )}
+              </div>
+              {isSelected && (
+                <Check className="w-4 h-4" style={{ color: theme.color.text }} />
+              )}
+            </div>
+          </button>
         );
       })}
+    </div>
+  );
+}
+
+function InterestPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (interests: string[]) => void;
+}) {
+  const toggle = (interest: string) => {
+    onChange(
+      selected.includes(interest)
+        ? selected.filter(i => i !== interest)
+        : [...selected, interest]
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-gray-400">
+  Pick as many as you'd like.
+</p>
+      <div className="flex flex-wrap gap-2">
+        {INTEREST_OPTIONS.map(interest => {
+          const isSelected = selected.includes(interest);
+
+          return (
+            <button
+              key={interest}
+              type="button"
+              onClick={() => toggle(interest)}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
+                isSelected
+                  ? "text-white border-transparent shadow-sm"
+                  : "bg-white border-gray-200 hover:border-emerald-400 text-gray-700"
+              )}
+              style={
+                isSelected
+                  ? { backgroundColor: "oklch(0.35 0.12 155)" }
+                  : {}
+              }
+            >
+              {isSelected && <Check className="w-3 h-3 inline mr-1" />}
+              {interest}
+            </button>
+          );
+        })}
+      </div>
+
+      {selected.length > 0 && (
+        <p className="text-xs text-emerald-700 font-medium">
+          ✓ {selected.length} interest{selected.length !== 1 ? "s" : ""} selected
+        </p>
+      )}
     </div>
   );
 }
@@ -204,7 +300,7 @@ function AvoidPicker({ selected, onChange }: {
       <div className="flex gap-2">
         <textarea value={custom} onChange={e => setCustom(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCustom(); } }}
-          placeholder="E.g. No scary monsters, no sounds..."
+          placeholder="Anything else to avoid? E.g. no scary monsters, no potty humor..."
           rows={2} className={cn(inputClass, "flex-1 resize-none")} />
         <button type="button" onClick={addCustom} disabled={!custom.trim()}
           className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-colors self-start mt-0.5">
@@ -244,6 +340,9 @@ function ChildForm({ data, onChange, errors, siblingOrder, booksPerBox }: {
 
   return (
     <div className="space-y-5">
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400 px-1">
+  1. About the Reader
+</p>
       {/* Books per box badge */}
       <div className="flex items-center gap-2 px-4 py-2 rounded-xl w-fit"
         style={{ backgroundColor: "oklch(0.92 0.06 155)" }}>
@@ -301,33 +400,57 @@ function ChildForm({ data, onChange, errors, siblingOrder, booksPerBox }: {
                 <p className={cn("font-bold text-sm", isSelected ? "text-white" : "text-gray-800")}>
                   {ag.label}
                 </p>
+                <p className={cn("text-[10px] mt-1 leading-snug", isSelected ? "text-white/75" : "text-gray-400")}>
+  {ag.desc}
+</p>
               </button>
             );
           })}
         </div>
       </SectionCard>
 
-      {/* Interests */}
-      <SectionCard
-        icon={<Sparkles className="w-5 h-5" style={{ color: "oklch(0.55 0.14 75)" }} />}
-        iconBg="oklch(0.96 0.05 80)"
-        title="Story Interests"
-        subtitle="Select the themes and topics this child loves. Pick as many as you like!">
-        {errors.interests && <p className="text-xs text-red-500 font-medium -mt-2">{errors.interests}</p>}
-        <InterestPicker selected={data.interests} onChange={v => set("interests", v)} />
-        {data.interests.length > 0 && (
-          <p className="text-xs text-emerald-700 font-medium mt-1">
-            ✓ {data.interests.length} interest{data.interests.length !== 1 ? "s" : ""} selected
-          </p>
-        )}
-      </SectionCard>
+<p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400 px-1 pt-2">
+  2. What They Enjoy
+</p>
+      {/* Favorite Themes */}
+<SectionCard
+  icon={<Sparkles className="w-5 h-5" style={{ color: "oklch(0.55 0.14 75)" }} />}
+  iconBg="oklch(0.96 0.05 80)"
+  title="Favorite Story Themes"
+  subtitle="Pick 2–4 broad story types this child usually enjoys.">
+  <ThemePickerPublic
+    selected={data.favorite_themes}
+    onChange={v => set("favorite_themes", v)}
+  />
+</SectionCard>
 
+{/* Interests */}
+<SectionCard
+  icon={<Heart className="w-5 h-5" style={{ color: "oklch(0.35 0.12 155)" }} />}
+  iconBg="oklch(0.92 0.06 155)"
+  title="Specific Interests"
+  subtitle="Choose favorite topics, characters, settings, or story styles.">
+  {errors.interests && (
+    <p className="text-xs text-red-500 font-medium -mt-2">
+      {errors.interests}
+    </p>
+  )}
+
+  <InterestPicker
+    selected={data.interests}
+    onChange={v => set("interests", v)}
+  />
+</SectionCard>
+
+<p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400 px-1 pt-2">
+  3. What to Avoid
+</p>
       {/* Exclusions */}
       <SectionCard
         icon={<ShieldX className="w-5 h-5 text-red-500" />}
         iconBg="oklch(0.96 0.03 25)"
         title="Exclusions"
-        subtitle="Anything you'd prefer we avoid? We take these seriously.">
+        subtitle="Optional — tell us anything you'd rather not receive.">
         <AvoidPicker selected={data.topics_to_avoid} onChange={v => set("topics_to_avoid", v)} />
       </SectionCard>
 
@@ -335,7 +458,7 @@ function ChildForm({ data, onChange, errors, siblingOrder, booksPerBox }: {
       <SectionCard
         icon={<MessageSquare className="w-5 h-5" style={{ color: "oklch(0.42 0.11 155)" }} />}
         title="Anything Else?"
-        subtitle="Special requests or anything we should know about this child.">
+        subtitle="Optional notes, favorite details, or anything else you'd like us to know.">
         <textarea value={data.notes} onChange={e => set("notes", e.target.value)}
           placeholder="E.g. Loves anything with dogs, currently obsessed with space..."
           rows={3} className={cn(inputClass, "resize-none")} />
@@ -433,6 +556,7 @@ useEffect(() => {
     child_name: c.child_name ?? "",
     birthday: c.birthday ?? "",
     age_group: c.age_group ?? "",
+    favorite_themes: c.favorite_themes ?? [],
     interests: c.interests ?? [],
     topics_to_avoid: c.topics_to_avoid ?? [],
     notes: c.notes ?? "",
@@ -475,7 +599,10 @@ useEffect(() => {
       const e: Partial<Record<keyof ChildFormData, string>> = {};
       if (!child.child_name.trim()) { e.child_name = "Child's name is required"; valid = false; }
       if (!child.age_group) { e.age_group = "Please select an age group"; valid = false; }
-      if (child.interests.length === 0) { e.interests = "Please select at least one interest"; valid = false; }
+      if (child.favorite_themes.length === 0 && child.interests.length === 0) {
+  e.interests = "Please select at least one theme or interest";
+  valid = false;
+}
       return e;
     });
     setChildErrors(cErrors);
@@ -507,6 +634,7 @@ useEffect(() => {
         child_name: c.child_name,
         birthday: c.birthday || undefined,
         age_group: c.age_group,
+        favorite_themes: c.favorite_themes,
         interests: c.interests,
         topics_to_avoid: c.topics_to_avoid,
         notes: c.notes || undefined,
@@ -518,9 +646,13 @@ useEffect(() => {
     setChildren(prev => prev.map((c, i) => i === index ? updated : c));
   };
 
-  const childLabels = (data as any).children.map((_: any, i: number) =>
-    i === 0 ? "Child 1" : `Sibling ${i}`
-  );
+  const childLabels = children.map((child, i) => {
+  if (child.child_name?.trim()) {
+    return child.child_name;
+  }
+
+  return `Reader ${i + 1} of ${children.length}`;
+});
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "oklch(0.975 0.008 80)" }}>
@@ -553,11 +685,11 @@ useEffect(() => {
         <div className="rounded-2xl p-8 text-center mb-8"
           style={{ backgroundColor: "oklch(0.35 0.12 155)" }}>
           <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>
-            Profile &amp; Interests
+            Let’s Build Their Perfect Book Box
           </h1>
           <p className="text-white/80 text-sm leading-relaxed max-w-md mx-auto">
-            Tell us what your little {children.length > 1 ? "ones love" : "one loves"} so we can find the perfect stories.
-            This takes about 2 minutes and helps us curate every box just for them.
+            Tell us what your little {children.length > 1 ? "ones love" : "one loves"} so we can choose stories that actually fit.
+            Pick favorite themes, interests, and anything you'd like us to avoid.
           </p>
         </div>
       </div>
