@@ -1,17 +1,23 @@
 /**
  * BookDetailDrawer
- * Slide-over panel that opens when a row is clicked in the Inventory Snapshot.
- * - Editable title metadata: title, author, age group, ISBN, bin, cover URL, publisher, published date
- * - Lists every physical copy with its SKU, bin, status, and condition
- * - Per-copy actions: change status (any value), edit bin/SKU inline
+ * Slide-over panel for viewing/editing title metadata and physical copies.
  */
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { X, BookOpen, Save, Loader2, ChevronDown, ExternalLink, FlaskConical } from "lucide-react";
+import {
+  X,
+  BookOpen,
+  Save,
+  Loader2,
+  ChevronDown,
+  ExternalLink,
+  FlaskConical,
+  Tags,
+  MapPin,
+  Sparkles,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type BookCopy = {
   id: string;
@@ -28,21 +34,33 @@ type BookCopy = {
   updated_at: string | null;
 };
 
+type BookTag = {
+  id: string;
+  bin_theme: string;
+  tag: string;
+};
+
 type BookDetail = {
   id: string;
   title: string;
   author: string;
   isbn: string | null;
   age_group: string | null;
+  suggested_age_tier: string | null;
+  bin_theme: string | null;
+  tag_ids: string[] | null;
+  tags: BookTag[];
   bin_id: string | null;
   cover_url: string | null;
   publisher: string | null;
   published_date: string | null;
   page_count: number | null;
+  description: string | null;
+  subjects: string[] | null;
+  metadata_source: string | null;
+  classification_version: string | null;
   copies: BookCopy[];
 };
-
-// ─── Status helpers ───────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: "in_house", label: "In House" },
@@ -67,15 +85,120 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const AGE_GROUP_OPTIONS = [
-  { value: "hatchlings", label: "Hatchlings" },
-  { value: "fledglings", label: "Fledglings" },
-  { value: "sky_readers", label: "Sky Readers" },
-  { value: "soarers", label: "Soarers" },
+  { value: "Hatchlings", label: "Hatchlings (0-2)" },
+  { value: "Fledglings", label: "Fledglings (3-5)" },
+  { value: "Soarers", label: "Soarers (6-8)" },
+  { value: "Sky Readers", label: "Sky Readers (9-12)" },
+  { value: "13+", label: "13+" },
 ];
 
-// ─── CopyRow ─────────────────────────────────────────────────────────────────
+function formatAgeTier(age: string | null | undefined) {
+  if (!age) return "—";
 
-function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; onSaved: () => void }) {
+  const normalized = age.toLowerCase().replace(/_/g, " ");
+
+  if (normalized.includes("hatchlings")) return "Hatchlings (0-2)";
+  if (normalized.includes("fledglings")) return "Fledglings (3-5)";
+  if (normalized.includes("soarers")) return "Soarers (6-8)";
+  if (normalized.includes("sky readers")) return "Sky Readers (9-12)";
+  if (normalized.includes("13")) return "13+";
+
+  return age;
+}
+
+function FieldInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground block mb-1">
+        {label}
+      </label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          "w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+          mono && "font-mono"
+        )}
+      />
+    </div>
+  );
+}
+
+function FieldSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground block mb-1">
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none pr-8"
+        >
+          <option value="">— select —</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function InfoPill({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "text-xs px-2 py-0.5 rounded-full border font-medium",
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+function CopyRow({
+  copy,
+  titleId,
+  onSaved,
+}: {
+  copy: BookCopy;
+  titleId: string;
+  onSaved: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [sku, setSku] = useState(copy.sku);
   const [bin, setBin] = useState(copy.bin_id);
@@ -120,50 +243,73 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
     setEditing(false);
   };
 
-  const statusColor = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
+  const statusColor =
+    STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
 
   return (
-    <div className={cn("rounded-lg border p-3 transition-colors", editing ? "border-primary/40 bg-primary/5" : "border-border bg-card")}>
+    <div
+      className={cn(
+        "rounded-lg border p-3 transition-colors",
+        editing ? "border-primary/40 bg-primary/5" : "border-border bg-card"
+      )}
+    >
       {!editing ? (
         <div className="flex items-center gap-3">
-          {/* SKU */}
-          <span className="font-mono text-xs font-semibold text-foreground w-28 shrink-0">{copy.sku}</span>
-          {/* Status badge */}
-          <span className={cn("text-xs px-2 py-0.5 rounded-full border font-medium shrink-0", statusColor)}>
+          <span className="font-mono text-xs font-semibold text-foreground w-28 shrink-0">
+            {copy.sku}
+          </span>
+
+          <span
+            className={cn(
+              "text-xs px-2 py-0.5 rounded-full border font-medium shrink-0",
+              statusColor
+            )}
+          >
             {STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}
           </span>
-          {/* Bin */}
-          <span className="text-xs font-mono text-muted-foreground shrink-0">{copy.bin_id}</span>
-          {/* Condition */}
+
+          <span className="text-xs font-mono text-foreground bg-muted border border-border rounded-md px-2 py-0.5 shrink-0">
+            {copy.bin_id || "No bin"}
+          </span>
+
           {copy.condition && (
-            <span className="text-xs text-muted-foreground capitalize shrink-0">{copy.condition}</span>
+            <span className="text-xs text-muted-foreground capitalize shrink-0">
+              {copy.condition}
+            </span>
           )}
-          {/* QC notes */}
+
           {copy.notes && (
-            <span className="text-xs text-muted-foreground truncate flex-1 italic">"{copy.notes}"</span>
+            <span className="text-xs text-muted-foreground truncate flex-1 italic">
+              "{copy.notes}"
+            </span>
           )}
+
           <div className="flex-1" />
-          {/* Received date */}
+
           {copy.received_at && (
             <span className="text-xs text-muted-foreground/60 shrink-0">
               {new Date(copy.received_at).toLocaleDateString()}
             </span>
           )}
-          {/* Send to QC button — only shown when not already pending_qc */}
+
           {copy.status !== "pending_qc" && (
             <button
-              onClick={() => sendToQC.mutate({ id: copy.id, status: "pending_qc" })}
+              onClick={() =>
+                sendToQC.mutate({ id: copy.id, status: "pending_qc" })
+              }
               disabled={sendToQC.isPending}
               title="Send to QC queue"
               className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 shrink-0"
             >
-              {sendToQC.isPending
-                ? <Loader2 className="w-3 h-3 animate-spin" />
-                : <FlaskConical className="w-3 h-3" />}
+              {sendToQC.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FlaskConical className="w-3 h-3" />
+              )}
               QC
             </button>
           )}
-          {/* Edit button */}
+
           <button
             onClick={() => setEditing(true)}
             className="text-xs text-primary hover:underline shrink-0"
@@ -174,70 +320,37 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
       ) : (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            {/* SKU */}
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">SKU</label>
-              <input
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                className="w-full text-sm font-mono px-2 py-1.5 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              />
-            </div>
-            {/* Bin */}
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Bin</label>
-              <input
-                value={bin}
-                onChange={(e) => setBin(e.target.value)}
-                className="w-full text-sm font-mono px-2 py-1.5 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              />
-            </div>
-            {/* Status */}
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Status</label>
-              <div className="relative">
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none pr-7"
-                >
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-            {/* Condition */}
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Condition</label>
-              <div className="relative">
-                <select
-                  value={condition}
-                  onChange={(e) => setCondition(e.target.value)}
-                  className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none pr-7"
-                >
-                  <option value="">—</option>
-                  <option value="new">New</option>
-                  <option value="good">Good</option>
-                  <option value="fair">Fair</option>
-                  <option value="poor">Poor</option>
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-          </div>
-          {/* Notes */}
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Notes</label>
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="QC notes, damage description…"
-              className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            <FieldInput label="SKU" value={sku} onChange={setSku} mono />
+
+            <FieldInput label="Bin" value={bin} onChange={setBin} mono />
+
+            <FieldSelect
+              label="Status"
+              value={status}
+              options={STATUS_OPTIONS}
+              onChange={setStatus}
+            />
+
+            <FieldSelect
+              label="Condition"
+              value={condition}
+              options={[
+                { value: "new", label: "New" },
+                { value: "good", label: "Good" },
+                { value: "fair", label: "Fair" },
+                { value: "poor", label: "Poor" },
+              ]}
+              onChange={setCondition}
             />
           </div>
-          {/* Actions */}
+
+          <FieldInput
+            label="Notes"
+            value={notes}
+            onChange={setNotes}
+            placeholder="QC notes, damage description…"
+          />
+
           <div className="flex gap-2 justify-end">
             <button
               onClick={cancel}
@@ -245,13 +358,18 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
             >
               Cancel
             </button>
+
             <button
               onClick={save}
               disabled={updateCopy.isPending}
               className="text-xs px-3 py-1.5 rounded-md text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
-              {updateCopy.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              {updateCopy.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Save className="w-3 h-3" />
+              )}
               Save
             </button>
           </div>
@@ -260,9 +378,6 @@ function CopyRow({ copy, titleId, onSaved }: { copy: BookCopy; titleId: string; 
     </div>
   );
 }
-
-// ─── Main Drawer ──────────────────────────────────────────────────────────────
-
 interface BookDetailDrawerProps {
   bookId: string | null;
   onClose: () => void;
@@ -271,16 +386,15 @@ interface BookDetailDrawerProps {
 export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
   const utils = trpc.useUtils();
 
-  const { data: book, isLoading, refetch } = trpc.inventory.getBookDetail.useQuery(
-    { id: bookId! },
-    { enabled: !!bookId }
-  );
+  const { data: book, isLoading, refetch } =
+    trpc.inventory.getBookDetail.useQuery(
+      { id: bookId! },
+      { enabled: !!bookId }
+    );
 
-  // Title edit state
   const [titleEdit, setTitleEdit] = useState<Partial<BookDetail>>({});
   const [titleDirty, setTitleDirty] = useState(false);
 
-  // Reset edit state when a different book opens
   useEffect(() => {
     setTitleEdit({});
     setTitleDirty(false);
@@ -307,32 +421,37 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
     updateTitle.mutate({ id: book.id, ...titleEdit } as any);
   };
 
-  // Merged display values (live edits override fetched data)
-  const display = book ? { ...book, ...titleEdit } : null;
-
+  const display = book ? ({ ...book, ...titleEdit } as BookDetail) : null;
   const open = !!bookId;
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className={cn(
           "fixed inset-0 bg-black/30 z-40 transition-opacity duration-200",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          open
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
       />
 
-      {/* Drawer panel */}
       <div
         className={cn(
-          "fixed top-0 right-0 h-full w-full max-w-xl bg-background border-l border-border shadow-2xl z-50 flex flex-col transition-transform duration-200 ease-in-out",
+          "fixed top-0 right-0 h-full w-full max-w-2xl bg-background border-l border-border shadow-2xl z-50 flex flex-col transition-transform duration-200 ease-in-out",
           open ? "translate-x-0" : "translate-x-full"
         )}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-base font-bold text-foreground">Book Details</h2>
+          <div>
+            <h2 className="text-base font-bold text-foreground">
+              Book Details
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Metadata, classification, and physical copies
+            </p>
+          </div>
+
           <button
             onClick={onClose}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -341,7 +460,6 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
           {isLoading && (
             <div className="flex items-center justify-center py-20 text-muted-foreground gap-3">
@@ -359,126 +477,169 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
 
           {display && (
             <>
-              {/* Cover + title hero */}
-              <div className="flex gap-4 items-start">
-                <div className="w-16 h-22 rounded-md overflow-hidden bg-muted border border-border shrink-0 flex items-center justify-center">
-                  {display.cover_url ? (
-                    <img src={display.cover_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <BookOpen className="w-7 h-7 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-lg font-bold text-foreground leading-tight">{display.title}</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">{display.author}</p>
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    {display.age_group && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 capitalize">
-                        {display.age_group.replace("_", " ")}
-                      </span>
+              <section className="rounded-xl border border-border bg-card p-4">
+                <div className="flex gap-4 items-start">
+                  <div className="w-20 h-28 rounded-lg overflow-hidden bg-muted border border-border shrink-0 flex items-center justify-center">
+                    {display.cover_url ? (
+                      <img
+                        src={display.cover_url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <BookOpen className="w-8 h-8 text-muted-foreground" />
                     )}
-                    {display.bin_id && (
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
-                        {display.bin_id}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xl font-bold text-foreground leading-tight">
+                      {display.title}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {display.author || "Unknown author"}
+                    </p>
+
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                      <InfoPill className="bg-primary/10 text-primary border-primary/20">
+                        {formatAgeTier(
+                          display.suggested_age_tier || display.age_group
+                        )}
+                      </InfoPill>
+
+                      {display.bin_theme && (
+                        <InfoPill className="bg-emerald-50 text-emerald-800 border-emerald-200">
+                          <Sparkles className="inline w-3 h-3 mr-1" />
+                          {display.bin_theme}
+                        </InfoPill>
+                      )}
+
+                      {display.bin_id && (
+                        <InfoPill className="bg-muted text-foreground border-border font-mono">
+                          <MapPin className="inline w-3 h-3 mr-1" />
+                          {display.bin_id}
+                        </InfoPill>
+                      )}
+
+                      <span className="text-xs text-muted-foreground">
+                        {book.copies.length}{" "}
+                        {book.copies.length === 1 ? "copy" : "copies"}
                       </span>
+                    </div>
+
+                    {display.tags?.length > 0 && (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                          <Tags className="w-3.5 h-3.5" />
+                          Tags
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {display.tags.map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground border border-border"
+                            >
+                              {tag.tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    <span className="text-xs text-muted-foreground">
-                      {book.copies.length} {book.copies.length === 1 ? "copy" : "copies"}
-                    </span>
                   </div>
                 </div>
-              </div>
 
-              {/* ── Title metadata editor ── */}
-              <section>
+                {display.description && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Description
+                    </p>
+                    <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4">
+                      {display.description}
+                    </p>
+                  </div>
+                )}
+              </section>
+                            <section>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                   Title Information
                 </h3>
+
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Title */}
                   <div className="col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Title</label>
-                    <input
+                    <FieldInput
+                      label="Title"
                       value={display.title ?? ""}
-                      onChange={(e) => handleTitleChange("title", e.target.value)}
-                      className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      onChange={(value) => handleTitleChange("title", value)}
                     />
                   </div>
-                  {/* Author */}
+
                   <div className="col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Author</label>
-                    <input
+                    <FieldInput
+                      label="Author"
                       value={display.author ?? ""}
-                      onChange={(e) => handleTitleChange("author", e.target.value)}
-                      className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      onChange={(value) => handleTitleChange("author", value)}
                     />
                   </div>
-                  {/* ISBN */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">ISBN</label>
-                    <input
-                      value={display.isbn ?? ""}
-                      onChange={(e) => handleTitleChange("isbn", e.target.value)}
-                      className="w-full text-sm font-mono px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="978-…"
-                    />
-                  </div>
-                  {/* Age Group */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Age Group</label>
-                    <div className="relative">
-                      <select
-                        value={display.age_group ?? ""}
-                        onChange={(e) => handleTitleChange("age_group", e.target.value)}
-                        className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none pr-7"
-                      >
-                        <option value="">— select —</option>
-                        {AGE_GROUP_OPTIONS.map((ag) => (
-                          <option key={ag.value} value={ag.value}>{ag.label}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                    </div>
-                  </div>
-                  {/* Default Bin */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Default Bin</label>
-                    <input
-                      value={display.bin_id ?? ""}
-                      onChange={(e) => handleTitleChange("bin_id", e.target.value)}
-                      className="w-full text-sm font-mono px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="BIN-A1"
-                    />
-                  </div>
-                  {/* Publisher */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Publisher</label>
-                    <input
-                      value={display.publisher ?? ""}
-                      onChange={(e) => handleTitleChange("publisher", e.target.value)}
-                      className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
-                  </div>
-                  {/* Published Date */}
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Published Date</label>
-                    <input
-                      value={display.published_date ?? ""}
-                      onChange={(e) => handleTitleChange("published_date", e.target.value)}
-                      className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="2023-01-01"
-                    />
-                  </div>
-                  {/* Cover URL */}
+
+                  <FieldInput
+                    label="ISBN"
+                    value={display.isbn ?? ""}
+                    onChange={(value) => handleTitleChange("isbn", value)}
+                    placeholder="978-…"
+                    mono
+                  />
+
+                  <FieldSelect
+                    label="Age Tier"
+                    value={display.age_group ?? ""}
+                    options={AGE_GROUP_OPTIONS}
+                    onChange={(value) => handleTitleChange("age_group", value)}
+                  />
+
+                  <FieldInput
+                    label="Default Bin"
+                    value={display.bin_id ?? ""}
+                    onChange={(value) => handleTitleChange("bin_id", value)}
+                    placeholder="FLED-HRT-01"
+                    mono
+                  />
+
+                  <FieldInput
+                    label="Publisher"
+                    value={display.publisher ?? ""}
+                    onChange={(value) => handleTitleChange("publisher", value)}
+                  />
+
+                  <FieldInput
+                    label="Published Date"
+                    value={display.published_date ?? ""}
+                    onChange={(value) =>
+                      handleTitleChange("published_date", value)
+                    }
+                    placeholder="2023-01-01"
+                  />
+
+                  <FieldInput
+                    label="Page Count"
+                    value={display.page_count?.toString() ?? ""}
+                    onChange={(value) => handleTitleChange("page_count", value)}
+                  />
+
                   <div className="col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Cover Image URL</label>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">
+                      Cover Image URL
+                    </label>
+
                     <div className="flex gap-2">
                       <input
                         value={display.cover_url ?? ""}
-                        onChange={(e) => handleTitleChange("cover_url", e.target.value)}
+                        onChange={(e) =>
+                          handleTitleChange("cover_url", e.target.value)
+                        }
                         className="flex-1 text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                         placeholder="https://…"
                       />
+
                       {display.cover_url && (
                         <a
                           href={display.cover_url}
@@ -494,7 +655,61 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                   </div>
                 </div>
 
-                {/* Save title button */}
+                <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Classification Metadata
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">
+                        Theme:
+                      </span>{" "}
+                      {display.bin_theme ?? "—"}
+                    </div>
+
+                    <div>
+                      <span className="font-medium text-foreground">
+                        AI Age:
+                      </span>{" "}
+                      {formatAgeTier(display.suggested_age_tier)}
+                    </div>
+
+                    <div>
+                      <span className="font-medium text-foreground">
+                        Source:
+                      </span>{" "}
+                      {display.metadata_source ?? "—"}
+                    </div>
+
+                    <div>
+                      <span className="font-medium text-foreground">
+                        Version:
+                      </span>{" "}
+                      {display.classification_version ?? "—"}
+                    </div>
+                  </div>
+
+                  {Array.isArray(display.subjects) && display.subjects.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-foreground mb-1">
+                        Subjects
+                      </p>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {display.subjects.slice(0, 12).map((subject) => (
+                          <span
+                            key={subject}
+                            className="text-xs px-2 py-0.5 rounded-md bg-background border border-border text-muted-foreground"
+                          >
+                            {subject}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {titleDirty && (
                   <div className="mt-3 flex justify-end">
                     <button
@@ -513,32 +728,46 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                   </div>
                 )}
               </section>
-
-              {/* ── Copies ── */}
-              <section>
+                            <section>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Physical Copies ({book.copies.length})
                   </h3>
-                  {/* Status summary pills */}
+
                   <div className="flex gap-1.5 flex-wrap justify-end">
                     {(() => {
-                        const counts: Record<string, number> = {};
-                        book.copies.forEach((c: BookCopy) => { counts[c.status] = (counts[c.status] ?? 0) + 1; });
-                        return Object.entries(counts).map(([st, count]) => (
-                      <span
-                        key={st}
-                        className={cn("text-xs px-2 py-0.5 rounded-full border", STATUS_COLORS[st] ?? "bg-gray-100 text-gray-600 border-gray-200")}
-                      >
-                        {count as number} {STATUS_OPTIONS.find((s) => s.value === st)?.label ?? st}
-                      </span>
-                    ));
+                      const counts: Record<string, number> = {};
+
+                      book.copies.forEach((copy: BookCopy) => {
+                        counts[copy.status] =
+                          (counts[copy.status] ?? 0) + 1;
+                      });
+
+                      return Object.entries(counts).map(
+                        ([statusKey, count]) => (
+                          <span
+                            key={statusKey}
+                            className={cn(
+                              "text-xs px-2 py-0.5 rounded-full border",
+                              STATUS_COLORS[statusKey] ??
+                                "bg-gray-100 text-gray-600 border-gray-200"
+                            )}
+                          >
+                            {count}{" "}
+                            {STATUS_OPTIONS.find(
+                              (s) => s.value === statusKey
+                            )?.label ?? statusKey}
+                          </span>
+                        )
+                      );
                     })()}
                   </div>
                 </div>
 
                 {book.copies.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No copies on record.</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No copies on record.
+                  </p>
                 ) : (
                   <div className="space-y-2">
                     {book.copies.map((copy: BookCopy) => (

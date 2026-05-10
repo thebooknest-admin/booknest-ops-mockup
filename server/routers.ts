@@ -203,7 +203,7 @@ export const appRouter = router({
       .input(z.object({ id: z.string() }))
       .query(async ({ input }) => {
         const titleRes = await sbFetch(
-          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,cover_url,publisher,published_date,page_count,created_at,updated_at`
+          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,suggested_age_tier,bin_theme,tag_ids,cover_url,publisher,published_date,page_count,description,subjects,metadata_source,classification_version,created_at,updated_at`
         );
         if (!titleRes.ok) {
           throw new Error("Failed to fetch book title: " + await titleRes.text());
@@ -217,7 +217,17 @@ export const appRouter = router({
         );
         const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
 
-        return { ...title, copies };
+let tags: any[] = [];
+
+if (Array.isArray(title.tag_ids) && title.tag_ids.length > 0) {
+  const tagRes = await sbFetch(
+    `/book_sorting_tags?id=in.(${title.tag_ids.join(",")})&select=id,bin_theme,tag`
+  );
+
+  tags = tagRes.ok ? await tagRes.json() : [];
+}
+
+return { ...title, tags, copies };
       }),
 
     updateCopy: publicProcedure
