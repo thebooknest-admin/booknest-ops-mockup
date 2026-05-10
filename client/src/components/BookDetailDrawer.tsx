@@ -92,6 +92,17 @@ const AGE_GROUP_OPTIONS = [
   { value: "13+", label: "13+" },
 ];
 
+const THEME_OPTIONS = [
+  "Adventure",
+  "Laughs & Chaos",
+  "Heart & Home",
+  "Discovery Den",
+  "Wild & Wonderful",
+  "Wonder & Imagination",
+  "Legends & Long Ago",
+  "Seasons & Celebrations",
+].map((theme) => ({ value: theme, label: theme }));
+
 function formatAgeTier(age: string | null | undefined) {
   if (!age) return "—";
 
@@ -595,6 +606,13 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                     options={AGE_GROUP_OPTIONS}
                     onChange={(value) => handleTitleChange("age_group", value)}
                   />
+
+                  <FieldSelect
+  label="Theme"
+  value={display.bin_theme ?? ""}
+  options={THEME_OPTIONS}
+  onChange={(value) => handleTitleChange("bin_theme", value)}
+/>
 
                   <FieldInput
                     label="Default Bin"

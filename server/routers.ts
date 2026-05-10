@@ -265,18 +265,19 @@ return { ...title, tags, copies };
 
     updateBookTitle: publicProcedure
       .input(
-        z.object({
-          id: z.string(),
-          title: z.string().optional(),
-          author: z.string().optional(),
-          age_group: z.string().optional(),
-          bin_id: z.string().optional(),
-          isbn: z.string().optional(),
-          cover_url: z.string().optional(),
-          publisher: z.string().optional(),
-          published_date: z.string().optional(),
-        })
-      )
+  z.object({
+    id: z.string(),
+    title: z.string().optional(),
+    author: z.string().optional(),
+    age_group: z.string().optional(),
+    bin_theme: z.string().optional(),
+    bin_id: z.string().optional(),
+    isbn: z.string().optional(),
+    cover_url: z.string().optional(),
+    publisher: z.string().optional(),
+    published_date: z.string().optional(),
+  })
+)
       .mutation(async ({ input }) => {
         const { id, ...fields } = input;
         const updateFields: Record<string, any> = {};
@@ -284,6 +285,8 @@ return { ...title, tags, copies };
         if (fields.author !== undefined) updateFields.author = fields.author;
         if (fields.age_group !== undefined)
           updateFields.age_group = fields.age_group;
+        if (fields.bin_theme !== undefined)
+  updateFields.bin_theme = fields.bin_theme;
         if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
         if (fields.cover_url !== undefined)
           updateFields.cover_url = fields.cover_url;
