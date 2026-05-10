@@ -14,8 +14,12 @@ const BASE_HEADERS = {
   Prefer: "return=representation",
 };
 
-export async function sbFetch(path: string, options: RequestInit = {}): Promise<Response> {
+export async function sbFetch(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
   const url = `${SUPABASE_URL}/rest/v1${path}`;
+
   return fetch(url, {
     ...options,
     headers: {
@@ -49,14 +53,21 @@ export async function getMembers(): Promise<{ data: Member[]; total: number }> {
   const res = await sbFetch("/members?order=name.asc&limit=200", {
     headers: { Prefer: "count=exact" },
   });
-  const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+
+  const total = parseInt(
+    res.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+
   const data: Member[] = await res.json();
+
   return { data, total };
 }
 
 export async function getMemberById(id: string): Promise<Member | null> {
   const res = await sbFetch(`/members?id=eq.${id}&limit=1`);
   const data: Member[] = await res.json();
+
   return data[0] ?? null;
 }
 
@@ -69,15 +80,24 @@ export interface BookTitle {
   author: string;
   cover_url: string | null;
   age_group: string | null;
+  suggested_age_tier: string | null;
   primary_topic: string | null;
   bin_theme: string | null;
+  tag_ids: string[] | null;
   description: string | null;
   subjects: string[] | null;
   publisher: string | null;
   published_date: string | null;
   page_count: number | null;
+  classification_version: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface BookTag {
+  id: string;
+  bin_theme: string;
+  tag: string;
 }
 
 export async function getBookTitles(params?: {
@@ -88,18 +108,34 @@ export async function getBookTitles(params?: {
 }): Promise<{ data: BookTitle[]; total: number }> {
   const limit = params?.limit ?? 50;
   const offset = params?.offset ?? 0;
-  let qs = `?limit=${limit}&offset=${offset}&order=title.asc`;
+
+  let qs =
+    `?limit=${limit}` +
+    `&offset=${offset}` +
+    `&order=title.asc` +
+    `&select=id,isbn,title,author,cover_url,age_group,suggested_age_tier,primary_topic,bin_theme,tag_ids,description,subjects,publisher,published_date,page_count,classification_version,created_at,updated_at`;
+
   if (params?.search) {
-    qs += `&or=(title.ilike.*${encodeURIComponent(params.search)}*,author.ilike.*${encodeURIComponent(params.search)}*)`;
+    qs += `&or=(title.ilike.*${encodeURIComponent(
+      params.search
+    )}*,author.ilike.*${encodeURIComponent(params.search)}*)`;
   }
+
   if (params?.age_group) {
     qs += `&age_group=ilike.${encodeURIComponent(params.age_group)}`;
   }
+
   const res = await sbFetch(`/book_titles${qs}`, {
     headers: { Prefer: "count=exact" },
   });
-  const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+
+  const total = parseInt(
+    res.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+
   const data: BookTitle[] = await res.json();
+
   return { data, total };
 }
 
@@ -128,15 +164,26 @@ export async function getBookCopies(params?: {
   limit?: number;
 }): Promise<{ data: BookCopy[]; total: number }> {
   const limit = params?.limit ?? 100;
+
   let qs = `?limit=${limit}&order=received_at.desc`;
+
   if (params?.status) qs += `&status=eq.${params.status}`;
   if (params?.bin_id) qs += `&bin_id=eq.${encodeURIComponent(params.bin_id)}`;
-  if (params?.age_group) qs += `&age_group=ilike.${encodeURIComponent(params.age_group)}`;
+  if (params?.age_group) {
+    qs += `&age_group=ilike.${encodeURIComponent(params.age_group)}`;
+  }
+
   const res = await sbFetch(`/book_copies${qs}`, {
     headers: { Prefer: "count=exact" },
   });
-  const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+
+  const total = parseInt(
+    res.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+
   const data: BookCopy[] = await res.json();
+
   return { data, total };
 }
 
@@ -149,11 +196,25 @@ export async function getInventorySummary(): Promise<{
   by_bin: Record<string, number>;
   low_bins: string[];
 }> {
-  const res = await sbFetch("/book_copies?select=status,age_group,bin_id&limit=2000", {
-    headers: { Prefer: "count=exact" },
-  });
-  const copies: { status: string; age_group: string; bin_id: string | null }[] = await res.json();
-  const nonInventoryStatuses = new Set(["donated", "donated_lfl", "lost", "withdrawn"]);
+  const res = await sbFetch(
+    "/book_copies?select=status,age_group,bin_id&limit=2000",
+    {
+      headers: { Prefer: "count=exact" },
+    }
+  );
+
+  const copies: {
+    status: string;
+    age_group: string;
+    bin_id: string | null;
+  }[] = await res.json();
+
+  const nonInventoryStatuses = new Set([
+    "donated",
+    "donated_lfl",
+    "lost",
+    "withdrawn",
+  ]);
 
   const summary = {
     total: copies.length,
@@ -165,16 +226,18 @@ export async function getInventorySummary(): Promise<{
     low_bins: [] as string[],
   };
 
-  for (const c of copies) {
-    if (c.status === "in_house") summary.in_house++;
-    else if (c.status === "in_transit") summary.in_transit++;
-    else if (c.status === "returned") summary.returned++;
+  for (const copy of copies) {
+    if (copy.status === "in_house") summary.in_house++;
+    else if (copy.status === "in_transit") summary.in_transit++;
+    else if (copy.status === "returned") summary.returned++;
 
-    if (c.age_group) {
-      summary.by_age[c.age_group] = (summary.by_age[c.age_group] ?? 0) + 1;
+    if (copy.age_group) {
+      summary.by_age[copy.age_group] =
+        (summary.by_age[copy.age_group] ?? 0) + 1;
     }
-    if (c.bin_id && !nonInventoryStatuses.has(c.status)) {
-      summary.by_bin[c.bin_id] = (summary.by_bin[c.bin_id] ?? 0) + 1;
+
+    if (copy.bin_id && !nonInventoryStatuses.has(copy.status)) {
+      summary.by_bin[copy.bin_id] = (summary.by_bin[copy.bin_id] ?? 0) + 1;
     }
   }
 
@@ -209,26 +272,47 @@ export async function getShipments(params?: {
   limit?: number;
 }): Promise<{ data: Shipment[]; total: number }> {
   const limit = params?.limit ?? 50;
-  let qs = `?limit=${limit}&order=created_at.desc&select=id,member_id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,carrier,label_url,address_id,shipment_type,created_at,updated_at`;
+
+  let qs =
+    `?limit=${limit}` +
+    `&order=created_at.desc` +
+    `&select=id,member_id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,carrier,label_url,address_id,shipment_type,created_at,updated_at`;
+
   if (params?.status) qs += `&status=eq.${params.status}`;
+
   const res = await sbFetch(`/shipments${qs}`, {
     headers: { Prefer: "count=exact" },
   });
-  const total = parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+
+  const total = parseInt(
+    res.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+
   const data: Shipment[] = await res.json();
+
   return { data, total };
 }
 
 export async function getShipmentById(id: string): Promise<Shipment | null> {
   const res = await sbFetch(`/shipments?id=eq.${id}&limit=1`);
   const data: Shipment[] = await res.json();
+
   return data[0] ?? null;
 }
 
-export async function updateShipmentStatus(id: string, status: string, extra?: Partial<Shipment>): Promise<void> {
+export async function updateShipmentStatus(
+  id: string,
+  status: string,
+  extra?: Partial<Shipment>
+): Promise<void> {
   await sbFetch(`/shipments?id=eq.${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status, updated_at: new Date().toISOString(), ...extra }),
+    body: JSON.stringify({
+      status,
+      updated_at: new Date().toISOString(),
+      ...extra,
+    }),
     headers: { Prefer: "return=minimal" },
   });
 }
@@ -248,8 +332,13 @@ export interface ShipmentBook {
   created_at: string;
 }
 
-export async function getShipmentBooks(shipment_id: string): Promise<ShipmentBook[]> {
-  const res = await sbFetch(`/shipment_books?shipment_id=eq.${shipment_id}&limit=20`);
+export async function getShipmentBooks(
+  shipment_id: string
+): Promise<ShipmentBook[]> {
+  const res = await sbFetch(
+    `/shipment_books?shipment_id=eq.${shipment_id}&limit=20`
+  );
+
   return res.json();
 }
 
@@ -268,9 +357,15 @@ export interface MemberAddress {
   is_default: boolean;
 }
 
-export async function getMemberAddress(member_id: string): Promise<MemberAddress | null> {
-  const res = await sbFetch(`/member_addresses?member_id=eq.${member_id}&is_default=eq.true&limit=1`);
+export async function getMemberAddress(
+  member_id: string
+): Promise<MemberAddress | null> {
+  const res = await sbFetch(
+    `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&limit=1`
+  );
+
   const data: MemberAddress[] = await res.json();
+
   return data[0] ?? null;
 }
 
@@ -285,13 +380,17 @@ export interface BinConfig {
 }
 
 export async function getBinConfigs(): Promise<BinConfig[]> {
-  const res = await sbFetch("/bin_floor_config?active=eq.true&order=bin_code.asc&limit=100");
+  const res = await sbFetch(
+    "/bin_floor_config?active=eq.true&order=bin_code.asc&limit=100"
+  );
+
   return res.json();
 }
 
-// ─── Book Titles with Copy Counts ───────────────────────────────────────────
+// ─── Book Titles with Copy Counts ─────────────────────────────────────────────
 
 export interface BookTitleWithCopies extends BookTitle {
+  tags: BookTag[];
   copy_count: number;
   in_house_count: number;
   in_transit_count: number;
@@ -308,14 +407,18 @@ export async function getBookTitlesWithCopies(params?: {
   search?: string;
   age_group?: string;
 }): Promise<{ data: BookTitleWithCopies[]; total: number }> {
-  const titlesResult = await getBookTitles({ ...params, limit: params?.limit ?? 5000 });
+  const titlesResult = await getBookTitles({
+    ...params,
+    limit: params?.limit ?? 5000,
+  });
 
   if (titlesResult.data.length === 0) {
     return { data: [], total: 0 };
   }
 
-  const titleIds = titlesResult.data.map((t) => t.id);
+  const titleIds = titlesResult.data.map((title) => title.id);
   const BATCH_SIZE = 50;
+
   const allCopies: {
     book_title_id: string;
     status: string;
@@ -325,9 +428,13 @@ export async function getBookTitlesWithCopies(params?: {
 
   for (let i = 0; i < titleIds.length; i += BATCH_SIZE) {
     const batch = titleIds.slice(i, i + BATCH_SIZE);
+
     const copiesRes = await sbFetch(
-      `/book_copies?book_title_id=in.(${batch.join(",")})&select=book_title_id,status,bin_id,sku&limit=2000`
+      `/book_copies?book_title_id=in.(${batch.join(
+        ","
+      )})&select=book_title_id,status,bin_id,sku&limit=2000`
     );
+
     if (copiesRes.ok) {
       const batchCopies: {
         book_title_id: string;
@@ -335,26 +442,32 @@ export async function getBookTitlesWithCopies(params?: {
         bin_id: string | null;
         sku: string | null;
       }[] = await copiesRes.json();
+
       allCopies.push(...batchCopies);
     }
   }
 
-  const nonInventoryStatuses = new Set(["donated", "donated_lfl", "lost", "withdrawn"]);
+  const nonInventoryStatuses = new Set([
+    "donated",
+    "donated_lfl",
+    "lost",
+    "withdrawn",
+  ]);
 
-  // Build map of title_id → counts + SKU range
-  const copyMap: Record<string, {
-    total: number;
-    in_house: number;
-    in_transit: number;
-    pending_qc: number;
-    returned: number;
-    bin_id: string | null;
-    skus: string[];
-  }> = {};
+  const copyMap: Record<
+    string,
+    {
+      total: number;
+      in_house: number;
+      in_transit: number;
+      pending_qc: number;
+      returned: number;
+      bin_id: string | null;
+      skus: string[];
+    }
+  > = {};
 
   for (const copy of allCopies) {
-    if (nonInventoryStatuses.has(copy.status)) continue;
-
     if (!copyMap[copy.book_title_id]) {
       copyMap[copy.book_title_id] = {
         total: 0,
@@ -368,22 +481,58 @@ export async function getBookTitlesWithCopies(params?: {
     }
 
     const entry = copyMap[copy.book_title_id];
-    entry.total++;
+
+    if (!nonInventoryStatuses.has(copy.status)) {
+      entry.total++;
+    }
 
     if (copy.status === "in_house") entry.in_house++;
     else if (copy.status === "in_transit") entry.in_transit++;
     else if (copy.status === "pending_qc") entry.pending_qc++;
     else if (copy.status === "returned") entry.returned++;
 
-    if (copy.bin_id && !entry.bin_id) entry.bin_id = copy.bin_id;
-    if (copy.sku) entry.skus.push(copy.sku);
+    if (copy.bin_id && !entry.bin_id) {
+      entry.bin_id = copy.bin_id;
+    }
+
+    if (copy.sku) {
+      entry.skus.push(copy.sku);
+    }
+  }
+
+  const allTagIds = Array.from(
+    new Set(
+      titlesResult.data
+        .flatMap((title) => title.tag_ids ?? [])
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  let tagMap: Record<string, BookTag> = {};
+
+  if (allTagIds.length > 0) {
+    const tagRes = await sbFetch(
+      `/book_sorting_tags?id=in.(${allTagIds.join(
+        ","
+      )})&select=id,bin_theme,tag&limit=1000`
+    );
+
+    if (tagRes.ok) {
+      const tags: BookTag[] = await tagRes.json();
+
+      tagMap = Object.fromEntries(tags.map((tag) => [tag.id, tag]));
+    }
   }
 
   const data: BookTitleWithCopies[] = titlesResult.data.map((title) => {
     const entry = copyMap[title.id];
     const skus = entry?.skus.sort() ?? [];
+
     return {
       ...title,
+      tags: (title.tag_ids ?? [])
+        .map((id) => tagMap[id])
+        .filter((tag): tag is BookTag => Boolean(tag)),
       copy_count: entry?.total ?? 0,
       in_house_count: entry?.in_house ?? 0,
       in_transit_count: entry?.in_transit ?? 0,
@@ -398,34 +547,70 @@ export async function getBookTitlesWithCopies(params?: {
   return { data, total: titlesResult.total };
 }
 
+// ─── Dashboard Stats ──────────────────────────────────────────────────────────
+
 export async function getDashboardStats() {
-  const [membersRes, shipmentsRes, inventoryRes, returnsRes] = await Promise.all([
-    sbFetch("/members?select=id,subscription_status&limit=500"),
-    sbFetch("/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"),
-    getInventorySummary(),
-    sbFetch("/returns?select=id&status=eq.requested", { headers: { Prefer: "count=exact", Range: "0-0" } }),
-  ]);
-  const pendingSwaps = parseInt(returnsRes.headers.get("content-range")?.split("/")[1] ?? "0", 10);
-  const members: { id: string; subscription_status: string }[] = await membersRes.json();
-  const shipments: { id: string; status: string; scheduled_ship_date: string | null; actual_ship_date: string | null }[] = await shipmentsRes.json();
+  const [membersRes, shipmentsRes, inventoryRes, returnsRes] =
+    await Promise.all([
+      sbFetch("/members?select=id,subscription_status&limit=500"),
+      sbFetch(
+        "/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
+      ),
+      getInventorySummary(),
+      sbFetch("/returns?select=id&status=eq.requested", {
+        headers: { Prefer: "count=exact", Range: "0-0" },
+      }),
+    ]);
+
+  const pendingSwaps = parseInt(
+    returnsRes.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+
+  const members: { id: string; subscription_status: string }[] =
+    await membersRes.json();
+
+  const shipments: {
+    id: string;
+    status: string;
+    scheduled_ship_date: string | null;
+    actual_ship_date: string | null;
+  }[] = await shipmentsRes.json();
 
   const today = new Date().toISOString().split("T")[0];
-  const activeMembers = members.filter((m) => m.subscription_status === "active").length;
-  const waitlistMembers = members.filter((m) => m.subscription_status === "waitlist").length;
 
-  const toPick = shipments.filter((s) => s.status === "picking").length;
-  const toPack = shipments.filter((s) => s.status === "packing").length;
-  const toShip = shipments.filter((s) => s.status === "packed").length;
+  const activeMembers = members.filter(
+    (member) => member.subscription_status === "active"
+  ).length;
+
+  const waitlistMembers = members.filter(
+    (member) => member.subscription_status === "waitlist"
+  ).length;
+
+  const toPick = shipments.filter(
+    (shipment) => shipment.status === "picking"
+  ).length;
+
+  const toPack = shipments.filter(
+    (shipment) => shipment.status === "packing"
+  ).length;
+
+  const toShip = shipments.filter(
+    (shipment) => shipment.status === "packed"
+  ).length;
 
   const overdueShipments = shipments.filter(
-    (s) =>
-      (s.status === "picking" || s.status === "packing" || s.status === "packed") &&
-      s.scheduled_ship_date &&
-      s.scheduled_ship_date < today
+    (shipment) =>
+      (shipment.status === "picking" ||
+        shipment.status === "packing" ||
+        shipment.status === "packed") &&
+      shipment.scheduled_ship_date &&
+      shipment.scheduled_ship_date < today
   ).length;
 
   const shippedToday = shipments.filter(
-    (s) => s.status === "shipped" && s.actual_ship_date === today
+    (shipment) =>
+      shipment.status === "shipped" && shipment.actual_ship_date === today
   ).length;
 
   const totalOrders = shipments.length;
