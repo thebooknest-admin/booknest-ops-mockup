@@ -512,9 +512,7 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
 
                     <div className="flex items-center gap-2 mt-3 flex-wrap">
                       <InfoPill className="bg-primary/10 text-primary border-primary/20">
-                        {formatAgeTier(
-                          display.suggested_age_tier || display.age_group
-                        )}
+                        {formatAgeTier(display.age_group)}
                       </InfoPill>
 
                       {display.bin_theme && (
