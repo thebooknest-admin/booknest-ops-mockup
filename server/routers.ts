@@ -290,10 +290,10 @@ return { ...title, tags, copies };
         .trim()
         .replace(/\s+/g, "_");
 
-      if (value === "hatchlings") return "Hatchlings";
-      if (value === "fledglings") return "Fledglings";
-      if (value === "soarers") return "Soarers";
-      if (value === "sky_readers") return "Sky Readers";
+      if (value === "hatchlings") return "hatchlings";
+      if (value === "fledglings") return "fledglings";
+      if (value === "soarers") return "soarers";
+      if (value === "sky_readers") return "sky readers";
       if (value === "13+") return "13+";
 
       return ageGroup ?? null;
@@ -302,10 +302,10 @@ return { ...title, tags, copies };
     const getSkuPrefix = (ageGroup: string | null | undefined) => {
       const normalized = normalizeAgeGroup(ageGroup);
 
-      if (normalized === "Hatchlings") return "HAT";
-      if (normalized === "Fledglings") return "FLD";
-      if (normalized === "Soarers") return "SOR";
-      if (normalized === "Sky Readers") return "SKY";
+      if (normalized === "hatchlings") return "HAT";
+      if (normalized === "fledglings") return "FLD";
+      if (normalized === "soarers") return "SOR";
+      if (normalized === "sky readers") return "SKY";
 
       return "UNK";
     };
