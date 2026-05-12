@@ -264,62 +264,213 @@ return { ...title, tags, copies };
       }),
 
     updateBookTitle: publicProcedure
-      .input(
-  z.object({
-    id: z.string(),
-    title: z.string().optional(),
-    author: z.string().optional(),
-    age_group: z.string().optional(),
-    bin_theme: z.string().optional(),
-    bin_id: z.string().optional(),
-    isbn: z.string().optional(),
-    cover_url: z.string().optional(),
-    publisher: z.string().optional(),
-    published_date: z.string().optional(),
-  })
-)
-      .mutation(async ({ input }) => {
-        const { id, ...fields } = input;
-        const updateFields: Record<string, any> = {};
-        if (fields.title !== undefined) updateFields.title = fields.title;
-        if (fields.author !== undefined) updateFields.author = fields.author;
-        if (fields.age_group !== undefined)
-          updateFields.age_group = fields.age_group;
-        if (fields.bin_theme !== undefined)
-  updateFields.bin_theme = fields.bin_theme;
-        if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
-        if (fields.cover_url !== undefined)
-          updateFields.cover_url = fields.cover_url;
-        if (fields.publisher !== undefined)
-          updateFields.publisher = fields.publisher;
-        if (fields.published_date !== undefined)
-          updateFields.published_date = fields.published_date;
-        if (fields.bin_id !== undefined) updateFields.bin_id = fields.bin_id;
-        const res = await sbFetch(`/book_titles?id=eq.${id}`, {
+  .input(
+    z.object({
+      id: z.string(),
+      title: z.string().optional(),
+      author: z.string().optional(),
+      age_group: z.string().optional(),
+      bin_theme: z.string().optional(),
+      bin_id: z.string().optional(),
+      isbn: z.string().optional(),
+      cover_url: z.string().optional(),
+      publisher: z.string().optional(),
+      published_date: z.string().optional(),
+      page_count: z.string().optional(),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const { id, ...fields } = input;
+    const now = new Date().toISOString();
+
+    const normalizeAgeGroup = (ageGroup: string | null | undefined) => {
+      const value = (ageGroup ?? "")
+        .toLowerCase()
+        .replace(/\s*\(.*\)\s*/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+
+      if (value === "hatchlings") return "Hatchlings";
+      if (value === "fledglings") return "Fledglings";
+      if (value === "soarers") return "Soarers";
+      if (value === "sky_readers") return "Sky Readers";
+      if (value === "13+") return "13+";
+
+      return ageGroup ?? null;
+    };
+
+    const getSkuPrefix = (ageGroup: string | null | undefined) => {
+      const normalized = normalizeAgeGroup(ageGroup);
+
+      if (normalized === "Hatchlings") return "HAT";
+      if (normalized === "Fledglings") return "FLD";
+      if (normalized === "Soarers") return "SOR";
+      if (normalized === "Sky Readers") return "SKY";
+
+      return "UNK";
+    };
+
+    const existingTitleRes = await sbFetch(
+      `/book_titles?id=eq.${id}&limit=1&select=id,age_group`
+    );
+
+    if (!existingTitleRes.ok) {
+      throw new Error(`Failed to load existing book title: ${await existingTitleRes.text()}`);
+    }
+
+    const existingTitles: { id: string; age_group: string | null }[] =
+      await existingTitleRes.json();
+
+    const existingTitle = existingTitles[0];
+
+    if (!existingTitle) {
+      throw new Error("Book title not found");
+    }
+
+    const oldAgeGroup = normalizeAgeGroup(existingTitle.age_group);
+    const newAgeGroup =
+      fields.age_group !== undefined
+        ? normalizeAgeGroup(fields.age_group)
+        : oldAgeGroup;
+
+    const ageChanged =
+      fields.age_group !== undefined && oldAgeGroup !== newAgeGroup;
+
+    const updateFields: Record<string, any> = {};
+
+    if (fields.title !== undefined) updateFields.title = fields.title;
+    if (fields.author !== undefined) updateFields.author = fields.author;
+    if (fields.age_group !== undefined) updateFields.age_group = newAgeGroup;
+    if (fields.bin_theme !== undefined) updateFields.bin_theme = fields.bin_theme;
+    if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
+    if (fields.cover_url !== undefined) updateFields.cover_url = fields.cover_url;
+    if (fields.publisher !== undefined) updateFields.publisher = fields.publisher;
+    if (fields.published_date !== undefined)
+      updateFields.published_date = fields.published_date;
+    if (fields.bin_id !== undefined) updateFields.bin_id = fields.bin_id;
+
+    if (fields.page_count !== undefined) {
+      updateFields.page_count =
+        fields.page_count.trim() === "" ? null : Number(fields.page_count);
+    }
+
+    const res = await sbFetch(`/book_titles?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...updateFields,
+        updated_at: now,
+      }),
+      headers: { Prefer: "return=representation" },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to update book title: ${await res.text()}`);
+    }
+
+    const updatedTitles = await res.json();
+    const updatedTitle = updatedTitles[0];
+
+    if (ageChanged) {
+      const copiesRes = await sbFetch(
+        `/book_copies?book_title_id=eq.${id}&select=id,sku&order=sku.asc&limit=1000`
+      );
+
+      if (!copiesRes.ok) {
+        throw new Error(`Failed to load copies for SKU update: ${await copiesRes.text()}`);
+      }
+
+      const copies: { id: string; sku: string | null }[] = await copiesRes.json();
+
+      const newPrefix = getSkuPrefix(newAgeGroup);
+
+      const existingSkusRes = await sbFetch(
+        `/book_copies?sku=like.BN-${newPrefix}-*&select=sku&limit=10000`
+      );
+
+      if (!existingSkusRes.ok) {
+        throw new Error(`Failed to load existing SKUs: ${await existingSkusRes.text()}`);
+      }
+
+      const existingSkus: { sku: string }[] = await existingSkusRes.json();
+
+      const usedNumbers = new Set<number>();
+
+      for (const row of existingSkus) {
+        const match = row.sku?.match(/(\d+)$/);
+        if (match) usedNumbers.add(Number(match[1]));
+      }
+
+      let nextNumber = 1;
+
+      for (const copy of copies) {
+        while (usedNumbers.has(nextNumber)) nextNumber++;
+
+        const newSku = `BN-${newPrefix}-${String(nextNumber).padStart(6, "0")}`;
+        usedNumbers.add(nextNumber);
+        nextNumber++;
+
+        const copyUpdateRes = await sbFetch(`/book_copies?id=eq.${copy.id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            ...updateFields,
-            updated_at: new Date().toISOString(),
+            sku: newSku,
+            age_group: newAgeGroup,
+            updated_at: now,
           }),
-          headers: { Prefer: "return=representation" },
+          headers: { Prefer: "return=minimal" },
         });
-        if (!res.ok) throw new Error("Failed to update book title");
-        if (fields.bin_id !== undefined) {
-          await sbFetch(
-            `/book_copies?book_title_id=eq.${id}&status=eq.in_house`,
-            {
-              method: "PATCH",
-              body: JSON.stringify({
-                bin_id: fields.bin_id,
-                updated_at: new Date().toISOString(),
-              }),
-              headers: { Prefer: "return=minimal" },
-            }
+
+        if (!copyUpdateRes.ok) {
+          throw new Error(
+            `Failed to update copy SKU: ${await copyUpdateRes.text()}`
           );
         }
-        const data = await res.json();
-        return { success: true, book: data[0] };
-      }),
+      }
+    } else if (fields.age_group !== undefined) {
+      const copyAgeUpdateRes = await sbFetch(
+        `/book_copies?book_title_id=eq.${id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            age_group: newAgeGroup,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        }
+      );
+
+      if (!copyAgeUpdateRes.ok) {
+        throw new Error(
+          `Failed to update copy age group: ${await copyAgeUpdateRes.text()}`
+        );
+      }
+    }
+
+    if (fields.bin_id !== undefined) {
+      const copyBinUpdateRes = await sbFetch(
+        `/book_copies?book_title_id=eq.${id}&status=eq.in_house`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            bin_id: fields.bin_id,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        }
+      );
+
+      if (!copyBinUpdateRes.ok) {
+        throw new Error(
+          `Failed to update in-house copy bins: ${await copyBinUpdateRes.text()}`
+        );
+      }
+    }
+
+    return {
+      success: true,
+      book: updatedTitle,
+      skuRegenerated: ageChanged,
+    };
+  }),
 
     // ── In Flight — books currently with members, grouped by member ─────────────
 inTransit: publicProcedure.query(async () => {
