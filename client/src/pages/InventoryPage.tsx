@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Search, BookOpen, RefreshCw, XCircle, Sparkles } from "lucide-react";
+import { Search, BookOpen, RefreshCw, XCircle, Sparkles, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BookDetailDrawer } from "@/components/BookDetailDrawer";
 
@@ -140,6 +140,67 @@ export default function InventoryPage() {
     0;
 
   const totalMembers = inTransitGroups?.length ?? 0;
+  const exportFilteredInventory = () => {
+  const headers = [
+    "Title",
+    "Author",
+    "ISBN",
+    "Age Group",
+    "Theme",
+    "Tags",
+    "Bin",
+    "Copy Count",
+    "In House",
+    "In Flight",
+    "Pending QC",
+    "Returned",
+    "SKU Min",
+    "SKU Max",
+  ];
+
+  const rows = filtered.map((book) => [
+    book.title ?? "",
+    book.author ?? "",
+    book.isbn ?? "",
+    formatAgeTier(book.age_group),
+    book.bin_theme ?? "",
+    book.tags?.map((tag) => tag.tag).join(", ") ?? "",
+    book.bin_id ?? "",
+    book.copy_count ?? 0,
+    book.in_house_count ?? 0,
+    book.in_transit_count ?? 0,
+    book.pending_qc_count ?? 0,
+    book.returned_count ?? 0,
+    book.sku_min ?? "",
+    book.sku_max ?? "",
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+        .join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob([csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `book-nest-inventory-${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+};
     return (
     <>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -159,6 +220,16 @@ export default function InventoryPage() {
           </div>
 
           <div className="flex items-center gap-2">
+
+<button
+  onClick={exportFilteredInventory}
+  disabled={filtered.length === 0}
+  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  <Download className="w-3.5 h-3.5" />
+  Export Excel
+</button>
+
             <button
               onClick={() => refetch()}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
