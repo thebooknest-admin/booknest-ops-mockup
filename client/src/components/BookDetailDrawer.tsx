@@ -85,10 +85,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const AGE_GROUP_OPTIONS = [
-  { value: "Hatchlings", label: "Hatchlings (0-2)" },
-  { value: "Fledglings", label: "Fledglings (3-5)" },
-  { value: "Soarers", label: "Soarers (6-8)" },
-  { value: "Sky Readers", label: "Sky Readers (9-12)" },
+  { value: "hatchlings", label: "Hatchlings (0-2)" },
+  { value: "fledglings", label: "Fledglings (3-5)" },
+  { value: "soarers", label: "Soarers (6-8)" },
+  { value: "sky_readers", label: "Sky Readers (9-12)" },
   { value: "13+", label: "13+" },
 ];
 

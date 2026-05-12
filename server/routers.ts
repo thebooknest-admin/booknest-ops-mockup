@@ -370,80 +370,68 @@ return { ...title, tags, copies };
     const updatedTitles = await res.json();
     const updatedTitle = updatedTitles[0];
 
-    if (ageChanged) {
-      const copiesRes = await sbFetch(
-        `/book_copies?book_title_id=eq.${id}&select=id,sku&order=sku.asc&limit=1000`
-      );
+    if (fields.age_group !== undefined) {
+  const copiesRes = await sbFetch(
+    `/book_copies?book_title_id=eq.${id}&select=id,sku&order=sku.asc&limit=1000`
+  );
 
-      if (!copiesRes.ok) {
-        throw new Error(`Failed to load copies for SKU update: ${await copiesRes.text()}`);
-      }
+  if (!copiesRes.ok) {
+    throw new Error(`Failed to load copies for SKU sync: ${await copiesRes.text()}`);
+  }
 
-      const copies: { id: string; sku: string | null }[] = await copiesRes.json();
+  const copies: { id: string; sku: string | null }[] = await copiesRes.json();
 
-      const newPrefix = getSkuPrefix(newAgeGroup);
+  const newPrefix = getSkuPrefix(newAgeGroup);
 
-      const existingSkusRes = await sbFetch(
-        `/book_copies?sku=like.BN-${newPrefix}-*&select=sku&limit=10000`
-      );
+  const existingSkusRes = await sbFetch(
+    `/book_copies?sku=like.BN-${newPrefix}-*&select=sku&limit=10000`
+  );
 
-      if (!existingSkusRes.ok) {
-        throw new Error(`Failed to load existing SKUs: ${await existingSkusRes.text()}`);
-      }
+  if (!existingSkusRes.ok) {
+    throw new Error(`Failed to load existing SKUs: ${await existingSkusRes.text()}`);
+  }
 
-      const existingSkus: { sku: string }[] = await existingSkusRes.json();
+  const existingSkus: { sku: string }[] = await existingSkusRes.json();
 
-      const usedNumbers = new Set<number>();
+  const usedNumbers = new Set<number>();
 
-      for (const row of existingSkus) {
-        const match = row.sku?.match(/(\d+)$/);
-        if (match) usedNumbers.add(Number(match[1]));
-      }
+  for (const row of existingSkus) {
+    const match = row.sku?.match(/(\d+)$/);
+    if (match) usedNumbers.add(Number(match[1]));
+  }
 
-      let nextNumber = 1;
+  let nextNumber = 1;
 
-      for (const copy of copies) {
-        while (usedNumbers.has(nextNumber)) nextNumber++;
+  for (const copy of copies) {
+    const alreadyCorrectPrefix = copy.sku?.startsWith(`BN-${newPrefix}-`);
 
-        const newSku = `BN-${newPrefix}-${String(nextNumber).padStart(6, "0")}`;
-        usedNumbers.add(nextNumber);
-        nextNumber++;
+    let newSku = copy.sku;
 
-        const copyUpdateRes = await sbFetch(`/book_copies?id=eq.${copy.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            sku: newSku,
-            age_group: newAgeGroup,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
+    if (!alreadyCorrectPrefix) {
+      while (usedNumbers.has(nextNumber)) nextNumber++;
 
-        if (!copyUpdateRes.ok) {
-          throw new Error(
-            `Failed to update copy SKU: ${await copyUpdateRes.text()}`
-          );
-        }
-      }
-    } else if (fields.age_group !== undefined) {
-      const copyAgeUpdateRes = await sbFetch(
-        `/book_copies?book_title_id=eq.${id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            age_group: newAgeGroup,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        }
-      );
-
-      if (!copyAgeUpdateRes.ok) {
-        throw new Error(
-          `Failed to update copy age group: ${await copyAgeUpdateRes.text()}`
-        );
-      }
+      newSku = `BN-${newPrefix}-${String(nextNumber).padStart(6, "0")}`;
+      usedNumbers.add(nextNumber);
+      nextNumber++;
     }
+
+    const copyUpdateRes = await sbFetch(`/book_copies?id=eq.${copy.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        sku: newSku,
+        age_group: newAgeGroup,
+        updated_at: now,
+      }),
+      headers: { Prefer: "return=minimal" },
+    });
+
+    if (!copyUpdateRes.ok) {
+      throw new Error(
+        `Failed to sync copy age/SKU: ${await copyUpdateRes.text()}`
+      );
+    }
+  }
+}
 
     if (fields.bin_id !== undefined) {
       const copyBinUpdateRes = await sbFetch(
