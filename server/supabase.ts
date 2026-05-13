@@ -544,7 +544,14 @@ export async function getBookTitlesWithCopies(params?: {
     };
   });
 
-  return { data, total: titlesResult.total };
+  const filteredData = data.filter(
+  (book) => (book.copy_count ?? 0) > 0
+);
+
+  return {
+  data: filteredData,
+  total: filteredData.length,
+};
 }
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────

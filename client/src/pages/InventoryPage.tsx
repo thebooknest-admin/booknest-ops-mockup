@@ -411,9 +411,10 @@ export default function InventoryPage() {
               <div className="divide-y divide-border/50">
                 {filtered.map((book) => {
                   const hasStatuses =
-                    (book.in_transit_count ?? 0) > 0 ||
-                    (book.pending_qc_count ?? 0) > 0 ||
-                    (book.returned_count ?? 0) > 0;
+  (book.in_house_count ?? 0) > 0 ||
+  (book.in_transit_count ?? 0) > 0 ||
+  (book.pending_qc_count ?? 0) > 0 ||
+  (book.returned_count ?? 0) > 0;
 
                   return (
                     <button
@@ -487,6 +488,12 @@ export default function InventoryPage() {
                             —
                           </span>
                         )}
+
+                        {(book.in_house_count ?? 0) > 0 && (
+  <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-green-50 text-green-700">
+    {book.in_house_count} In House
+  </span>
+)}
 
                         {(book.in_transit_count ?? 0) > 0 && (
                           <span
