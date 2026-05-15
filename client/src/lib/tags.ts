@@ -448,14 +448,32 @@ export function getCategoryForTag(tag: string): TagCategory | undefined {
 }
 
 /** Build bin name from age group + category */
-export function buildBinName(ageGroup: string, category: BinCategory): string {
+export function buildBinName(
+  ageGroup: string,
+  category: BinCategory
+): string {
   const prefixMap: Record<string, string> = {
-    "Hatchlings (0-2)": "HATC",
-    "Fledglings (3-5)": "FLED",
-    "Soarers (6-8)": "SOAR",
+    "Hatchlings (0-2)": "HAT",
+    "Fledglings (3-5)": "FLD",
+    "Soarers (6-8)": "SOR",
     "Sky Readers (9-12)": "SKY",
   };
-  const prefix = prefixMap[ageGroup] || "FLED";
-  const catName = category.replace("_", "");
-  return `${prefix}-${catName}-01`;
+
+  const categoryMap: Record<BinCategory, string> = {
+    ADVENTURE: "ADV",
+    LAUGHS_CHAOS: "HUM",
+    HEART_HOME: "HRT",
+    WONDER_IMAGINATION: "WON",
+    WILD_WONDERFUL: "WLD",
+    DISCOVERY_DEN: "DSC",
+    LEGENDS_LONG_AGO: "LEG",
+    SEASONS_CELEBRATIONS: "SEA",
+    BIG_WORLDS: "BIG",
+    TINY_TALES: "TNY",
+  };
+
+  const prefix = prefixMap[ageGroup] || "FLD";
+  const categoryCode = categoryMap[category] || "HRT";
+
+  return `${prefix}-${categoryCode}-01`;
 }
