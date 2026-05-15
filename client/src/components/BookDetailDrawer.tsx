@@ -117,6 +117,24 @@ function formatAgeTier(age: string | null | undefined) {
   return age;
 }
 
+function normalizeAgeGroupValue(age: string) {
+  const normalized = age.toLowerCase().trim();
+
+  if (normalized.includes("hatchlings")) return "hatchlings";
+  if (normalized.includes("fledglings")) return "fledglings";
+  if (normalized.includes("soarers")) return "soarers";
+  if (
+    normalized.includes("sky readers") ||
+    normalized.includes("sky_readers")
+  ) {
+    return "sky_readers";
+  }
+
+  if (normalized.includes("13")) return "13+";
+
+  return age;
+}
+
 function FieldInput({
   label,
   value,
@@ -602,7 +620,9 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                     label="Age Tier"
                     value={display.age_group ?? ""}
                     options={AGE_GROUP_OPTIONS}
-                    onChange={(value) => handleTitleChange("age_group", value)}
+                    onChange={(value) =>
+  handleTitleChange("age_group", normalizeAgeGroupValue(value))
+}
                   />
 
                   <FieldSelect
