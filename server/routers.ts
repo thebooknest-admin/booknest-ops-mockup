@@ -682,19 +682,20 @@ inTransit: publicProcedure.query(async () => {
         new Set(copies.map(c => c.book_title_id).filter(Boolean))
       );
       let titleMap: Record<
-        string,
-        { title: string; author: string; isbn: string | null }
-      > = {};
+  string,
+  { title: string; author: string; isbn: string | null; bin_theme: string | null }
+> = {};
       if (titleIds.length > 0) {
         const tr = await sbFetch(
-          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn&limit=300`
+          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn,bin_theme&limit=300`
         );
         const titles: {
-          id: string;
-          title: string;
-          author: string;
-          isbn: string | null;
-        }[] = await tr.json();
+  id: string;
+  title: string;
+  author: string;
+  isbn: string | null;
+  bin_theme: string | null;
+}[] = await tr.json();
         titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
       }
       return copies.map(c => ({
