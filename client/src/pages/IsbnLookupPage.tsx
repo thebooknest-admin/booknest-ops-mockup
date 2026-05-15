@@ -9,7 +9,17 @@ import { BookOpen, ChevronDown, ChevronUp, Search, Zap, RefreshCw } from "lucide
 import { toast } from "sonner";
 
 type AgeTier = "Hatchlings" | "Fledglings" | "Soarers" | "Sky Readers";
-type ThemeBin = "Adventure" | "Humor" | "Life" | "Learn" | "Identity" | "Nature" | "Seasonal";
+type ThemeBin =
+  | "Adventure"
+  | "Laughs & Chaos"
+  | "Heart & Home"
+  | "Wonder & Imagination"
+  | "Wild & Wonderful"
+  | "Discovery Den"
+  | "Legends & Long Ago"
+  | "Seasons & Celebrations"
+  | "Big Worlds"
+  | "Tiny Tales";
 type ConfidenceLevel = "high" | "medium" | "low" | "needs-review";
 
 const TIER_COLORS: Record<AgeTier, string> = {
@@ -20,13 +30,17 @@ const TIER_COLORS: Record<AgeTier, string> = {
 };
 const BIN_COLORS: Record<ThemeBin, string> = {
   Adventure: "bg-orange-100 text-orange-800",
-  Humor: "bg-yellow-100 text-yellow-800",
-  Life: "bg-pink-100 text-pink-800",
-  Learn: "bg-teal-100 text-teal-800",
-  Identity: "bg-indigo-100 text-indigo-800",
-  Nature: "bg-green-100 text-green-800",
-  Seasonal: "bg-red-100 text-red-800",
+  "Laughs & Chaos": "bg-yellow-100 text-yellow-800",
+  "Heart & Home": "bg-pink-100 text-pink-800",
+  "Wonder & Imagination": "bg-purple-100 text-purple-800",
+  "Wild & Wonderful": "bg-green-100 text-green-800",
+  "Discovery Den": "bg-teal-100 text-teal-800",
+  "Legends & Long Ago": "bg-amber-100 text-amber-800",
+  "Seasons & Celebrations": "bg-red-100 text-red-800",
+  "Big Worlds": "bg-indigo-100 text-indigo-800",
+  "Tiny Tales": "bg-slate-100 text-slate-800",
 };
+
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; className: string; dot: string }> = {
   high:           { label: "High confidence",   className: "text-green-700 bg-green-50 border-green-200",   dot: "bg-green-500" },
   medium:         { label: "Medium confidence", className: "text-yellow-700 bg-yellow-50 border-yellow-200", dot: "bg-yellow-500" },

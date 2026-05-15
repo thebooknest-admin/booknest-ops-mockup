@@ -61,6 +61,28 @@ const AGE_RANGES: Record<AgeTier, string> = {
   "Sky Readers": "9–12",
   "13+": "13+",
 };
+
+const AGE_CODES: Record<AgeTier, string> = {
+  Hatchlings: "HAT",
+  Fledglings: "FLD",
+  Soarers: "SOA",
+  "Sky Readers": "SKY",
+  "13+": "13P",
+};
+
+const THEME_CODES: Record<ThemeBin, string> = {
+  Adventure: "ADV",
+  "Laughs & Chaos": "LCH",
+  "Heart & Home": "HRT",
+  "Wonder & Imagination": "WON",
+  "Wild & Wonderful": "WLD",
+  "Discovery Den": "DSC",
+  "Legends & Long Ago": "LEG",
+  "Seasons & Celebrations": "SEA",
+  "Big Worlds": "BIG",
+  "Tiny Tales": "TNY",
+};
+
 const VALID_TIERS: AgeTier[] = [
   "Hatchlings",
   "Fledglings",
