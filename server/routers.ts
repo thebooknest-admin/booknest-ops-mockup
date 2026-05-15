@@ -750,11 +750,33 @@ inTransit: publicProcedure.query(async () => {
           subjects: z.array(z.string()).optional(),
           age_group: z.string(),
           bin_id: z.string(),
+          bin_theme: z.string().optional(),
           condition: z.string().default("good"),
           tags: z.array(z.string()).optional(),
         })
       )
       .mutation(async ({ input }) => {
+
+const getThemeFromBinId = (binId: string | null | undefined) => {
+  const value = (binId ?? "").toUpperCase();
+
+  if (value.includes("-ADV-")) return "Adventure";
+  if (value.includes("-HUM-")) return "Laughs & Chaos";
+  if (value.includes("-HRT-") || value.includes("HEARTHOME")) return "Heart & Home";
+  if (value.includes("-WON-")) return "Wonder & Imagination";
+  if (value.includes("-WLD-")) return "Wild & Wonderful";
+  if (value.includes("-DSC-")) return "Discovery Den";
+  if (value.includes("-LEG-")) return "Legends & Long Ago";
+  if (value.includes("-SEA-")) return "Seasons & Celebrations";
+  if (value.includes("-BIG-")) return "Big Worlds";
+  if (value.includes("-TNY-") || value.includes("-TINY-")) return "Tiny Tales";
+
+  return null;
+};
+
+const derivedBinTheme = getThemeFromBinId(input.bin_id);
+
+
         // ── Upsert book title ────────────────────────────────────────────────
         const titleRes = await sbFetch(
           "/book_titles?isbn=eq." + input.isbn + "&limit=1"
@@ -764,33 +786,35 @@ inTransit: publicProcedure.query(async () => {
         if (existing.length > 0) {
           titleId = existing[0].id;
           await sbFetch(`/book_titles?id=eq.${titleId}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              cover_url: input.cover_url ?? existing[0].cover_url,
-              publisher: input.publisher ?? existing[0].publisher,
-              published_date:
-                input.published_date ?? existing[0].published_date,
-              page_count: input.page_count ?? existing[0].page_count,
-              subjects: input.subjects ?? existing[0].subjects,
-              updated_at: new Date().toISOString(),
-            }),
+  method: "PATCH",
+  body: JSON.stringify({
+    cover_url: input.cover_url ?? existing[0].cover_url,
+    publisher: input.publisher ?? existing[0].publisher,
+    published_date:
+      input.published_date ?? existing[0].published_date,
+    page_count: input.page_count ?? existing[0].page_count,
+    subjects: input.subjects ?? existing[0].subjects,
+    bin_theme: input.bin_theme ?? existing[0].bin_theme ?? null,
+    updated_at: new Date().toISOString(),
+  }),
             headers: { Prefer: "return=minimal" },
           });
-        } else {
-          const newTitleRes = await sbFetch("/book_titles", {
-            method: "POST",
-            body: JSON.stringify({
-              isbn: input.isbn,
-              title: input.title,
-              author: input.author,
-              cover_url: input.cover_url ?? null,
-              age_group: input.age_group,
-              publisher: input.publisher ?? null,
-              published_date: input.published_date ?? null,
-              page_count: input.page_count ?? null,
-              subjects: input.subjects ?? null,
-            }),
-          });
+       } else {
+  const newTitleRes = await sbFetch("/book_titles", {
+    method: "POST",
+    body: JSON.stringify({
+      isbn: input.isbn,
+      title: input.title,
+      author: input.author,
+      cover_url: input.cover_url ?? null,
+      age_group: input.age_group,
+      bin_theme: derivedBinTheme,
+      publisher: input.publisher ?? null,
+      published_date: input.published_date ?? null,
+      page_count: input.page_count ?? null,
+      subjects: input.subjects ?? null,
+    }),
+  });
           const newTitle: any[] = await newTitleRes.json();
           titleId = newTitle[0].id;
         }
