@@ -994,10 +994,15 @@ return {
 
   reasoning: parsed.reasoning || "AI classification",
 };
-  } catch {
+  } catch (err) {
+  console.error("AI FALLBACK ERROR:", err);
+
   return {
     ageTier: "Fledglings" as AgeTier,
-    themeBin: "Heart & Home" as ThemeBin, reasoning: "AI fallback error" }; }
+    themeBin: "Heart & Home" as ThemeBin,
+    reasoning: "AI fallback error",
+  };
+}
 }
 
 function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
