@@ -103,7 +103,7 @@ const VALID_BINS: ThemeBin[] = [
   "Tiny Tales",
 ];
 const TIER_KEYWORD_OVERRIDES: Record<AgeTier, string[]> = {
-  Hatchlings: ["board book", "baby", "toddler"],
+  Hatchlings: ["board book", "toddler"],
   Fledglings: ["picture book", "read-aloud", "read aloud"],
   Soarers: ["early reader", "chapter book", "easy reader", "beginning reader"],
   "Sky Readers": ["middle grade", "middle-grade", "novel"],
