@@ -300,9 +300,9 @@ const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
 const BIN_TAGS: Record<ThemeBin, string[]> = {
   Adventure: ["Quest", "Exploration", "Pirates", "Treasure", "Mystery", "Adventure", "Fantasy", "Magic", "Heroes", "Journey", "Wilderness", "Survival"],
   "Laughs & Chaos": ["Silly", "Goofy", "Pranks", "Wordplay", "Giggles", "Chaos", "Funny", "Rhyming", "Interactive", "High Energy", "Absurd"],
-  "Heart & Home": ["Family", "Friendship", "School", "Feelings", "Kindness", "Confidence", "Empathy", "Bedtime", "Community", "Growing Up", "New Experiences", "Emotional Growth"],
-  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles"],
-  "Wild & Wonderful": ["Animals", "Pets", "Ocean", "Forest", "Dinosaurs", "Nature", "Wildlife", "Bugs", "Farm", "Gardening", "Camping", "Weather"],
+  "Heart & Home": ["Family", "Friendship", "School", "Feelings", "Kindness", "Confidence", "Empathy", "Bedtime", "Community", "Growing Up", "New Experiences", "Emotional Growth", "Realistic Fiction", "Relationships", "Siblings", "Neighbor", "Community", "Divorce", "Grandparent"],
+  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles", "Magical", "Kingdom", "Princess", "Mermaid", "Spell"],
+  "Wild & Wonderful": ["Animals", "Ocean", "Forest", "Dinosaurs", "Nature", "Wildlife", "Bugs", "Farm", "Gardening", "Camping", "Weather"],
   "Discovery Den": ["STEM", "Science", "Space", "Vehicles", "History", "Math", "Technology", "Engineering", "Experiments", "Human Body", "Facts", "Nonfiction"],
   "Legends & Long Ago": ["Fairy Tales", "Folklore", "Fables", "Mythology", "Classics", "Historical Fiction", "Legends", "Ancient Worlds", "Moral Lessons", "Retellings"],
   "Seasons & Celebrations": ["Christmas", "Halloween", "Easter", "Birthdays", "Back to School", "Summer", "Winter", "Spring", "Fall", "Traditions", "Celebrations"],
@@ -455,6 +455,7 @@ function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } |
   }
  const text = getSearchText(book);
 
+
 // Strong Sky Readers signals
 if (
   text.includes("middle grade") ||
@@ -499,6 +500,32 @@ if (
 }
 function resolveBin(book: BookMetadata): { bin: ThemeBin; source: string } | null {
   const text = getSearchText(book);
+
+const isAnimalEmotionalStory =
+  (text.includes("pet") ||
+    text.includes("puppy") ||
+    text.includes("kitten") ||
+    text.includes("dog") ||
+    text.includes("cat") ||
+    text.includes("skunk") ||
+    text.includes("animal")) &&
+  (text.includes("friendship") ||
+    text.includes("family") ||
+    text.includes("feelings") ||
+    text.includes("heartfelt") ||
+    text.includes("empathy") ||
+    text.includes("belonging") ||
+    text.includes("caring") ||
+    text.includes("rescue") ||
+    text.includes("home"));
+
+if (isAnimalEmotionalStory) {
+  return {
+    bin: "Heart & Home",
+    source: "animal story with emotional/family relationship focus",
+  };
+}
+
   const scores: Record<ThemeBin, number> = {
   Adventure: 0,
   "Laughs & Chaos": 0,
