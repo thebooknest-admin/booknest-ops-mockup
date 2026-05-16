@@ -855,7 +855,7 @@ const derivedBinTheme = getThemeFromBinId(input.bin_id);
         let nextNum = 1;
         while (usedNumbers.has(nextNum)) nextNum++;
 
-        const sku = `BN-${agePrefix}-${String(nextNum).padStart(4, "0")}`;
+        const sku = `BN-${agePrefix}-${String(nextNum).padStart(6, "0")}`;
 
         // ── Create book copy ─────────────────────────────────────────────────
         const copyRes = await sbFetch("/book_copies", {
