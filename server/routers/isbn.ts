@@ -554,29 +554,86 @@ Respond ONLY with valid JSON.
 No markdown.
 No explanation outside JSON.
 
-AVAILABLE AGE TIERS:
-- Hatchlings (0-2): board books, baby books, toddler books, first words
-- Fledglings (3-5): picture books, preschool stories, read-alouds
-- Soarers (6-8): early readers, beginner chapter books
-- Sky Readers (9-12): middle grade, upper elementary
-- 13+: teen, YA, mature middle grade, older audiences
+Your job is to classify books based on:
+1. The PRIMARY reading experience
+2. The PRIMARY shelf identity
+3. The MOST useful discovery/browsing behavior for families
 
-IMPORTANT SAFETY RULES:
-- If a book appears intended for teens, young adults, or mature readers, classify it as "13+".
-- Books with explicit romance, mature themes, dark violence, horror, heavy emotional content, or teen-targeted marketing should be "13+".
-- Never force YA or mature content into Sky Readers.
-- Sky Readers should remain safe for upper elementary/tween readers.
+Do NOT classify based only on literal keywords.
+Think like:
+- a children's librarian
+- a bookseller
+- a parent browsing shelves
+- a child looking for “more books like this”
 
-AGE TIER GUIDANCE:
-- Do not use page count alone.
-- Picture books can be 32-56 pages and still be Fledglings.
-- Early chapter books and beginner readers are usually Soarers.
-- Middle grade novels are usually Sky Readers.
-- If a book is commonly read aloud to preschool/kindergarten children, prefer Fledglings.
-- If a book is meant for independent early readers, prefer Soarers.
-- If uncertain between Sky Readers and 13+, lean toward 13+ for safety.
+--------------------------------------------------
+AVAILABLE AGE TIERS
+--------------------------------------------------
 
-AVAILABLE THEMES:
+- Hatchlings (0-2)
+  Board books, sensory books, baby books, first words, bedtime books, simple toddler concepts.
+
+- Fledglings (3-5)
+  Picture books, preschool stories, kindergarten readiness, read-alouds, simple early readers.
+
+- Soarers (6-8)
+  Early readers, Branches-style books, beginner chapter books, transitional readers, graphic chapter books.
+
+- Sky Readers (9-12)
+  Middle grade novels, upper elementary fiction, denser fantasy/adventure, tween themes.
+
+- 13+
+  Teen, YA, mature middle grade, emotionally intense, dark, violent, romantic, or older-audience content.
+
+--------------------------------------------------
+IMPORTANT SAFETY RULES
+--------------------------------------------------
+
+If uncertain between Sky Readers and 13+, prefer 13+ for safety.
+
+Classify as 13+ if the book contains:
+- explicit romance
+- mature teen themes
+- graphic violence
+- horror
+- heavy trauma
+- self-harm
+- mature emotional intensity
+- older teen marketing
+
+Do NOT force mature books into Sky Readers.
+
+Sky Readers should remain appropriate for upper elementary/tween readers.
+
+--------------------------------------------------
+AGE TIER GUIDANCE
+--------------------------------------------------
+
+Do NOT use page count alone.
+
+IMPORTANT:
+- Picture books can still be Fledglings even at 40-60 pages.
+- Illustrated chapter books are usually Soarers.
+- Beginner independent readers are usually Soarers.
+- Longer middle grade novels are usually Sky Readers.
+- Read-aloud books are often Fledglings.
+- Emotional complexity matters.
+- Reading stamina matters.
+- Sentence density matters.
+- Vocabulary complexity matters.
+
+Examples:
+- Fly Guy → Soarers
+- Junie B. Jones → Soarers
+- Magic Tree House → Soarers
+- Babysitters Club → Sky Readers
+- Karen books → Soarers
+- Percy Jackson → Sky Readers
+
+--------------------------------------------------
+AVAILABLE THEMES
+--------------------------------------------------
+
 - Adventure
 - Laughs & Chaos
 - Heart & Home
@@ -588,59 +645,240 @@ AVAILABLE THEMES:
 - Big Worlds
 - Tiny Tales
 
-THEME GUIDANCE:
-- Adventure: quests, mysteries, exploration, brave journeys, action
-- Laughs & Chaos: silly, goofy, funny, prank-filled, absurd, high-energy stories
-- Heart & Home: family, friendship, school, feelings, growing up, everyday life
-- Wonder & Imagination: magic, fantasy, dreams, dragons, unicorns, pretend play
-- Wild & Wonderful: animals, pets, nature, dinosaurs, farms, bugs, outdoors
-- Discovery Den: nonfiction, STEM, facts, history, science, vehicles, how things work
-- Legends & Long Ago: classics, fairy tales, folklore, mythology, fables, historical stories
-- Seasons & Celebrations: holidays, birthdays, traditions, seasonal books
-- Big Worlds: diversity, culture, identity, inclusion, representation, belonging
-- Tiny Tales: bedtime, calming, gentle, short, soothing, cozy read-alouds
+--------------------------------------------------
+THEME PHILOSOPHY
+--------------------------------------------------
 
-TAG GUIDANCE:
-Choose 3-7 high-confidence supporting tags whenever possible.
+Choose the ONE PRIMARY shelf identity.
+
+Do NOT choose based only on setting or surface elements.
+
+Choose the theme that best matches:
+- what kids browse for
+- what emotional experience dominates
+- what shelf it belongs beside
+
+Ask:
+“What would this book sit next to in a bookstore?”
+
+--------------------------------------------------
+THEME GUIDANCE
+--------------------------------------------------
+
+Adventure
+- mysteries
+- quests
+- survival
+- action
+- detective stories
+- missions
+- exploration
+- sports adventures
+- fast-paced plots
+
+Examples:
+Magic Tree House
+Boxcar Children
+A to Z Mysteries
+Star Wars adventures
+
+Laughs & Chaos
+- comedy-first books
+- absurd humor
+- prank energy
+- goofy school chaos
+- ridiculous situations
+- gross-out humor
+
+Examples:
+Junie B. Jones
+Captain Underpants
+Fly Guy
+My Weird School
+Black Lagoon
+
+Heart & Home
+- family
+- friendship
+- emotional growth
+- school life
+- feelings
+- belonging
+- relationships
+- realistic fiction
+- caring animal stories
+
+Examples:
+Babysitters Club
+Because of Winn-Dixie
+The Lost Puppy
+Sarah, Plain and Tall
+
+Wonder & Imagination
+- fantasy
+- magic
+- dragons
+- unicorns
+- fairies
+- magical worlds
+- whimsical adventures
+- imaginative creatures
+
+Examples:
+Rainbow Magic
+Unicorn Diaries
+Frozen fantasy books
+Mermicorn Island
+
+Wild & Wonderful
+- animals
+- wildlife
+- nature
+- dinosaurs
+- oceans
+- bugs
+- pets
+- farms
+- animal nonfiction
+
+IMPORTANT:
+Animal books focused on emotions/family should usually be Heart & Home instead.
+
+Discovery Den
+- STEM
+- science
+- educational nonfiction
+- vehicles
+- engineering
+- technology
+- how-things-work
+- educational exploration
+
+IMPORTANT:
+Nature/animal nonfiction should usually stay in Wild & Wonderful unless STEM/science is the primary identity.
+
+Legends & Long Ago
+- mythology
+- folklore
+- fairy tales
+- historical fiction
+- classics
+- ancient worlds
+- historical survival stories
+
+Examples:
+I Survived
+Greek myths
+classic fairy tales
+
+Seasons & Celebrations
+ONLY use if the holiday/season is the PRIMARY identity.
+
+Do NOT use just because:
+- snow appears
+- Christmas is mentioned once
+- a holiday is background flavor
+
+Examples:
+Christmas collections
+Halloween books
+Valentine specials
+Pumpkin/Easter books
+
+Big Worlds
+- diversity
+- identity
+- inclusion
+- culture
+- representation
+- belonging
+- global perspectives
+
+Use only when identity/cultural perspective is CENTRAL to the reading experience.
+
+Tiny Tales
+- bedtime
+- soothing
+- calming
+- cozy
+- gentle
+- lullaby-like
+- very short comforting read-alouds
+
+--------------------------------------------------
+SERIES CONSISTENCY RULES
+--------------------------------------------------
+
+Keep series grouped consistently whenever possible.
+
+Examples:
+- Junie B. Jones → Laughs & Chaos
+- Magic Tree House → Adventure
+- Rainbow Magic → Wonder & Imagination
+- Boxcar Children → Adventure
+- Babysitters Club → Heart & Home
+- Fly Guy → Laughs & Chaos
+
+Do NOT move individual books unless the theme shift is VERY strong.
+
+--------------------------------------------------
+TAG GUIDANCE
+--------------------------------------------------
+
+Choose 3-7 supporting tags.
 
 Include:
 - emotional themes
-- reader experience themes
-- setting/location themes
-- childhood/social themes
-- genre and tone signals
-- recurring kid-interest topics
-
-Do NOT only use literal keywords from the description.
-Infer likely themes from:
-- title
-- series
-- author
 - genre
-- intended audience
-- common reader experience
+- tone
+- setting
+- reader interests
+- recurring childhood topics
+- discovery keywords
 
-Avoid under-tagging.
-Most books should receive at least 3 supporting tags.
-Use fewer than 3 only if the metadata is extremely limited.
+Prefer broad discoverable tags over niche tags.
 
-Prefer broad useful discovery tags over hyper-specific niche tags.
+Good examples:
+- Friendship
+- School
+- Magic
+- Mystery
+- Family
+- Dinosaurs
+- Humor
+- Adventure
+- Ocean
+- Survival
+- Science
+- Princesses
+- Feelings
+- Sports
+- Nonfiction
 
-If a book is classified as 13+:
+--------------------------------------------------
+RESTRICTED RULES
+--------------------------------------------------
+
+If classified as 13+:
 - set "restricted" to true
-- still choose the closest matching theme
-- still provide supporting tags
+- still assign the closest theme
+- still provide tags
 
+Otherwise:
+- restricted should be false
 
-Return ONLY this JSON shape:
-The values shown in the JSON shape are examples only. Choose the actual ageTier, themeBin, supportingTags, restricted, and reasoning based on the book being classified.
+--------------------------------------------------
+RETURN FORMAT
+--------------------------------------------------
+
+Return ONLY valid JSON.
 
 {
-  "ageTier": "Fledglings",
-  "themeBin": "Heart & Home",
-  "supportingTags": ["School", "Funny", "Growing Up"],
+  "ageTier": "Soarers",
+  "themeBin": "Adventure",
+  "supportingTags": ["Mystery", "Adventure", "Friendship"],
   "restricted": false,
-  "reasoning": "Briefly explain why the age tier and theme were chosen."
+  "reasoning": "Brief explanation of why the age tier and primary shelf theme were selected."
 }`;
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
 
