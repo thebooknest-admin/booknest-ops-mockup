@@ -102,10 +102,6 @@ const VALID_BINS: ThemeBin[] = [
   "Big Worlds",
   "Tiny Tales",
 ];
-const PAGE_COUNT_RULES: { max: number | null; tier: AgeTier }[] = [
-  { max: 16, tier: "Hatchlings" }, { max: 40, tier: "Fledglings" },
-  { max: 120, tier: "Soarers" }, { max: null, tier: "Sky Readers" },
-];
 const TIER_KEYWORD_OVERRIDES: Record<AgeTier, string[]> = {
   Hatchlings: ["board book", "baby", "toddler"],
   Fledglings: ["picture book", "read-aloud", "read aloud"],
@@ -427,13 +423,23 @@ function findFirstKeyword(text: string, keywords: string[]) { return keywords.fi
 function findAllKeywords(text: string, keywords: string[]) { return keywords.filter(k => containsKeyword(text, k)); }
 function getSearchText(b: BookMetadata) { return [b.title, b.description, ...b.categories, ...b.authors].join(" ").toLowerCase(); }
 function getNarrativeText(b: BookMetadata) { return [b.title, b.description].join(" ").toLowerCase(); }
-function isBoardBook(b: BookMetadata) { const t = getSearchText(b); return t.includes("board book") || t.includes("board-book") || b.categories.some(c => c.toLowerCase().includes("board book")); }
+function isBoardBook(b: BookMetadata) {
+  const t = getSearchText(b);
+
+  if (b.pageCount != null && b.pageCount > 80) return false;
+
+  return (
+    t.includes("board book") ||
+    t.includes("board-book") ||
+    b.categories.some(c => c.toLowerCase().includes("board book"))
+  );
+}
 
 function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } | null {
   if (isBoardBook(book)) return { tier: "Hatchlings", source: "board book format" };
-  const text = getNarrativeText(book);
+  const narrativeText = getNarrativeText(book);
   for (const [tier, keywords] of Object.entries(TIER_KEYWORD_OVERRIDES) as [AgeTier, string[]][]) {
-    const matched = findFirstKeyword(text, keywords);
+    const matched = findFirstKeyword(narrativeText, keywords);
     if (matched) {
       if (book.pageCount != null && book.pageCount < 20 && (tier === "Soarers" || tier === "Sky Readers")) continue;
       return { tier, source: `keyword "${matched}"` };
@@ -447,38 +453,42 @@ function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } |
       }
     }
   }
-  if (book.pageCount != null) {
-  const text = getSearchText(book);
+ const text = getSearchText(book);
 
-  // Picture books often run 32-48 pages
-  const pictureBookSignals = [
-    "picture book",
-    "caldecott",
-    "read-aloud",
-    "illustrated",
-    "bedtime",
-    "preschool",
-  ];
+// Strong Sky Readers signals
+if (
+  text.includes("middle grade") ||
+  text.includes("middle-grade") ||
+  text.includes("tween")
+) {
+  return {
+    tier: "Sky Readers",
+    source: "middle grade signal",
+  };
+}
 
-  const looksLikePictureBook = pictureBookSignals.some(signal =>
-    text.includes(signal)
-  );
+// Strong Soarers signals
+if (
+  text.includes("chapter book") ||
+  text.includes("early reader") ||
+  text.includes("branches")
+) {
+  return {
+    tier: "Soarers",
+    source: "early chapter signal",
+  };
+}
 
-  if (looksLikePictureBook && book.pageCount <= 56) {
-    return {
-      tier: "Fledglings",
-      source: `picture book signal + page count (${book.pageCount})`,
-    };
-  }
-
-  for (const rule of PAGE_COUNT_RULES) {
-    if (rule.max === null || book.pageCount <= rule.max) {
-      return {
-        tier: rule.tier,
-        source: `page count: ${book.pageCount}`,
-      };
-    }
-  }
+// Strong Fledglings signals
+if (
+  text.includes("picture book") ||
+  text.includes("read-aloud") ||
+  text.includes("preschool")
+) {
+  return {
+    tier: "Fledglings",
+    source: "picture book signal",
+  };
 }
   for (const entry of CATEGORY_TO_TIER) {
     for (const cat of book.categories) {
