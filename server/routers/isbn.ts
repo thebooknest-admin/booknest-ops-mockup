@@ -65,14 +65,14 @@ const AGE_RANGES: Record<AgeTier, string> = {
 const AGE_CODES: Record<AgeTier, string> = {
   Hatchlings: "HAT",
   Fledglings: "FLD",
-  Soarers: "SOA",
+  Soarers: "SOR",
   "Sky Readers": "SKY",
   "13+": "13P",
 };
 
 const THEME_CODES: Record<ThemeBin, string> = {
   Adventure: "ADV",
-  "Laughs & Chaos": "LCH",
+  "Laughs & Chaos": "HUM",
   "Heart & Home": "HRT",
   "Wonder & Imagination": "WON",
   "Wild & Wonderful": "WLD",
@@ -252,15 +252,15 @@ const BIN_KEYWORDS: Record<ThemeBin, string[]> = {
   ],
 };
 const BIN_PRECEDENCE: Record<ThemeBin, number> = {
-  "Seasons & Celebrations": 10,
-  "Laughs & Chaos": 9,
-  "Discovery Den": 8,
-  Adventure: 7,
-  "Wonder & Imagination": 6,
-  "Heart & Home": 5,
-  "Wild & Wonderful": 4,
+  "Heart & Home": 10,
+  "Wonder & Imagination": 9,
+  Adventure: 8,
+  "Laughs & Chaos": 7,
+  "Wild & Wonderful": 6,
+  "Discovery Den": 5,
+  "Legends & Long Ago": 4,
   "Big Worlds": 3,
-  "Legends & Long Ago": 2,
+  "Seasons & Celebrations": 2,
   "Tiny Tales": 1,
 };
 const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
@@ -282,7 +282,6 @@ const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
   { match: "wildlife", bin: "Wild & Wonderful" },
 
   { match: "science", bin: "Discovery Den" },
-  { match: "nonfiction", bin: "Discovery Den" },
   { match: "history", bin: "Discovery Den" },
   { match: "stem", bin: "Discovery Den" },
 
@@ -896,14 +895,43 @@ Return ONLY valid JSON.
     });
     const data = await res.json() as any;
     const parsed = JSON.parse(data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ?? "{}");
-    return {
+    const normalizeTheme = (theme: string): ThemeBin => {
+  const mapping: Record<string, ThemeBin> = {
+    "Adventure": "Adventure",
+    "Laughs & Chaos": "Laughs & Chaos",
+    "Laughs and Chaos": "Laughs & Chaos",
+
+    "Heart & Home": "Heart & Home",
+    "Heart and Home": "Heart & Home",
+
+    "Wonder & Imagination": "Wonder & Imagination",
+    "Wonder and Imagination": "Wonder & Imagination",
+
+    "Wild & Wonderful": "Wild & Wonderful",
+    "Wild and Wonderful": "Wild & Wonderful",
+
+    "Discovery Den": "Discovery Den",
+
+    "Legends & Long Ago": "Legends & Long Ago",
+    "Legends and Long Ago": "Legends & Long Ago",
+
+    "Seasons & Celebrations": "Seasons & Celebrations",
+    "Seasons and Celebrations": "Seasons & Celebrations",
+
+    "Big Worlds": "Big Worlds",
+
+    "Tiny Tales": "Tiny Tales",
+  };
+
+  return mapping[theme?.trim()] ?? "Heart & Home";
+};
+
+return {
   ageTier: VALID_TIERS.includes(parsed.ageTier)
     ? parsed.ageTier as AgeTier
     : "Fledglings" as AgeTier,
 
-  themeBin: VALID_BINS.includes(parsed.themeBin)
-    ? parsed.themeBin as ThemeBin
-    : "Heart & Home" as ThemeBin,
+  themeBin: normalizeTheme(parsed.themeBin),
 
   supportingTags: Array.isArray(parsed.supportingTags)
     ? parsed.supportingTags.slice(0, MAX_TAGS)
