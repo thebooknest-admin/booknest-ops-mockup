@@ -1076,20 +1076,29 @@ function detectRestrictedContent(book: BookMetadata): {
 
 async function classifyBook(book: BookMetadata): Promise<Classification> {
   const trace: RuleTrace = { tierSource: "", binSource: "", tagSources: [], usedAIFallback: false, tierUsedAI: false, binUsedAI: false, signalsAligned: 0, notes: [] };
-  const tierResult = resolveAgeTier(book);
-  let ageTier: AgeTier = "Fledglings";
-  if (tierResult) { ageTier = tierResult.tier; trace.tierSource = tierResult.source; }
-  else trace.notes.push("Rules could not determine age tier");
-  const binResult = resolveBin(book);
-  let themeBin: ThemeBin = "Heart & Home";
-  if (binResult) { themeBin = binResult.bin; trace.binSource = binResult.source; }
-  else trace.notes.push("Rules could not determine bin");
-  if (!tierResult || !binResult) {
-    trace.usedAIFallback = true;
-    const ai = await runAIFallback(book, { needsTier: !tierResult, needsBin: !binResult });
-    if (!tierResult) { ageTier = ai.ageTier; trace.tierSource = `AI: ${ai.reasoning}`; trace.tierUsedAI = true; }
-    if (!binResult) { themeBin = ai.themeBin; trace.binSource = `AI: ${ai.reasoning}`; trace.binUsedAI = true; }
-  }
+const tierResult = resolveAgeTier(book);
+const binResult = resolveBin(book);
+
+trace.usedAIFallback = true;
+
+const ai = await runAIFallback(book, {
+  needsTier: true,
+  needsBin: true,
+});
+
+let ageTier: AgeTier = ai.ageTier;
+let themeBin: ThemeBin = ai.themeBin;
+
+trace.tierSource = `AI: ${ai.reasoning}`;
+trace.binSource = `AI: ${ai.reasoning}`;
+trace.tierUsedAI = true;
+trace.binUsedAI = true;
+
+// Rule-based safety overrides only
+if (isBoardBook(book)) {
+  ageTier = "Hatchlings";
+  trace.notes.push("Board book override applied");
+}
   trace.signalsAligned = countAlignedSignals(trace.tierSource, trace.binSource);
   const confidence = computeConfidence(trace, book);
   let tags = resolveTags(book, themeBin);
