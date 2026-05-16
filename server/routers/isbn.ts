@@ -301,7 +301,13 @@ const BIN_TAGS: Record<ThemeBin, string[]> = {
   Adventure: ["Quest", "Exploration", "Pirates", "Treasure", "Mystery", "Adventure", "Fantasy", "Magic", "Heroes", "Journey", "Wilderness", "Survival"],
   "Laughs & Chaos": ["Silly", "Goofy", "Pranks", "Wordplay", "Giggles", "Chaos", "Funny", "Rhyming", "Interactive", "High Energy", "Absurd"],
   "Heart & Home": ["Family", "Friendship", "School", "Feelings", "Kindness", "Confidence", "Empathy", "Bedtime", "Community", "Growing Up", "New Experiences", "Emotional Growth", "Realistic Fiction", "Relationships", "Siblings", "Neighbor", "Community", "Divorce", "Grandparent"],
-  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles", "Magical", "Kingdom", "Princess", "Mermaid", "Spell"],
+  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles", "Magical", "Kingdom", "Princess", "Mermaid", "Spell", "butterfly kingdom",
+"magical creatures",
+"enchanted",
+"fairy world",
+"forest magic",
+"tiny creatures",
+"whimsical",],
   "Wild & Wonderful": ["Animals", "Ocean", "Forest", "Dinosaurs", "Nature", "Wildlife", "Bugs", "Farm", "Gardening", "Camping", "Weather"],
   "Discovery Den": ["STEM", "Science", "Space", "Vehicles", "History", "Math", "Technology", "Engineering", "Experiments", "Human Body", "Facts", "Nonfiction"],
   "Legends & Long Ago": ["Fairy Tales", "Folklore", "Fables", "Mythology", "Classics", "Historical Fiction", "Legends", "Ancient Worlds", "Moral Lessons", "Retellings"],
@@ -552,7 +558,19 @@ const matched: Record<ThemeBin, string[]> = {
   "Tiny Tales": [],
 };
   for (const bin of VALID_BINS) { const m = findAllKeywords(text, BIN_KEYWORDS[bin]); scores[bin] += m.length; matched[bin] = m; }
-  for (const cat of book.categories) { const lower = cat.toLowerCase(); for (const entry of CATEGORY_TO_BIN) { if (lower.includes(entry.match)) scores[entry.bin] += 2; } }
+  for (const cat of book.categories) {
+  const lower = cat.toLowerCase();
+
+  for (const entry of CATEGORY_TO_BIN) {
+    if (lower.includes(entry.match)) {
+      scores[entry.bin] += 1;
+
+      if (!matched[entry.bin].includes(entry.match)) {
+        matched[entry.bin].push(entry.match);
+      }
+    }
+  }
+}
   const max = Math.max(...Object.values(scores));
   if (max === 0) return null;
   const bin = VALID_BINS.filter(b => scores[b] === max).sort((a, b) => BIN_PRECEDENCE[b] - BIN_PRECEDENCE[a])[0];
