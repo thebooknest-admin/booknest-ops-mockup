@@ -753,7 +753,6 @@ export default function ReceivePage() {
     enabled: !!submittedIsbn && !isManualEntry,
     retry: false,
     staleTime: 0,
-    gcTime: 0,
     refetchOnMount: "always",
   }
 );
