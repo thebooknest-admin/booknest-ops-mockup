@@ -1106,27 +1106,22 @@ if (isBoardBook(book)) {
 }
   trace.signalsAligned = countAlignedSignals(trace.tierSource, trace.binSource);
   const confidence = computeConfidence(trace, book);
-  let tags = resolveTags(book, themeBin);
-
-if (tags.length < 3) {
+ 
   trace.usedAIFallback = true;
 
-  const ai = await runAIFallback(book, {
-    needsTier: false,
-    needsBin: false,
-  });
+const aiTags = Array.isArray((ai as any).supportingTags)
+  ? (ai as any).supportingTags
+  : [];
 
-  const aiTags = Array.isArray((ai as any).supportingTags)
-    ? (ai as any).supportingTags
-    : [];
+let tags = aiTags.slice(0, MAX_TAGS);
 
-  tags = Array.from(new Set([...tags, ...aiTags])).slice(0, MAX_TAGS);
-
-  if (aiTags.length > 0) {
-    trace.tagSources.push("AI tag enrichment");
-  }
+if (tags.length === 0) {
+  tags = resolveTags(book, themeBin);
+  trace.notes.push("Fell back to rule-based tags");
+  trace.tagSources.push("Rule-based fallback tags");
+} else {
+  trace.tagSources.push("AI-generated tags");
 }
-  trace.tagSources.push("rule-based tag matching");
 const tooOldCheck = detectTooOld(book);
 const restrictedCheck = detectRestrictedContent(book);
 
