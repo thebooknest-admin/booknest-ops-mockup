@@ -735,17 +735,26 @@ export default function ReceivePage() {
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
 
+  const utils = trpc.useUtils();
+
   const currentBin = buildBinName(
     ageGroup || "Fledglings (3-5)",
     selectedCategory
   );
 
   const { open: openScanner, ScannerModal } = useBarcodeScanner({
-    onScan: (isbn) => {
-      setIsbnInput(isbn);
+  onScan: async (isbn) => {
+    setIsbnInput(isbn);
+
+    await utils.isbn.classify.invalidate({ isbn });
+
+    setSubmittedIsbn(null);
+
+    setTimeout(() => {
       setSubmittedIsbn(isbn);
-    },
-  });
+    }, 0);
+  },
+});
 
   const classifyQuery = trpc.isbn.classify.useQuery(
   { isbn: submittedIsbn! },
@@ -836,15 +845,21 @@ export default function ReceivePage() {
     }
   }, [step]);
 
-  const handleScan = (e: React.FormEvent) => {
-    e.preventDefault();
+const handleScan = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    const val = isbnInput.trim();
+  const val = isbnInput.trim();
 
-    if (!val) return;
+  if (!val) return;
 
+  await utils.isbn.classify.invalidate({ isbn: val });
+
+  setSubmittedIsbn(null);
+
+  setTimeout(() => {
     setSubmittedIsbn(val);
-  };
+  }, 0);
+};
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
