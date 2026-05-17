@@ -614,6 +614,7 @@ Your job is to classify books based on:
 3. The MOST useful discovery/browsing behavior for families
 
 Do NOT classify based only on literal keywords.
+
 Think like:
 - a children's librarian
 - a bookseller
@@ -680,9 +681,22 @@ Examples:
 - Fly Guy → Soarers
 - Junie B. Jones → Soarers
 - Magic Tree House → Soarers
-- Babysitters Club → Sky Readers
 - Karen books → Soarers
+- Mermaid Tales → Soarers
+- Owl Diaries → Soarers
+- Dragon Masters → Soarers
+- Branches books → Soarers
+- Babysitters Club → Sky Readers
 - Percy Jackson → Sky Readers
+
+IMPORTANT READING LEVEL RULES:
+
+- Beginner chapter books, illustrated chapter books, and early independent readers are almost always "Soarers" even if the tone is simple, gentle, or cute.
+- Animal fantasy chapter books should usually be "Soarers" unless clearly designed as preschool picture books.
+- Preschool and Fledglings books are usually full-picture books or read-aloud formats under ~48 pages.
+- Books around 70-150 pages are rarely Fledglings unless metadata explicitly says picture book or read-aloud.
+- Do not classify a book as Fledglings simply because it features animals or gentle themes.
+- If a child is expected to read the book independently, it is usually Soarers or higher.
 
 --------------------------------------------------
 AVAILABLE THEMES
@@ -715,6 +729,8 @@ Choose the theme that best matches:
 Ask:
 “What would this book sit next to in a bookstore?”
 
+The primary theme should reflect the strongest overall browsing identity, not just isolated keywords.
+
 --------------------------------------------------
 THEME GUIDANCE
 --------------------------------------------------
@@ -731,10 +747,10 @@ Adventure
 - fast-paced plots
 
 Examples:
-Magic Tree House
-Boxcar Children
-A to Z Mysteries
-Star Wars adventures
+- Magic Tree House
+- Boxcar Children
+- A to Z Mysteries
+- Star Wars adventures
 
 Laughs & Chaos
 - comedy-first books
@@ -745,11 +761,11 @@ Laughs & Chaos
 - gross-out humor
 
 Examples:
-Junie B. Jones
-Captain Underpants
-Fly Guy
-My Weird School
-Black Lagoon
+- Junie B. Jones
+- Captain Underpants
+- Fly Guy
+- My Weird School
+- Black Lagoon
 
 Heart & Home
 - family
@@ -763,10 +779,10 @@ Heart & Home
 - caring animal stories
 
 Examples:
-Babysitters Club
-Because of Winn-Dixie
-The Lost Puppy
-Sarah, Plain and Tall
+- Babysitters Club
+- Because of Winn-Dixie
+- The Lost Puppy
+- Sarah, Plain and Tall
 
 Wonder & Imagination
 - fantasy
@@ -777,26 +793,36 @@ Wonder & Imagination
 - magical worlds
 - whimsical adventures
 - imaginative creatures
+- fantasy oceans
+- mermaids
+- magical animal worlds
 
 Examples:
-Rainbow Magic
-Unicorn Diaries
-Frozen fantasy books
-Mermicorn Island
+- Rainbow Magic
+- Unicorn Diaries
+- Frozen fantasy books
+- Mermicorn Island
+
+IMPORTANT:
+Whimsical animal fantasy stories, underwater fantasy creatures, magical animal worlds, and anthropomorphic creature adventures often belong in Wonder & Imagination rather than Wild & Wonderful.
 
 Wild & Wonderful
-- animals
 - wildlife
 - nature
 - dinosaurs
 - oceans
 - bugs
-- pets
+- ecosystems
+- habitats
+- outdoor exploration
+- zoology
 - farms
 - animal nonfiction
 
 IMPORTANT:
 Animal books focused on emotions/family should usually be Heart & Home instead.
+
+Fictional animal fantasy stories should usually NOT be Wild & Wonderful.
 
 Discovery Den
 - STEM
@@ -821,9 +847,9 @@ Legends & Long Ago
 - historical survival stories
 
 Examples:
-I Survived
-Greek myths
-classic fairy tales
+- I Survived
+- Greek myths
+- classic fairy tales
 
 Seasons & Celebrations
 ONLY use if the holiday/season is the PRIMARY identity.
@@ -834,10 +860,10 @@ Do NOT use just because:
 - a holiday is background flavor
 
 Examples:
-Christmas collections
-Halloween books
-Valentine specials
-Pumpkin/Easter books
+- Christmas collections
+- Halloween books
+- Valentine specials
+- Pumpkin/Easter books
 
 Big Worlds
 - diversity
@@ -872,6 +898,8 @@ Examples:
 - Boxcar Children → Adventure
 - Babysitters Club → Heart & Home
 - Fly Guy → Laughs & Chaos
+- Owl Diaries → Wonder & Imagination
+- Mermaid Tales → Wonder & Imagination
 
 Do NOT move individual books unless the theme shift is VERY strong.
 
@@ -909,6 +937,8 @@ Good examples:
 - Sports
 - Nonfiction
 
+Avoid overly generic tags if stronger discovery tags exist.
+
 --------------------------------------------------
 RESTRICTED RULES
 --------------------------------------------------
@@ -934,6 +964,7 @@ Return ONLY valid JSON.
   "restricted": false,
   "reasoning": "Brief explanation of why the age tier and primary shelf theme were selected."
 }`;
+
   const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
 
   try {
