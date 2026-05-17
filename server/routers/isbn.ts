@@ -802,9 +802,14 @@ Examples:
 - Unicorn Diaries
 - Frozen fantasy books
 - Mermicorn Island
+- Mermaid Tales
+- Sea Pony books
+- fantasy ocean creature stories
 
 IMPORTANT:
 Whimsical animal fantasy stories, underwater fantasy creatures, magical animal worlds, and anthropomorphic creature adventures often belong in Wonder & Imagination rather than Wild & Wonderful.
+IMPORTANT:
+Fictional underwater creature stories, mermaid-adjacent worlds, talking animal fantasy, and whimsical sea-creature adventures usually belong in Wonder & Imagination even when animals or pet care are mentioned.
 
 Wild & Wonderful
 - wildlife
@@ -821,6 +826,7 @@ Wild & Wonderful
 
 IMPORTANT:
 Animal books focused on emotions/family should usually be Heart & Home instead.
+Do NOT use Wild & Wonderful for fictional talking-animal chapter books or whimsical creature adventures unless the primary experience is nature learning or nonfiction exploration.
 
 Fictional animal fantasy stories should usually NOT be Wild & Wonderful.
 
