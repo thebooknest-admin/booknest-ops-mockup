@@ -1188,7 +1188,10 @@ return {
 
 export const isbnRouter = router({
   classify: publicProcedure
-    .input(z.object({ isbn: z.string() }))
+    .input(z.object({
+  isbn: z.string(),
+  lookupId: z.number().optional(),
+}))
     .query(async ({ input }) => {
       console.log('ISBN classify called with:', input.isbn);
       const cleaned = cleanIsbn(input.isbn);

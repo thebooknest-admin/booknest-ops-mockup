@@ -732,6 +732,8 @@ export default function ReceivePage() {
   const [isTooOld, setIsTooOld] = useState(false);
   const [tooOldReason, setTooOldReason] = useState("");
 
+  const [lookupId, setLookupId] = useState(0);
+
   const [, navigate] = useLocation();
   const isbnInputRef = useRef<HTMLInputElement>(null);
 
@@ -748,6 +750,8 @@ export default function ReceivePage() {
 
     await utils.isbn.classify.invalidate({ isbn });
 
+    setLookupId((id) => id + 1);
+
     setSubmittedIsbn(null);
 
     setTimeout(() => {
@@ -757,7 +761,7 @@ export default function ReceivePage() {
 });
 
   const classifyQuery = trpc.isbn.classify.useQuery(
-  { isbn: submittedIsbn! },
+  { isbn: submittedIsbn!, lookupId },
   {
     enabled: !!submittedIsbn && !isManualEntry,
     retry: false,
@@ -857,6 +861,7 @@ const handleScan = async (e: React.FormEvent) => {
   setSubmittedIsbn(null);
 
   setTimeout(() => {
+    setLookupId((id) => id + 1);
     setSubmittedIsbn(val);
   }, 0);
 };
