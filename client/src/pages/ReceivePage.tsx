@@ -748,9 +748,15 @@ export default function ReceivePage() {
   });
 
   const classifyQuery = trpc.isbn.classify.useQuery(
-    { isbn: submittedIsbn! },
-    { enabled: !!submittedIsbn && !isManualEntry, retry: false }
-  );
+  { isbn: submittedIsbn! },
+  {
+    enabled: !!submittedIsbn && !isManualEntry,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+  }
+);
 
   const { isFetching: classifying, error: classifyError } = classifyQuery;
 
