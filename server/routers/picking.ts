@@ -104,8 +104,8 @@ export const pickingRouter = router({
 
       // Get all shipments in picking status
       const shipmentsRes = await sbFetch(
-       `/shipments?status=in.(picking,swap_requested)&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
-      );
+  `/shipments?status=eq.picking&shipment_type=eq.outbound&select=id,member_id,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
+);
       const pendingShipments: any[] = await shipmentsRes.json();
 
       if (!pendingShipments.length) return { orders: [], date: today };
