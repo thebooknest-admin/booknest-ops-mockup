@@ -438,7 +438,58 @@ export const pickingRouter = router({
       }
 
       const [updated] = await patchRes.json();
-      return updated;
+
+//
+// Release old copy back to inventory
+//
+await sbFetch(
+  `/book_copies?id=eq.${input.old_book_copy_id}`,
+  {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "in_house",
+      shipment_id: null,
+      updated_at: new Date().toISOString(),
+    }),
+    headers: { Prefer: "return=minimal" },
+  }
+);
+
+//
+// Reserve new copy
+//
+await sbFetch(
+  `/book_copies?id=eq.${replacement.book_copy_id}`,
+  {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "reserved",
+      shipment_id: input.shipment_id,
+      updated_at: new Date().toISOString(),
+    }),
+    headers: { Prefer: "return=minimal" },
+  }
+);
+
+//
+// Audit trail
+//
+await sbFetch(`/shipment_book_swaps`, {
+  method: "POST",
+  body: JSON.stringify({
+    shipment_id: input.shipment_id,
+    old_book_copy_id: input.old_book_copy_id,
+    old_book_title_id: assignedRows.find(
+      (r) => r.book_copy_id === input.old_book_copy_id
+    )?.book_title_id ?? null,
+    new_book_copy_id: replacement.book_copy_id,
+    new_book_title_id: replacement.book_title_id,
+    reason: "Manual picker swap",
+  }),
+  headers: { Prefer: "return=minimal" },
+});
+
+return updated;
     }),
 
   /**
