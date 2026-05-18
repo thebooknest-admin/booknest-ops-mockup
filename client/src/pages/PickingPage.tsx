@@ -67,67 +67,68 @@ function PickMode({ order, onComplete, onBack }: PickModeProps) {
 
 
   // slotOverrides: map from slot index → index into all_suggestions
-  const [slotOverrides, setSlotOverrides] = useState<Record<number, number>>({});
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: suggestions, isLoading } = trpc.picking.suggestBooks.useQuery(
-    { member_id: order.member_id, count: order.books_needed },
-    { staleTime: 5 * 60 * 1000 }
-  );
+ const { data: pickList, isLoading } = trpc.picking.getShipmentPickList.useQuery(
+  { shipment_id: order.shipment_id },
+  { staleTime: 5 * 60 * 1000 }
+);
 
-  const allSuggestions = suggestions?.all_suggestions ?? [];
-  const booksNeeded = order.books_needed;
+const utils = trpc.useUtils();
+
+const swapMutation = trpc.picking.swapShipmentBook.useMutation({
+  onSuccess: () => {
+  toast.success("Swapped book!");
+  setScanState("idle");
+  setScanMessage("");
+  setScanInput("");
+  utils.picking.getShipmentPickList.invalidate({
+    shipment_id: order.shipment_id,
+  });
+},
+  onError: (err) => {
+    toast.error("Swap failed: " + err.message);
+  },
+});
+
+  const allSuggestions = pickList?.map((book: any) => ({
+  book_title_id: book.book_title_id,
+  copy_id: book.book_copy_id,
+  sku: book.book_sku,
+  title: book.book_to_find?.replace(/^"|"$/g, "") ?? "Unknown Book",
+author: "",
+  bin_id: book.bin_id,
+  match_reason: book.instruction,
+})) ?? [];
+ const booksNeeded = pickList?.length ?? order.books_needed;
 
   // Build the current slot→book mapping, applying any overrides
   const slotBooks = Array.from({ length: booksNeeded }, (_, idx) => {
-    const overrideIdx = slotOverrides[idx];
-    if (overrideIdx !== undefined) return allSuggestions[overrideIdx] ?? null;
-    return allSuggestions[idx] ?? null;
-  });
+  return allSuggestions[idx] ?? null;
+});
 
   const allScanned = Object.keys(scannedBooks).length >= booksNeeded;
 
-  // Get the set of all_suggestions indices currently assigned to any slot
-  const usedSuggestionIndices = new Set(
-    Array.from({ length: booksNeeded }, (_, idx) => slotOverrides[idx] ?? idx)
-  );
 
   // Swap a slot to the next unused suggestion
   const handleSwap = (slotIdx: number) => {
-    if (slotIdx in scannedBooks) return; // can't swap already-scanned
+  if (slotIdx in scannedBooks) return;
 
-    const currentSuggestionIdx = slotOverrides[slotIdx] ?? slotIdx;
+  const currentBook = slotBooks[slotIdx];
 
-    // Find the next unused suggestion after the current one
-    let next = currentSuggestionIdx + 1;
-    while (next < allSuggestions.length) {
-      if (!usedSuggestionIndices.has(next)) break;
-      next++;
-    }
+  if (!currentBook?.copy_id) {
+    toast.error("No book copy found to swap.");
+    return;
+  }
 
-    if (next >= allSuggestions.length) {
-  toast.error("All available books in this age group have been shown. Consider checking other bins manually.");
-  return;
-}
-
-// Show a notice when entering fallback territory
-if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_index) {
-  toast.info("Now showing books from broader selection.");
-}
-
-    setSlotOverrides(prev => ({ ...prev, [slotIdx]: next }));
-
-    // Clear any scan state for this slot
-    if (activeSlot === slotIdx) {
-      setScanState("idle");
-      setScanMessage("");
-      setScanInput("");
-    }
-
-    toast.info(`Swapped to alternate: ${allSuggestions[next]?.title ?? "book"}`);
+  swapMutation.mutate({
+    shipment_id: order.shipment_id,
+    member_id: order.member_id,
+    old_book_copy_id: currentBook.copy_id,
+    books_needed: 30,
+  });
   };
-
   // Auto-focus scan input
   useEffect(() => {
     inputRef.current?.focus();
@@ -168,7 +169,7 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
       setScanState("success");
       setScanMessage(`✓ ${expectedBook.title} confirmed!`);
       setScanInput("");
-      setActiveSlot((prev) => prev + 1);
+      setActiveSlot((prev) => Math.min(prev + 1, booksNeeded - 1));
       setTimeout(() => setScanState("idle"), 2000);
     } else {
       setScanState("error");
@@ -288,11 +289,7 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
             const isScanned = idx in scannedBooks;
             const isActive = idx === activeSlot && !allScanned;
             const isPending = idx > activeSlot;
-            const isOverride = idx in slotOverrides;
-            const suggestionIdx = slotOverrides[idx] ?? idx;
-            const hasMoreAlternates = allSuggestions
-              .slice(suggestionIdx + 1)
-              .some((_, i) => !usedSuggestionIndices.has(suggestionIdx + 1 + i));
+          
 
             return (
               <div
@@ -320,12 +317,6 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-foreground">{book.title}</p>
-                          {isOverride && (
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                              style={{ backgroundColor: "oklch(0.94 0.05 260)", color: "oklch(0.42 0.11 260)" }}>
-                              alt pick
-                            </span>
-                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">{book.author}</p>
                         {book.match_reason && (
@@ -337,10 +328,11 @@ if (suggestions?.fallback_start_index && next >= suggestions.fallback_start_inde
 
                       <div className="flex items-center gap-2 shrink-0">
                         {/* Swap button — only show for unscanned slots */}
-                        {!isScanned && (isActive || isPending) && hasMoreAlternates && (
+                        {!isScanned && (isActive || isPending) && (
                           <button
-                            onClick={() => handleSwap(idx)}
-                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border transition-colors hover:bg-muted"
+  disabled={swapMutation.isPending}
+  onClick={() => handleSwap(idx)}
+                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg border transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{ color: "oklch(0.42 0.11 260)", borderColor: "oklch(0.85 0.06 260)" }}
                             title="Swap for an alternate book"
                           >

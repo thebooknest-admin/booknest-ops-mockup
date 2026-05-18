@@ -324,6 +324,123 @@ export const pickingRouter = router({
       };
     }),
 
+      /**
+   * Returns the existing assigned pick list for a shipment.
+   */
+  getShipmentPickList: publicProcedure
+    .input(
+      z.object({
+        shipment_id: z.string(),
+      })
+    )
+    .query(async ({ input }) => {
+      const res = await sbFetch(
+        `/rpc/get_shipment_pick_list`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            p_shipment_id: input.shipment_id,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(`Failed to get shipment pick list: ${await res.text()}`);
+      }
+
+      return await res.json();
+    }),
+
+
+  /**
+   * Swaps one assigned shipment book for a new alternate.
+   */
+  swapShipmentBook: publicProcedure
+    .input(
+      z.object({
+        shipment_id: z.string(),
+        member_id: z.string(),
+        old_book_copy_id: z.string(),
+        books_needed: z.number().min(1).max(50).default(30),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const assignedRes = await sbFetch(
+        `/shipment_books?shipment_id=eq.${input.shipment_id}&select=book_copy_id&limit=100`
+      );
+
+      if (!assignedRes.ok) {
+        throw new Error(`Failed to get assigned books: ${await assignedRes.text()}`);
+      }
+
+      const assignedRows: any[] = await assignedRes.json();
+      const assignedCopyIds = new Set(
+        assignedRows.map((row) => row.book_copy_id).filter(Boolean)
+      );
+
+      const candidateRes = await sbFetch(`/rpc/select_books_for_shipment`, {
+        method: "POST",
+        body: JSON.stringify({
+          p_member_id: input.member_id,
+          p_shipment_id: input.shipment_id,
+          p_books_needed: input.books_needed,
+        }),
+      });
+
+      if (!candidateRes.ok) {
+        throw new Error(`Failed to select alternate book: ${await candidateRes.text()}`);
+      }
+
+      const candidates: any[] = await candidateRes.json();
+
+      const replacement = candidates.find((book) => {
+        const title = String(book.title ?? "").toLowerCase();
+
+        const seasonal =
+          title.includes("halloween") ||
+          title.includes("trick") ||
+          title.includes("pumpkin") ||
+          title.includes("ghost") ||
+          title.includes("spooky") ||
+          title.includes("christmas") ||
+          title.includes("thanksgiving") ||
+          title.includes("easter");
+
+        return (
+          book.book_copy_id &&
+          !assignedCopyIds.has(book.book_copy_id) &&
+          !seasonal
+        );
+      });
+
+      if (!replacement) {
+        throw new Error("No alternate book found.");
+      }
+
+      const patchRes = await sbFetch(
+        `/shipment_books?shipment_id=eq.${input.shipment_id}&book_copy_id=eq.${input.old_book_copy_id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            book_copy_id: replacement.book_copy_id,
+            book_title_id: replacement.book_title_id,
+            status: "ready_for_picking",
+            match_score: replacement.match_score,
+            picked_at: null,
+            scanned_at: null,
+          }),
+          headers: { Prefer: "return=representation" },
+        }
+      );
+
+      if (!patchRes.ok) {
+        throw new Error(`Failed to swap shipment book: ${await patchRes.text()}`);
+      }
+
+      const [updated] = await patchRes.json();
+      return updated;
+    }),
+
   /**
    * Confirms scanned picks — moves shipment to 'packing' status.
    */
@@ -388,20 +505,25 @@ export const pickingRouter = router({
           });
           if (!copyPatch.ok) throw new Error(`Failed to update copy ${copyId}: ${await copyPatch.text()}`);
 
-          // Create shipment_books record
-          const sbPost = await sbFetch("/shipment_books", {
-            method: "POST",
-            body: JSON.stringify({
-              shipment_id: shipment_id,
-              book_title_id: titleId,
-              book_copy_id: copyId,
-              status: "selected",
-              selection_reason: "Scan confirmed",
-              created_at: new Date().toISOString(),
-            }),
-            headers: { Prefer: "return=minimal" },
-          });
-          if (!sbPost.ok) throw new Error(`Failed to create shipment_books record: ${await sbPost.text()}`);
+          // Update existing shipment_books row instead of creating a duplicate
+const now = new Date().toISOString();
+
+const sbPatch = await sbFetch(
+  `/shipment_books?shipment_id=eq.${shipment_id}&book_copy_id=eq.${copyId}`,
+  {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "picked",
+      picked_at: now,
+      scanned_at: now,
+    }),
+    headers: { Prefer: "return=minimal" },
+  }
+);
+
+if (!sbPatch.ok) {
+  throw new Error(`Failed to update shipment_books row: ${await sbPatch.text()}`);
+}
         }
 
         // Update member's next_ship_date (advance by ~4 weeks)
