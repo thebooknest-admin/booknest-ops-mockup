@@ -100,14 +100,6 @@ const buildNavItems = (
       { label: "Process Returns", href: "/returns", icon: RotateCcw },
     ],
   },
-  {
-    label: "Donations",
-    icon: Gift,
-    children: [
-      { label: "Intake", href: "/donations/intake", icon: Gift },
-      { label: "Donation Log", href: "/donations/log", icon: BookMarked },
-    ],
-  },
   { label: "Members", href: "/members", icon: Users },
   { label: "Support", href: "/support", icon: AlertCircle },
   { label: "ISBN Lookup", href: "/isbn", icon: BookOpen },

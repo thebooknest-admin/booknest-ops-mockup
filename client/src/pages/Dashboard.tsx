@@ -189,7 +189,6 @@ export default function Dashboard() {
             { label: "Start Picking", icon: Package, href: "/picking" },
             { label: "Start Shipping", icon: Truck, href: "/shipping" },
             { label: "Process Returns", icon: RotateCcw, href: "/returns" },
-            { label: "Log Donation", icon: Gift, href: "/donations/intake" },
           ].map(action => (
             <Link key={action.label} href={action.href}>
               <div className="action-card items-center text-center">
