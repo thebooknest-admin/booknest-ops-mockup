@@ -21,8 +21,6 @@ export default function Dashboard() {
 
   const nextShipDay = getNextShipDay();
   const overdueCount = stats?.overdueShipments ?? 0;
-  const lowBinCount = stats?.inventory?.low_bins?.length ?? 0;
-  const pendingSwaps = stats?.pendingSwaps ?? 0;
   const toPick = stats?.toPick ?? 0;
   const toPack = stats?.toPack ?? 0;
   const toShip = stats?.toShip ?? 0;
@@ -39,18 +37,6 @@ export default function Dashboard() {
       href: "/shipping",
       icon: AlertCircle,
       count: overdueCount,
-    });
-  }
-
-  if (pendingSwaps > 0) {
-    actions.push({
-      id: "swaps",
-      priority: "urgent",
-      label: `${pendingSwaps} swap${pendingSwaps !== 1 ? "s" : ""} requested`,
-      sub: "Members ready to send books back — prep next bundle",
-      href: "/picking",
-      icon: ArrowRightLeft,
-      count: pendingSwaps,
     });
   }
 
@@ -90,18 +76,6 @@ export default function Dashboard() {
     });
   }
 
-  if (lowBinCount > 0) {
-    actions.push({
-      id: "inventory",
-      priority: "normal",
-      label: `${lowBinCount} bin${lowBinCount !== 1 ? "s" : ""} running low`,
-      sub: "Restock before next ship day",
-      href: "/inventory",
-      icon: AlertTriangle,
-      count: lowBinCount,
-    });
-  }
-
   const urgentActions = actions.filter(a => a.priority === "urgent");
   const todayActions = actions.filter(a => a.priority === "today");
   const normalActions = actions.filter(a => a.priority === "normal");
@@ -125,7 +99,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── STAT CARDS ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
         <Link href="/picking">
           <div className="stat-card group cursor-pointer">
             <div className="flex items-center justify-between">
@@ -173,38 +147,16 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link href="/picking">
-          <div className={cn("stat-card group cursor-pointer", pendingSwaps > 0 && "border-amber-200")}
-            style={pendingSwaps > 0 ? { borderTopWidth: 3, borderTopColor: "oklch(0.76 0.16 70)" } : {}}>
-            <div className="flex items-center justify-between">
-              <span className="section-label">Swaps</span>
-              <ArrowRightLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-            </div>
-            <p className="text-3xl font-bold text-foreground mt-1">{isLoading ? "—" : pendingSwaps}</p>
-            <p className="text-xs text-muted-foreground">
-              {pendingSwaps > 0
-                ? <span style={{ color: "oklch(0.55 0.14 75)" }} className="font-medium">needs attention</span>
-                : "pending swaps"}
-            </p>
-            <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
-              View Members <ArrowRight className="w-3 h-3" />
-            </div>
-          </div>
-        </Link>
-
         <Link href="/inventory">
-          <div className={cn("stat-card group cursor-pointer", lowBinCount > 0 && "border-amber-200")}
-            style={lowBinCount > 0 ? { borderTopWidth: 3, borderTopColor: "oklch(0.76 0.16 70)" } : {}}>
+          <div className="stat-card group cursor-pointer">
             <div className="flex items-center justify-between">
               <span className="section-label">Inventory</span>
               <Archive className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
             </div>
             <p className="text-3xl font-bold text-foreground mt-1">{isLoading ? "—" : (stats?.inventory?.in_house ?? 0)}</p>
             <p className="text-xs text-muted-foreground">
-              {lowBinCount > 0
-                ? <span style={{ color: "oklch(0.55 0.14 75)" }} className="font-medium">{lowBinCount} low bins</span>
-                : "copies in house"}
-            </p>
+  copies in house
+</p>
             <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
               View Bins <ArrowRight className="w-3 h-3" />
             </div>
@@ -219,10 +171,8 @@ export default function Dashboard() {
             </div>
             <p className="text-3xl font-bold text-foreground mt-1">{isLoading ? "—" : (stats?.activeMembers ?? 0)}</p>
             <p className="text-xs text-muted-foreground">
-              {(stats?.waitlistMembers ?? 0) > 0
-                ? <span style={{ color: "oklch(0.52 0.12 75)" }} className="font-medium">{stats!.waitlistMembers} on waitlist</span>
-                : "active subscribers"}
-            </p>
+  active subscribers
+</p>
             <div className="flex items-center gap-1 mt-2 text-xs font-medium" style={{ color: "oklch(0.42 0.11 155)" }}>
               View Members <ArrowRight className="w-3 h-3" />
             </div>
@@ -299,7 +249,7 @@ export default function Dashboard() {
 
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h2 className="font-semibold text-sm text-foreground">Bin Status</h2>
+            <h2 className="font-semibold text-sm text-foreground">Inventory Snapshot</h2>
           </div>
           <div className="p-5">
             {isLoading ? (
@@ -309,47 +259,27 @@ export default function Dashboard() {
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-xl font-bold text-foreground">{stats?.inventory?.in_house ?? 0}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">In House</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-xl font-bold text-foreground">{stats?.inventory?.in_transit ?? 0}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">In Transit</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-xl font-bold text-foreground">{stats?.inventory?.returned ?? 0}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Returned</p>
-                  </div>
-                </div>
-                {lowBinCount > 0 ? (
-                  <div>
-                    <p className="text-xs font-medium mb-2 flex items-center gap-1.5"
-                      style={{ color: "oklch(0.55 0.14 75)" }}>
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Low Bins — needs restocking
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {stats!.inventory.low_bins.slice(0, 10).map(bin => (
-                        <span key={bin} className="text-xs px-2 py-0.5 rounded-full border"
-                          style={{ backgroundColor: "oklch(0.97 0.05 75)", borderColor: "oklch(0.88 0.08 75)", color: "oklch(0.45 0.14 75)" }}>
-                          {bin}
-                        </span>
-                      ))}
-                      {lowBinCount > 10 && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                          +{lowBinCount - 10} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm text-green-700">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    All bins are well stocked
-                  </div>
-                )}
-              </>
+  <div className="text-center p-3 rounded-lg bg-muted/50">
+    <p className="text-xl font-bold text-foreground">{stats?.inventory?.in_house ?? 0}</p>
+    <p className="text-xs text-muted-foreground mt-0.5">In House</p>
+  </div>
+
+  <div className="text-center p-3 rounded-lg bg-muted/50">
+    <p className="text-xl font-bold text-foreground">{stats?.inventory?.in_transit ?? 0}</p>
+    <p className="text-xs text-muted-foreground mt-0.5">In Transit</p>
+  </div>
+
+  <div className="text-center p-3 rounded-lg bg-muted/50">
+    <p className="text-xl font-bold text-foreground">{stats?.inventory?.returned ?? 0}</p>
+    <p className="text-xs text-muted-foreground mt-0.5">Returned</p>
+  </div>
+</div>
+
+<div className="flex items-center gap-2 text-sm text-green-700">
+  <CheckCircle2 className="w-4 h-4 text-green-500" />
+  Inventory counts are up to date!
+</div>
+</>
             )}
           </div>
         </div>
