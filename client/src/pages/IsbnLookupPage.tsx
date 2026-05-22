@@ -18,8 +18,7 @@ type ThemeBin =
   | "Discovery Den"
   | "Legends & Long Ago"
   | "Seasons & Celebrations"
-  | "Big Worlds"
-  | "Tiny Tales";
+
 type ConfidenceLevel = "high" | "medium" | "low" | "needs-review";
 
 const TIER_COLORS: Record<AgeTier, string> = {
@@ -37,8 +36,6 @@ const BIN_COLORS: Record<ThemeBin, string> = {
   "Discovery Den": "bg-teal-100 text-teal-800",
   "Legends & Long Ago": "bg-amber-100 text-amber-800",
   "Seasons & Celebrations": "bg-red-100 text-red-800",
-  "Big Worlds": "bg-indigo-100 text-indigo-800",
-  "Tiny Tales": "bg-slate-100 text-slate-800",
 };
 
 const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; className: string; dot: string }> = {

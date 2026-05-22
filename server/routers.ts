@@ -768,8 +768,6 @@ const getThemeFromBinId = (binId: string | null | undefined) => {
   if (value.includes("-DSC-")) return "Discovery Den";
   if (value.includes("-LEG-")) return "Legends & Long Ago";
   if (value.includes("-SEA-")) return "Seasons & Celebrations";
-  if (value.includes("-BIG-")) return "Big Worlds";
-  if (value.includes("-TNY-") || value.includes("-TINY-")) return "Tiny Tales";
 
   return null;
 };

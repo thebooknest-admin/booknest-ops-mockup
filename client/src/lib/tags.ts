@@ -11,9 +11,7 @@ export type BinCategory =
   | "WILD_WONDERFUL"
   | "DISCOVERY_DEN"
   | "LEGENDS_LONG_AGO"
-  | "SEASONS_CELEBRATIONS"
-  | "BIG_WORLDS"
-  | "TINY_TALES";
+  | "SEASONS_CELEBRATIONS";
 
 export interface TagCategory {
   id: BinCategory;
@@ -70,6 +68,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Interactive",
       "High Energy",
       "Absurd",
+      "Gentle Humor",
     ],
   },
 
@@ -95,6 +94,22 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Growing Up",
       "New Experiences",
       "Emotional Growth",
+      "Inclusion",
+      "Diversity",
+      "Cultures",
+      "Acceptance",
+      "Belonging",
+      "Identity",
+      "Representation",
+      "Different Perspectives",
+      "Calming",
+      "Read Aloud",
+      "Quiet Stories",
+      "Cozy",
+      "Routine",
+      "Short Stories",
+      "Early Learning",
+      "Soft Illustrations",
     ],
   },
 
@@ -218,52 +233,6 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Celebrations",
     ],
   },
-
-  {
-    id: "BIG_WORLDS",
-    label: "Big Worlds",
-    emoji: "🌍",
-    color: {
-      bg: "oklch(0.95 0.06 330)",
-      text: "oklch(0.35 0.14 330)",
-      border: "oklch(0.82 0.10 330)",
-    },
-    tags: [
-      "Inclusion",
-      "Diversity",
-      "Cultures",
-      "Acceptance",
-      "Belonging",
-      "Identity",
-      "Representation",
-      "Different Perspectives",
-      "Confidence",
-      "Empathy",
-    ],
-  },
-
-  {
-    id: "TINY_TALES",
-    label: "Tiny Tales",
-    emoji: "🌙",
-    color: {
-      bg: "oklch(0.96 0.03 250)",
-      text: "oklch(0.32 0.08 250)",
-      border: "oklch(0.82 0.05 250)",
-    },
-    tags: [
-      "Bedtime",
-      "Calming",
-      "Gentle Humor",
-      "Read Aloud",
-      "Quiet Stories",
-      "Cozy",
-      "Routine",
-      "Short Stories",
-      "Early Learning",
-      "Soft Illustrations",
-    ],
-  },
 ];
 
 // ─── SCORING ENGINE ───────────────────────────────────────────────────────────
@@ -372,8 +341,6 @@ export function autoAssignTags(subjects: string[], title = "", author = ""): Aut
   DISCOVERY_DEN: 0,
   LEGENDS_LONG_AGO: 0,
   SEASONS_CELEBRATIONS: 0,
-  BIG_WORLDS: 0,
-  TINY_TALES: 0,
 };
 
   // Combine all text to search
@@ -468,8 +435,6 @@ export function buildBinName(
     DISCOVERY_DEN: "DSC",
     LEGENDS_LONG_AGO: "LEG",
     SEASONS_CELEBRATIONS: "SEA",
-    BIG_WORLDS: "BIG",
-    TINY_TALES: "TNY",
   };
 
   const prefix = prefixMap[ageGroup] || "FLD";

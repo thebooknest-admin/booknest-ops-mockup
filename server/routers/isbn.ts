@@ -27,8 +27,7 @@ type ThemeBin =
   | "Discovery Den"
   | "Legends & Long Ago"
   | "Seasons & Celebrations"
-  | "Big Worlds"
-  | "Tiny Tales";
+
 type ConfidenceLevel = "high" | "medium" | "low" | "needs-review";
 
 interface RawBook {
@@ -79,8 +78,6 @@ const THEME_CODES: Record<ThemeBin, string> = {
   "Discovery Den": "DSC",
   "Legends & Long Ago": "LEG",
   "Seasons & Celebrations": "SEA",
-  "Big Worlds": "BIG",
-  "Tiny Tales": "TNY",
 };
 
 const VALID_TIERS: AgeTier[] = [
@@ -99,8 +96,6 @@ const VALID_BINS: ThemeBin[] = [
   "Discovery Den",
   "Legends & Long Ago",
   "Seasons & Celebrations",
-  "Big Worlds",
-  "Tiny Tales",
 ];
 const TIER_KEYWORD_OVERRIDES: Record<AgeTier, string[]> = {
   Hatchlings: ["board book", "toddler"],
@@ -222,30 +217,6 @@ const BIN_KEYWORDS: Record<ThemeBin, string[]> = {
     "holiday",
     "celebration",
   ],
-
-  "Big Worlds": [
-    "diversity",
-    "culture",
-    "identity",
-    "representation",
-    "acceptance",
-    "belonging",
-    "inclusion",
-    "different perspectives",
-    "heritage",
-  ],
-
-  "Tiny Tales": [
-    "bedtime",
-    "calming",
-    "quiet",
-    "gentle",
-    "cozy",
-    "read aloud",
-    "routine",
-    "soft",
-    "short stories",
-  ],
 };
 const BIN_PRECEDENCE: Record<ThemeBin, number> = {
   "Heart & Home": 10,
@@ -255,9 +226,8 @@ const BIN_PRECEDENCE: Record<ThemeBin, number> = {
   "Wild & Wonderful": 6,
   "Discovery Den": 5,
   "Legends & Long Ago": 4,
-  "Big Worlds": 3,
   "Seasons & Celebrations": 2,
-  "Tiny Tales": 1,
+
 };
 const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
   { match: "humor", bin: "Laughs & Chaos" },
@@ -289,13 +259,6 @@ const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
   { match: "christmas", bin: "Seasons & Celebrations" },
   { match: "halloween", bin: "Seasons & Celebrations" },
 
-  { match: "diversity", bin: "Big Worlds" },
-  { match: "representation", bin: "Big Worlds" },
-  { match: "culture", bin: "Big Worlds" },
-
-  { match: "bedtime", bin: "Tiny Tales" },
-  { match: "calming", bin: "Tiny Tales" },
-  { match: "quiet", bin: "Tiny Tales" },
 ];
 const BIN_TAGS: Record<ThemeBin, string[]> = {
   Adventure: ["Quest", "Exploration", "Pirates", "Treasure", "Mystery", "Adventure", "Fantasy", "Magic", "Heroes", "Journey", "Wilderness", "Survival"],
@@ -312,9 +275,7 @@ const BIN_TAGS: Record<ThemeBin, string[]> = {
   "Discovery Den": ["STEM", "Science", "Space", "Vehicles", "History", "Math", "Technology", "Engineering", "Experiments", "Human Body", "Facts", "Nonfiction"],
   "Legends & Long Ago": ["Fairy Tales", "Folklore", "Fables", "Mythology", "Classics", "Historical Fiction", "Legends", "Ancient Worlds", "Moral Lessons", "Retellings"],
   "Seasons & Celebrations": ["Christmas", "Halloween", "Easter", "Birthdays", "Back to School", "Summer", "Winter", "Spring", "Fall", "Traditions", "Celebrations"],
-  "Big Worlds": ["Inclusion", "Diversity", "Cultures", "Acceptance", "Belonging", "Identity", "Representation", "Different Perspectives", "Confidence", "Empathy"],
-  "Tiny Tales": ["Bedtime", "Calming", "Gentle Humor", "Read Aloud", "Quiet Stories", "Cozy", "Routine", "Short Stories", "Early Learning", "Soft Illustrations"],
-};
+ };
 const CLASSICS_TAGS = ["Timeless","Household Staple","Must Read","Fan Favorite","Bestseller","Award Winner","Caldecott","Newbery","Vintage","Generational Favorite","Childhood Classic","Fairy Tale","Folktale","Fable","Nursery Rhymes"];
 const MAX_TAGS = 7;
 
@@ -541,8 +502,6 @@ if (isAnimalEmotionalStory) {
   "Discovery Den": 0,
   "Legends & Long Ago": 0,
   "Seasons & Celebrations": 0,
-  "Big Worlds": 0,
-  "Tiny Tales": 0,
 };
 
 const matched: Record<ThemeBin, string[]> = {
@@ -554,8 +513,6 @@ const matched: Record<ThemeBin, string[]> = {
   "Discovery Den": [],
   "Legends & Long Ago": [],
   "Seasons & Celebrations": [],
-  "Big Worlds": [],
-  "Tiny Tales": [],
 };
   for (const bin of VALID_BINS) { const m = findAllKeywords(text, BIN_KEYWORDS[bin]); scores[bin] += m.length; matched[bin] = m; }
   for (const cat of book.categories) {
@@ -710,8 +667,7 @@ AVAILABLE THEMES
 - Discovery Den
 - Legends & Long Ago
 - Seasons & Celebrations
-- Big Worlds
-- Tiny Tales
+
 
 --------------------------------------------------
 THEME PHILOSOPHY
@@ -871,25 +827,6 @@ Examples:
 - Valentine specials
 - Pumpkin/Easter books
 
-Big Worlds
-- diversity
-- identity
-- inclusion
-- culture
-- representation
-- belonging
-- global perspectives
-
-Use only when identity/cultural perspective is CENTRAL to the reading experience.
-
-Tiny Tales
-- bedtime
-- soothing
-- calming
-- cozy
-- gentle
-- lullaby-like
-- very short comforting read-alouds
 
 --------------------------------------------------
 SERIES CONSISTENCY RULES
@@ -1009,10 +946,6 @@ Return ONLY valid JSON.
 
     "Seasons & Celebrations": "Seasons & Celebrations",
     "Seasons and Celebrations": "Seasons & Celebrations",
-
-    "Big Worlds": "Big Worlds",
-
-    "Tiny Tales": "Tiny Tales",
   };
 
   return mapping[theme?.trim()] ?? "Heart & Home";

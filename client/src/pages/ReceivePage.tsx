@@ -52,8 +52,6 @@ const BIN_TO_CATEGORY: Record<string, BinCategory> = {
   "Discovery Den": "DISCOVERY_DEN",
   "Legends & Long Ago": "LEGENDS_LONG_AGO",
   "Seasons & Celebrations": "SEASONS_CELEBRATIONS",
-  "Big Worlds": "BIG_WORLDS",
-  "Tiny Tales": "TINY_TALES",
 };
 
 const AGE_GROUPS = [

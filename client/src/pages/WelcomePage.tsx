@@ -103,26 +103,6 @@ const THEME_OPTIONS = [
       text: "oklch(0.55 0.15 60)",
     },
   },
-  {
-    id: "bigworlds",
-    label: "Big Worlds",
-    emoji: "🌎",
-    description: "Culture, identity, diversity, belonging, and global perspectives.",
-    color: {
-      bg: "oklch(0.95 0.04 200)",
-      text: "oklch(0.45 0.12 200)",
-    },
-  },
-  {
-    id: "tiny",
-    label: "Tiny Tales",
-    emoji: "🌙",
-    description: "Gentle bedtime stories, calming reads, and cozy moments.",
-    color: {
-      bg: "oklch(0.96 0.03 260)",
-      text: "oklch(0.45 0.10 260)",
-    },
-  },
 ];
 
 const INTEREST_OPTIONS = [

@@ -83,8 +83,6 @@ AVAILABLE THEMES:
 - Discovery Den
 - Legends & Long Ago
 - Seasons & Celebrations
-- Big Worlds
-- Tiny Tales
 
 AVAILABLE AGE TIERS:
 - Hatchlings
