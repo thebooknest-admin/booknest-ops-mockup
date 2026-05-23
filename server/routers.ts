@@ -776,10 +776,25 @@ const derivedBinTheme = getThemeFromBinId(input.bin_id);
 
 
         // ── Upsert book title ────────────────────────────────────────────────
-        const titleRes = await sbFetch(
-          "/book_titles?isbn=eq." + input.isbn + "&limit=1"
-        );
-        const existing: any[] = await titleRes.json();
+        let existing: any[] = [];
+
+// First try ISBN match
+if (input.isbn?.trim()) {
+  const titleRes = await sbFetch(
+    `/book_titles?isbn=eq.${encodeURIComponent(input.isbn)}&limit=1`
+  );
+
+  existing = await titleRes.json();
+}
+
+// Fallback to title + author match
+if (existing.length === 0) {
+  const fallbackRes = await sbFetch(
+    `/book_titles?title=ilike.${encodeURIComponent(input.title)}&author=ilike.${encodeURIComponent(input.author)}&limit=1`
+  );
+
+  existing = await fallbackRes.json();
+}
         let titleId: string;
         if (existing.length > 0) {
           titleId = existing[0].id;
