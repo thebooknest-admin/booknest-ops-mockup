@@ -994,35 +994,24 @@ function detectRestrictedContent(book: BookMetadata): {
   restricted: boolean;
   reason: string;
 } {
-  const restrictedKeywords = [
+  const hardRestrictedIndicators = [
     "young adult",
+    "young-adult",
     "ya fiction",
     "ya novel",
-    "teen",
-    "teen fiction",
-    "mature",
-    "explicit",
-    "dark romance",
-    "romantic relationship",
-    "explicit romance",
-    "adult romance",
-    "spicy",
-    "high school",
     "new adult",
-    "college romance",
-    "psychological thriller",
+    "adult romance",
+    "dark romance",
+    "explicit romance",
+    "explicit sexual content",
     "graphic violence",
-    "grade 9",
-    "grade 10",
-    "grade 11",
-    "grade 12",
-    "ages 13",
-    "ages 14",
-    "ages 15",
-    "ages 16",
-    "14 and up",
-    "15 and up",
-    "16 and up",
+    "erotic",
+    "18+",
+    "college romance",
+    "smut",
+    "spicy romance",
+    "sexual assault",
+    "self-harm",
   ];
 
   const text = `
@@ -1032,7 +1021,7 @@ function detectRestrictedContent(book: BookMetadata): {
     ${book.authors?.join(" ")}
   `.toLowerCase();
 
-  const matched = restrictedKeywords.find((keyword) =>
+  const matched = hardRestrictedIndicators.find((keyword) =>
     text.includes(keyword)
   );
 
@@ -1096,7 +1085,6 @@ const tooOldCheck = detectTooOld(book);
 const restrictedCheck = detectRestrictedContent(book);
 
 if (restrictedCheck.restricted) {
-  ageTier = "13+";
   trace.notes.push(restrictedCheck.reason);
 }
 
