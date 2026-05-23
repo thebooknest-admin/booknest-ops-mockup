@@ -11,7 +11,7 @@
 import EasyPost from '@easypost/api';
 import { z } from 'zod';
 import { publicProcedure, router } from '../_core/trpc';
-import { sbFetch } from '../supabase';
+import { sbFetch, sbJson, sbVoid } from '../supabase';
 
 const EASYPOST_API_KEY = process.env.EASYPOST_API_KEY!;
 
@@ -106,28 +106,55 @@ export const shippingRouter = router({
       if (shipment.status === 'shipped') throw new Error('Shipment already marked as shipped');
 
       // 2. Update shipment → shipped
-      const patch = await sbFetch(`/shipments?id=eq.${shipment_id}`, {
+      const shipmentBooks = await sbJson<
+        { id: string; book_title_id: string; book_copy_id: string | null }[]
+      >(
+        `/shipment_books?shipment_id=eq.${shipment_id}&select=id,book_title_id,book_copy_id&limit=200`
+      );
+
+      if (shipmentBooks.length === 0) {
+        throw new Error('Cannot mark shipment as shipped without assigned books');
+      }
+
+      const copyIds = shipmentBooks
+        .map((book) => book.book_copy_id)
+        .filter((id): id is string => Boolean(id));
+
+      if (copyIds.length !== shipmentBooks.length) {
+        throw new Error('Cannot mark shipment as shipped until every book has a scanned copy');
+      }
+
+      const now = new Date().toISOString();
+      await sbVoid(`/book_copies?id=in.(${copyIds.join(',')})`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'in_transit',
+          updated_at: now,
+        }),
+        headers: { Prefer: 'return=minimal' },
+      });
+
+      await sbVoid(`/shipment_books?shipment_id=eq.${shipment_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'picked',
+          picked_at: now,
+          scanned_at: now,
+        }),
+        headers: { Prefer: 'return=minimal' },
+      });
+
+      await sbVoid(`/shipments?id=eq.${shipment_id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           tracking_number,
           carrier: 'USPS',
           status: 'shipped',
-          actual_ship_date: new Date().toISOString().split('T')[0],
-          updated_at: new Date().toISOString(),
+          actual_ship_date: now.split('T')[0],
+          updated_at: now,
         }),
         headers: { Prefer: 'return=minimal' },
       });
-
-      if (!patch.ok) {
-        const err = await patch.text();
-        throw new Error(`Failed to update shipment: ${err}`);
-      }
-
-      // 3. Auto-create member_book_history rows
-      const sbRes = await sbFetch(
-        `/shipment_books?shipment_id=eq.${shipment_id}&select=book_title_id`
-      );
-      const shipmentBooks: { book_title_id: string }[] = await sbRes.json();
 
       if (shipmentBooks.length > 0 && shipment.member_id) {
         const today = new Date().toISOString().split('T')[0];

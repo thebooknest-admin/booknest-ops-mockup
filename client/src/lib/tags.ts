@@ -420,17 +420,17 @@ export function buildBinName(
   category: BinCategory
 ): string {
   const prefixMap: Record<string, string> = {
-    "Hatchlings (0-2)": "HAT",
-    "Fledglings (3-5)": "FLD",
-    "Soarers (6-8)": "SOR",
+    "Hatchlings (0-2)": "HATCH",
+    "Fledglings (3-5)": "FLED",
+    "Soarers (6-8)": "SOAR",
     "Sky Readers (9-12)": "SKY",
   };
 
   const categoryMap: Record<BinCategory, string> = {
     ADVENTURE: "ADV",
-    LAUGHS_CHAOS: "HUM",
+    LAUGHS_CHAOS: "LCH",
     HEART_HOME: "HRT",
-    WONDER_IMAGINATION: "WON",
+    WONDER_IMAGINATION: "WND",
     WILD_WONDERFUL: "WLD",
     DISCOVERY_DEN: "DSC",
     LEGENDS_LONG_AGO: "LEG",

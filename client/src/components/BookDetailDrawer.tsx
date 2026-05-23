@@ -14,7 +14,6 @@ import {
   ExternalLink,
   FlaskConical,
   Tags,
-  MapPin,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,7 +49,6 @@ type BookDetail = {
   bin_theme: string | null;
   tag_ids: string[] | null;
   tags: BookTag[];
-  bin_id: string | null;
   cover_url: string | null;
   publisher: string | null;
   published_date: string | null;
@@ -540,13 +538,6 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                         </InfoPill>
                       )}
 
-                      {display.bin_id && (
-                        <InfoPill className="bg-muted text-foreground border-border font-mono">
-                          <MapPin className="inline w-3 h-3 mr-1" />
-                          {display.bin_id}
-                        </InfoPill>
-                      )}
-
                       <span className="text-xs text-muted-foreground">
                         {book.copies.length}{" "}
                         {book.copies.length === 1 ? "copy" : "copies"}
@@ -631,14 +622,6 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
   options={THEME_OPTIONS}
   onChange={(value) => handleTitleChange("bin_theme", value)}
 />
-
-                  <FieldInput
-                    label="Default Bin"
-                    value={display.bin_id ?? ""}
-                    onChange={(value) => handleTitleChange("bin_id", value)}
-                    placeholder="FLED-HRT-01"
-                    mono
-                  />
 
                   <FieldInput
                     label="Publisher"

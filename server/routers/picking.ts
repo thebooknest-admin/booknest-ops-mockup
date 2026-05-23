@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { normalizeAgeGroup } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
 import { sbFetch } from "../supabase";
 
@@ -188,6 +189,8 @@ export const pickingRouter = router({
 
       // ✅ FIXED: pass books_per_box as source of truth
       const booksNeeded = input.count ?? getBookCount(member.tier, member.books_per_box);
+      const memberAgeGroup =
+        normalizeAgeGroup(member.age_group) ?? member.age_group;
 
       const interestsRes = await sbFetch(
         `/member_interests?member_id=eq.${input.member_id}&select=interest_category&limit=50`
@@ -229,7 +232,7 @@ export const pickingRouter = router({
 
       // Get available books for this age group
       const booksRes = await sbFetch(
-        `/book_titles?age_group=eq.${encodeURIComponent(member.age_group)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
+        `/book_titles?age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
       );
       const allBooks: any[] = await booksRes.json();
 

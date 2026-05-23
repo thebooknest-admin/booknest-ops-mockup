@@ -1,4 +1,13 @@
 import { COOKIE_NAME } from "@shared/const";
+import {
+  BOOK_COPY_STATUSES,
+  LABEL_STATUSES,
+  TERMINAL_BOOK_COPY_STATUSES,
+  getAgeGroupLabel,
+  getBinCodeForAgeGroupAndTheme,
+  getSkuPrefixForAgeGroup,
+  normalizeAgeGroup,
+} from "@shared/booknest";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -20,6 +29,8 @@ import {
   getShipments,
   updateShipmentStatus,
   sbFetch,
+  sbJson,
+  sbVoid,
 } from "./supabase";
 import { isbnRouter } from "./routers/isbn";
 
@@ -114,6 +125,9 @@ export const appRouter = router({
           method: "POST",
           body: JSON.stringify({
             ...memberData,
+            age_group: memberData.age_group
+              ? getAgeGroupLabel(memberData.age_group)
+              : null,
             welcome_form_completed: false,
             is_vip: false,
             created_at: new Date().toISOString(),
@@ -249,7 +263,14 @@ return { ...title, tags, copies };
         };
         if (fields.sku !== undefined) patch.sku = fields.sku;
         if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
-        if (fields.status !== undefined) patch.status = fields.status;
+        if (fields.status !== undefined) {
+          patch.status = fields.status;
+          if (TERMINAL_BOOK_COPY_STATUSES.has(fields.status)) {
+            patch.label_status = LABEL_STATUSES.notRequired;
+          } else if (fields.status === BOOK_COPY_STATUSES.pendingLabel) {
+            patch.label_status = LABEL_STATUSES.pending;
+          }
+        }
         if (fields.condition !== undefined) patch.condition = fields.condition;
         if (fields.notes !== undefined) patch.notes = fields.notes;
         if (fields.age_group !== undefined) patch.age_group = fields.age_group;
@@ -271,7 +292,6 @@ return { ...title, tags, copies };
       author: z.string().optional(),
       age_group: z.string().optional(),
       bin_theme: z.string().optional(),
-      bin_id: z.string().optional(),
       isbn: z.string().optional(),
       cover_url: z.string().optional(),
       publisher: z.string().optional(),
@@ -282,33 +302,6 @@ return { ...title, tags, copies };
   .mutation(async ({ input }) => {
     const { id, ...fields } = input;
     const now = new Date().toISOString();
-
-    const normalizeAgeGroup = (ageGroup: string | null | undefined) => {
-      const value = (ageGroup ?? "")
-        .toLowerCase()
-        .replace(/\s*\(.*\)\s*/g, "")
-        .trim()
-        .replace(/\s+/g, "_");
-
-      if (value === "hatchlings") return "hatchlings";
-      if (value === "fledglings") return "fledglings";
-      if (value === "soarers") return "soarers";
-      if (value === "sky_readers") return "sky readers";
-      if (value === "13+") return "13+";
-
-      return ageGroup ?? null;
-    };
-
-    const getSkuPrefix = (ageGroup: string | null | undefined) => {
-      const normalized = normalizeAgeGroup(ageGroup);
-
-      if (normalized === "hatchlings") return "HAT";
-      if (normalized === "fledglings") return "FLD";
-      if (normalized === "soarers") return "SOR";
-      if (normalized === "sky readers") return "SKY";
-
-      return "UNK";
-    };
 
     const existingTitleRes = await sbFetch(
       `/book_titles?id=eq.${id}&limit=1&select=id,age_group`
@@ -327,10 +320,11 @@ return { ...title, tags, copies };
       throw new Error("Book title not found");
     }
 
-    const oldAgeGroup = normalizeAgeGroup(existingTitle.age_group);
+    const oldAgeGroup =
+      normalizeAgeGroup(existingTitle.age_group) ?? existingTitle.age_group;
     const newAgeGroup =
       fields.age_group !== undefined
-        ? normalizeAgeGroup(fields.age_group)
+        ? normalizeAgeGroup(fields.age_group) ?? fields.age_group
         : oldAgeGroup;
 
     const ageChanged =
@@ -347,8 +341,6 @@ return { ...title, tags, copies };
     if (fields.publisher !== undefined) updateFields.publisher = fields.publisher;
     if (fields.published_date !== undefined)
       updateFields.published_date = fields.published_date;
-    if (fields.bin_id !== undefined) updateFields.bin_id = fields.bin_id;
-
     if (fields.page_count !== undefined) {
       updateFields.page_count =
         fields.page_count.trim() === "" ? null : Number(fields.page_count);
@@ -381,10 +373,10 @@ return { ...title, tags, copies };
 
   const copies: { id: string; sku: string | null }[] = await copiesRes.json();
 
-  const newPrefix = getSkuPrefix(newAgeGroup);
+  const newPrefix = getSkuPrefixForAgeGroup(newAgeGroup);
 
   const existingSkusRes = await sbFetch(
-    `/book_copies?sku=like.BN-${newPrefix}-*&select=sku&limit=10000`
+    `/book_copies?age_group=eq.${newAgeGroup}&select=sku&limit=10000`
   );
 
   if (!existingSkusRes.ok) {
@@ -432,26 +424,6 @@ return { ...title, tags, copies };
     }
   }
 }
-
-    if (fields.bin_id !== undefined) {
-      const copyBinUpdateRes = await sbFetch(
-        `/book_copies?book_title_id=eq.${id}&status=eq.in_house`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            bin_id: fields.bin_id,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        }
-      );
-
-      if (!copyBinUpdateRes.ok) {
-        throw new Error(
-          `Failed to update in-house copy bins: ${await copyBinUpdateRes.text()}`
-        );
-      }
-    }
 
     return {
       success: true,
@@ -711,16 +683,16 @@ inTransit: publicProcedure.query(async () => {
       .input(z.object({ ids: z.array(z.string()) }))
       .mutation(async ({ input }) => {
         const now = new Date().toISOString();
-        await sbFetch(`/book_copies?id=in.(${input.ids.join(",")})`, {
+        await sbVoid(`/book_copies?id=in.(${input.ids.join(",")})`, {
           method: "PATCH",
           body: JSON.stringify({
-            label_status: "printed",
+            label_status: LABEL_STATUSES.printed,
             label_printed_at: now,
             updated_at: now,
           }),
           headers: { Prefer: "return=minimal" },
         });
-        await sbFetch(
+        await sbVoid(
           `/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`,
           {
             method: "PATCH",
@@ -761,9 +733,9 @@ const getThemeFromBinId = (binId: string | null | undefined) => {
   const value = (binId ?? "").toUpperCase();
 
   if (value.includes("-ADV-")) return "Adventure";
-  if (value.includes("-HUM-")) return "Laughs & Chaos";
+  if (value.includes("-HUM-") || value.includes("-LCH-")) return "Laughs & Chaos";
   if (value.includes("-HRT-") || value.includes("HEARTHOME")) return "Heart & Home";
-  if (value.includes("-WON-")) return "Wonder & Imagination";
+  if (value.includes("-WON-") || value.includes("-WND-")) return "Wonder & Imagination";
   if (value.includes("-WLD-")) return "Wild & Wonderful";
   if (value.includes("-DSC-")) return "Discovery Den";
   if (value.includes("-LEG-")) return "Legends & Long Ago";
@@ -773,6 +745,15 @@ const getThemeFromBinId = (binId: string | null | undefined) => {
 };
 
 const derivedBinTheme = getThemeFromBinId(input.bin_id);
+const ageGroupKey = normalizeAgeGroup(input.age_group);
+
+if (!ageGroupKey) {
+  throw new Error(`Unsupported age group: ${input.age_group}`);
+}
+
+const binTheme = input.bin_theme ?? derivedBinTheme;
+const canonicalBinId =
+  getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
 
 
         // ── Upsert book title ────────────────────────────────────────────────
@@ -780,25 +761,28 @@ const derivedBinTheme = getThemeFromBinId(input.bin_id);
 
 // First try ISBN match
 if (input.isbn?.trim()) {
-  const titleRes = await sbFetch(
+  existing = await sbJson<any[]>(
     `/book_titles?isbn=eq.${encodeURIComponent(input.isbn)}&limit=1`
   );
-
-  existing = await titleRes.json();
 }
 
 // Fallback to title + author match
 if (existing.length === 0) {
-  const fallbackRes = await sbFetch(
+  existing = await sbJson<any[]>(
     `/book_titles?title=ilike.${encodeURIComponent(input.title)}&author=ilike.${encodeURIComponent(input.author)}&limit=1`
   );
-
-  existing = await fallbackRes.json();
 }
         let titleId: string;
         if (existing.length > 0) {
           titleId = existing[0].id;
-          await sbFetch(`/book_titles?id=eq.${titleId}`, {
+          const existingCopies = await sbJson<{ id: string }[]>(
+            `/book_copies?book_title_id=eq.${titleId}&select=id&limit=1`
+          );
+          const titleAgeGroup =
+            existingCopies.length === 0
+              ? ageGroupKey
+              : normalizeAgeGroup(existing[0].age_group) ?? ageGroupKey;
+          await sbVoid(`/book_titles?id=eq.${titleId}`, {
   method: "PATCH",
   body: JSON.stringify({
     cover_url: input.cover_url ?? existing[0].cover_url,
@@ -807,61 +791,38 @@ if (existing.length === 0) {
       input.published_date ?? existing[0].published_date,
     page_count: input.page_count ?? existing[0].page_count,
     subjects: input.subjects ?? existing[0].subjects,
-    bin_theme: input.bin_theme ?? existing[0].bin_theme ?? null,
+    age_group: titleAgeGroup,
+    bin_theme: binTheme ?? existing[0].bin_theme ?? null,
     updated_at: new Date().toISOString(),
   }),
             headers: { Prefer: "return=minimal" },
           });
        } else {
-  const newTitleRes = await sbFetch("/book_titles", {
+  const newTitle = await sbJson<any[]>("/book_titles", {
     method: "POST",
     body: JSON.stringify({
       isbn: input.isbn,
       title: input.title,
       author: input.author,
       cover_url: input.cover_url ?? null,
-      age_group: input.age_group,
-      bin_theme: input.bin_theme ?? derivedBinTheme,
+      age_group: ageGroupKey,
+      bin_theme: binTheme,
       publisher: input.publisher ?? null,
       published_date: input.published_date ?? null,
       page_count: input.page_count ?? null,
       subjects: input.subjects ?? null,
     }),
   });
-          const newTitle: any[] = await newTitleRes.json();
           titleId = newTitle[0].id;
         }
 
         // ── Build SKU prefix ─────────────────────────────────────────────────
-        const normalizeAgeGroup = (ag: string): string => {
-  const lower = ag
-    .toLowerCase()
-    .replace(/\s*\(.*\)\s*/, "")
-    .trim();
-
-  if (lower.includes("hatch")) return "Hatchlings";
-  if (lower.includes("fledg")) return "Fledglings";
-  if (lower.includes("soarer")) return "Soarers";
-  if (lower.includes("sky")) return "Sky Readers";
-
-  return ag.trim();
-};
-        const ageGroupKey = normalizeAgeGroup(input.age_group);
-
-const SKU_PREFIX_MAP: Record<string, string> = {
-  Hatchlings: "HATCH",
-  Fledglings: "FLED",
-  Soarers: "SOAR",
-  "Sky Readers": "SKY",
-};
-        const agePrefix =
-          SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
+        const agePrefix = getSkuPrefixForAgeGroup(ageGroupKey);
 
         // ── Find first unused SKU number (fills gaps, handles >9999) ─────────
-        const allSkusRes = await sbFetch(
-          `/book_copies?age_group=eq.${ageGroupKey}&sku=like.BN-${agePrefix}*&select=sku&order=sku.asc&limit=10000`
+        const allSkuData = await sbJson<{ sku: string }[]>(
+          `/book_copies?age_group=eq.${ageGroupKey}&select=sku&order=sku.asc&limit=10000`
         );
-        const allSkuData: { sku: string }[] = await allSkusRes.json();
 
         const usedNumbers = new Set(
           allSkuData
@@ -878,21 +839,20 @@ const SKU_PREFIX_MAP: Record<string, string> = {
         const sku = `BN-${agePrefix}-${String(nextNum).padStart(6, "0")}`;
 
         // ── Create book copy ─────────────────────────────────────────────────
-        const copyRes = await sbFetch("/book_copies", {
+        const copy = await sbJson<any[]>("/book_copies", {
           method: "POST",
           body: JSON.stringify({
             sku,
             book_title_id: titleId,
             isbn: input.isbn,
             age_group: ageGroupKey,
-            bin_id: input.bin_id,
-            status: "pending_label",
+            bin_id: canonicalBinId,
+            status: BOOK_COPY_STATUSES.pendingQc,
             condition: input.condition,
-            label_status: "pending",
+            label_status: LABEL_STATUSES.pending,
             received_at: new Date().toISOString(),
           }),
         });
-        const copy: any[] = await copyRes.json();
         return { success: true, sku, copy_id: copy[0]?.id, title_id: titleId };
       }),
   }),
@@ -946,14 +906,14 @@ const SKU_PREFIX_MAP: Record<string, string> = {
         const nextStatus = input.reprint_label
           ? "pending_label"
           : "pending_stock";
-        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             status: nextStatus,
             condition: input.condition,
             qc_notes: input.notes ?? null,
             qc_passed_at: new Date().toISOString(),
-            ...(input.reprint_label ? { label_status: "pending" } : {}),
+            ...(input.reprint_label ? { label_status: LABEL_STATUSES.pending } : {}),
           }),
           headers: { Prefer: "return=minimal" },
         });
@@ -962,10 +922,11 @@ const SKU_PREFIX_MAP: Record<string, string> = {
     fail: publicProcedure
       .input(z.object({ copy_id: z.string(), notes: z.string().optional() }))
       .mutation(async ({ input }) => {
-        await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             status: "donated_lfl",
+            label_status: LABEL_STATUSES.notRequired,
             qc_notes: input.notes ?? null,
             qc_failed_at: new Date().toISOString(),
           }),
@@ -985,7 +946,7 @@ passAll: publicProcedure
       method: "PATCH",
       body: JSON.stringify({
         status: "pending_label",
-        label_status: "pending",
+        label_status: LABEL_STATUSES.pending,
         condition: "good",
         qc_passed_at: now,
         updated_at: now,
@@ -1056,7 +1017,7 @@ passAll: publicProcedure
       .mutation(async ({ input }) => {
         if (input.copy_ids.length === 0) return { success: true, count: 0 };
         const now = new Date().toISOString();
-        await sbFetch(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
+        await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
           method: "PATCH",
           body: JSON.stringify({ status: "in_house", stocked_at: now }),
           headers: { Prefer: "return=minimal" },
@@ -1211,7 +1172,7 @@ await Promise.all(
       method: 'PATCH',
       body: JSON.stringify({
         child_name: child.child_name,
-        age_group: child.age_group,
+        age_group: getAgeGroupLabel(child.age_group) || child.age_group,
         favorite_themes: child.favorite_themes,
         interests: child.interests,
         topics_to_avoid: child.topics_to_avoid,
@@ -1495,7 +1456,9 @@ await Promise.all(
             email: s.parent_email,
             child_name: s.child_name,
             child_birthday: s.child_birthday ?? null,
-            age_group: s.reading_level ?? null,
+            age_group: s.reading_level
+              ? getAgeGroupLabel(s.reading_level)
+              : null,
             tier: s.subscription_tier ?? null,
             subscription_status: "active",
             interests: s.interests ?? [],

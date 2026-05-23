@@ -51,10 +51,9 @@ export default function DonationIntakePage() {
   // Recompute suggested bin whenever selected tags or age group change
   useEffect(() => {
     if (!ageGroup || selectedTags.length === 0) return;
-    const catVotes: Record<BinCategory, number> = {
-      ADVENTURE: 0, HUMOR: 0, LIFE: 0, LEARN: 0,
-      IDENTITY: 0, NATURE: 0, SEASONAL: 0, CLASSICS: 0,
-    };
+    const catVotes = Object.fromEntries(
+      TAG_TAXONOMY.map((cat) => [cat.id, 0])
+    ) as Record<BinCategory, number>;
     for (const tag of selectedTags) {
       const cat = getCategoryForTag(tag);
       if (cat) catVotes[cat.id] += 1;

@@ -351,7 +351,7 @@ async function fetchFromOpenLibrary(isbn: string): Promise<RawBook | null> {
     if (edition.physical_format) subjects.push(edition.physical_format);
     const coverUrl = edition.covers?.length ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg` : null;
     const title = edition.subtitle ? `${edition.title ?? ""}: ${edition.subtitle}`.trim() : edition.title ?? null;
-    return { isbn, title, authors, description, coverUrl, categories: [...new Set(subjects)].slice(0, 15) as string[], pageCount: edition.number_of_pages || null, publishedDate: edition.publish_date || null, source: "openlibrary" };
+    return { isbn, title, authors, description, coverUrl, categories: Array.from(new Set(subjects)).slice(0, 15) as string[], pageCount: edition.number_of_pages || null, publishedDate: edition.publish_date || null, source: "openlibrary" };
   } catch (e) {
     console.log('>>> OpenLib fetch ERROR:', e);
     return null;

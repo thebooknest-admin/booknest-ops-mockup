@@ -29,6 +29,34 @@ export async function sbFetch(
   });
 }
 
+export async function sbJson<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await sbFetch(path, options);
+
+  if (!res.ok) {
+    throw new Error(
+      `Supabase request failed for ${path}: ${res.status} ${res.statusText} - ${await res.text()}`
+    );
+  }
+
+  return (await res.json()) as T;
+}
+
+export async function sbVoid(
+  path: string,
+  options: RequestInit = {}
+): Promise<void> {
+  const res = await sbFetch(path, options);
+
+  if (!res.ok) {
+    throw new Error(
+      `Supabase request failed for ${path}: ${res.status} ${res.statusText} - ${await res.text()}`
+    );
+  }
+}
+
 // ─── Members ──────────────────────────────────────────────────────────────────
 
 export interface Member {
@@ -406,14 +434,18 @@ export async function getBookTitlesWithCopies(params?: {
   offset?: number;
   search?: string;
   age_group?: string;
-}): Promise<{ data: BookTitleWithCopies[]; total: number }> {
+}): Promise<{
+  data: BookTitleWithCopies[];
+  total: number;
+  catalog_only_count: number;
+}> {
   const titlesResult = await getBookTitles({
     ...params,
     limit: params?.limit ?? 5000,
   });
 
   if (titlesResult.data.length === 0) {
-    return { data: [], total: 0 };
+    return { data: [], total: 0, catalog_only_count: 0 };
   }
 
   const titleIds = titlesResult.data.map((title) => title.id);
@@ -544,14 +576,14 @@ export async function getBookTitlesWithCopies(params?: {
     };
   });
 
-  const filteredData = data.filter(
-  (book) => (book.copy_count ?? 0) > 0
-);
+  const filteredData = data.filter((book) => (book.copy_count ?? 0) > 0);
+  const catalogOnlyCount = data.length - filteredData.length;
 
   return {
-  data: filteredData,
-  total: filteredData.length,
-};
+    data: filteredData,
+    total: filteredData.length,
+    catalog_only_count: catalogOnlyCount,
+  };
 }
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────

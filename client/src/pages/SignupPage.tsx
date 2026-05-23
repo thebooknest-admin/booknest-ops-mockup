@@ -52,7 +52,7 @@ const READING_LEVELS = [
   { value: "hatchlings", label: "🐣 Hatchlings", range: "Ages 0–2", desc: "Board books, picture books, simple rhymes" },
   { value: "fledglings", label: "🐦 Fledglings", range: "Ages 3–5", desc: "Early readers, picture books, beginning stories" },
   { value: "soarers",    label: "🦅 Soarers",    range: "Ages 6–8", desc: "Chapter books, illustrated stories, early chapter books" },
-  { value: "skyreaders", label: "🌟 Sky Readers", range: "Ages 9–12", desc: "Middle grade novels, longer chapter books, series" },
+  { value: "sky_readers", label: "🌟 Sky Readers", range: "Ages 9–12", desc: "Middle grade novels, longer chapter books, series" },
 ];
 
 const SUBSCRIPTION_TIERS = [

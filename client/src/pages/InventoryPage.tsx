@@ -213,9 +213,13 @@ export default function InventoryPage() {
             <p className="text-sm text-muted-foreground mt-0.5">
               {isLoading
                 ? "Loading..."
-                : `${data?.total ?? 0} titles · ${
+                : `${data?.total ?? 0} stocked titles · ${
                     summary?.total ?? 0
-                  } total copies`}
+                  } total copies${
+                    data?.catalog_only_count
+                      ? ` · ${data.catalog_only_count} catalog-only hidden`
+                      : ""
+                  }`}
             </p>
           </div>
 
