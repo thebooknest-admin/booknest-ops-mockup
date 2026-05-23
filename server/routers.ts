@@ -834,19 +834,26 @@ if (existing.length === 0) {
 
         // ── Build SKU prefix ─────────────────────────────────────────────────
         const normalizeAgeGroup = (ag: string): string => {
-          const lower = ag
-            .toLowerCase()
-            .replace(/\s*\(.*\)\s*/, "")
-            .trim();
-          return lower.replace(/\s+/g, "_");
-        };
+  const lower = ag
+    .toLowerCase()
+    .replace(/\s*\(.*\)\s*/, "")
+    .trim();
+
+  if (lower.includes("hatch")) return "Hatchlings";
+  if (lower.includes("fledg")) return "Fledglings";
+  if (lower.includes("soarer")) return "Soarers";
+  if (lower.includes("sky")) return "Sky Readers";
+
+  return ag.trim();
+};
         const ageGroupKey = normalizeAgeGroup(input.age_group);
-        const SKU_PREFIX_MAP: Record<string, string> = {
-          hatchlings: "HATCH",
-          fledglings: "FLED",
-          soarers: "SOAR",
-          sky_readers: "SKY",
-        };
+
+const SKU_PREFIX_MAP: Record<string, string> = {
+  Hatchlings: "HATCH",
+  Fledglings: "FLED",
+  Soarers: "SOAR",
+  "Sky Readers": "SKY",
+};
         const agePrefix =
           SKU_PREFIX_MAP[ageGroupKey] ?? ageGroupKey.toUpperCase().slice(0, 4);
 
