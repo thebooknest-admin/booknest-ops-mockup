@@ -877,21 +877,27 @@ const handleScan = async (e: React.FormEvent) => {
   const handleConfirm = () => {
     if (!book) return;
 
-    addBookMutation.mutate({
-      isbn: book.isbn.trim() || `MANUAL-${Date.now()}`,
-      title: book.title,
-      author: book.author,
-      cover_url: book.coverUrl ?? undefined,
-      published_date: book.publishYear || undefined,
-      page_count: book.pages
-        ? parseInt(book.pages, 10) || undefined
-        : undefined,
-      subjects: book.subjects,
-      age_group: ageGroup,
-      bin_id: buildBinName(ageGroup, selectedCategory),
-      condition: "good",
-      tags: selectedTags,
-    });
+addBookMutation.mutate({
+  isbn: book.isbn.trim() || `MANUAL-${Date.now()}`,
+  title: book.title,
+  author: book.author,
+  cover_url: book.coverUrl ?? undefined,
+  published_date: book.publishYear || undefined,
+  page_count: book.pages
+    ? parseInt(book.pages, 10) || undefined
+    : undefined,
+  subjects: book.subjects,
+
+  age_group: ageGroup,
+
+  bin_id: buildBinName(ageGroup, selectedCategory),
+
+  bin_theme: getCategoryMeta(selectedCategory).label,
+
+  condition: "good",
+
+  tags: selectedTags,
+});
   };
 
   const handleReset = () => {
