@@ -1,5 +1,5 @@
 // BookNest Ops — Dashboard (Command Center)
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import {
   Package, Truck, Archive, Users,
@@ -9,11 +9,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNextShipDay } from "@/lib/shipDays";
+import { useEffect, useState } from "react";
 
 export default function Dashboard() {
   const { data: stats, isLoading, refetch, isRefetching } = trpc.dashboard.stats.useQuery(undefined, {
     refetchInterval: 60_000,
   });
+
+const [, navigate] = useLocation();
+const [showPickModal, setShowPickModal] = useState(false);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric"
@@ -22,6 +26,11 @@ export default function Dashboard() {
   const nextShipDay = getNextShipDay();
   const overdueCount = stats?.overdueShipments ?? 0;
   const toPick = stats?.toPick ?? 0;
+  useEffect(() => {
+  if (!isLoading && toPick > 0) {
+    setShowPickModal(true);
+  }
+}, [isLoading, toPick]);
   const toPack = stats?.toPack ?? 0;
   const toShip = stats?.toShip ?? 0;
 
@@ -83,6 +92,50 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+
+{showPickModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-6">
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+        style={{ backgroundColor: "oklch(0.92 0.04 155)" }}
+      >
+        <Package
+          className="w-7 h-7"
+          style={{ color: "oklch(0.42 0.11 155)" }}
+        />
+      </div>
+
+      <h2 className="text-xl font-bold text-foreground">
+        Orders ready to pick
+      </h2>
+
+      <p className="text-sm text-muted-foreground mt-2">
+        You have {toPick} order{toPick !== 1 ? "s" : ""} waiting in the picking queue.
+      </p>
+
+      <div className="flex gap-3 mt-6">
+        <button
+          type="button"
+          onClick={() => setShowPickModal(false)}
+          className="flex-1 py-2.5 rounded-2xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+        >
+          Later
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate("/picking")}
+          className="flex-1 py-2.5 rounded-2xl text-white text-sm font-semibold transition-colors"
+          style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+        >
+          Go Pick Orders
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>

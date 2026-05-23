@@ -105,10 +105,10 @@ export default function LabelsPage() {
 
   const exportCSV = () => {
     const rows = [
-      ["Title", "Author", "SKU"],
+      ["Title", "Theme", "SKU"],
       ...filteredCopies.map((c) => [
         c.book_title?.title ?? "",
-        c.book_title?.author ?? "",
+        c.book_title?.bin_theme ?? "",
         c.sku ?? "",
       ]),
     ];
