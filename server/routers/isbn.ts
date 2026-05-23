@@ -977,16 +977,32 @@ return {
 
 function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
   const text = getSearchText(book);
+
   const tooOldSignals = [
-    "young adult", "teen fiction", "high school", "grade 9", "grade 10",
-    "grade 11", "grade 12", "ages 13", "ages 14", "ages 15", "ages 16",
-    "14 and up", "15 and up", "16 and up", "ya fiction", "ya novel",
+    "young adult",
+    "young-adult",
+    "ya fiction",
+    "ya novel",
+    "new adult",
+    "adult fiction",
+    "ages 13",
+    "ages 14",
+    "ages 15",
+    "ages 16",
+    "14 and up",
+    "15 and up",
+    "16 and up",
   ];
-  const matched = tooOldSignals.find(s => text.includes(s));
-  if (matched) return { tooOld: true, reason: `Detected "${matched}" in metadata` };
-  if (book.pageCount && book.pageCount > 400) {
-    return { tooOld: true, reason: `Page count (${book.pageCount}) suggests teen/adult content` };
+
+  const matched = tooOldSignals.find((s) => text.includes(s));
+
+  if (matched) {
+    return {
+      tooOld: true,
+      reason: `Detected "${matched}" in metadata`,
+    };
   }
+
   return { tooOld: false, reason: "" };
 }
 
