@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Package, Truck, Archive, Users,
   AlertTriangle, AlertCircle, ArrowRight, BookOpen, RotateCcw,
-  RefreshCw, BoxIcon, ClipboardList, Gift, ArrowRightLeft,
+  RefreshCw, BoxIcon, ClipboardCheck, ClipboardList, Gift, ArrowRightLeft,
   CheckCircle2, Tag, Layers, CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,10 @@ const [showPickModal, setShowPickModal] = useState(false);
 }, [isLoading, toPick]);
   const toPack = stats?.toPack ?? 0;
   const toShip = stats?.toShip ?? 0;
+  const pendingQc = stats?.pendingQc ?? 0;
+  const pendingLabels = stats?.pendingLabels ?? 0;
+  const pendingStock = stats?.pendingStock ?? 0;
+  const pendingReturns = stats?.pendingReturns ?? stats?.pendingSwaps ?? 0;
 
   // Build action items
   const actions: { id: string; priority: "urgent" | "today" | "normal"; label: string; sub: string; href: string; icon: React.ComponentType<any>; count?: number }[] = [];
@@ -82,6 +86,54 @@ const [showPickModal, setShowPickModal] = useState(false);
       href: "/packing",
       icon: BoxIcon,
       count: toPack,
+    });
+  }
+
+  if (pendingReturns > 0) {
+    actions.push({
+      id: "returns",
+      priority: "today",
+      label: `${pendingReturns} return${pendingReturns !== 1 ? "s" : ""} open`,
+      sub: "Scan returned books back into inventory",
+      href: "/returns",
+      icon: RotateCcw,
+      count: pendingReturns,
+    });
+  }
+
+  if (pendingQc > 0) {
+    actions.push({
+      id: "qc",
+      priority: "normal",
+      label: `${pendingQc} book${pendingQc !== 1 ? "s" : ""} awaiting QC`,
+      sub: "Inspect received books before labeling",
+      href: "/qc",
+      icon: ClipboardCheck,
+      count: pendingQc,
+    });
+  }
+
+  if (pendingLabels > 0) {
+    actions.push({
+      id: "labels",
+      priority: "normal",
+      label: `${pendingLabels} label${pendingLabels !== 1 ? "s" : ""} to print`,
+      sub: "Print labels before shelving",
+      href: "/labels",
+      icon: Tag,
+      count: pendingLabels,
+    });
+  }
+
+  if (pendingStock > 0) {
+    actions.push({
+      id: "stock",
+      priority: "normal",
+      label: `${pendingStock} book${pendingStock !== 1 ? "s" : ""} to shelve`,
+      sub: "Confirm books are physically in bins",
+      href: "/stock",
+      icon: Layers,
+      count: pendingStock,
     });
   }
 
@@ -231,6 +283,29 @@ const [showPickModal, setShowPickModal] = useState(false);
             </div>
           </div>
         </Link>
+      </div>
+
+      {/* â”€â”€ INTAKE FLOW â”€â”€ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "QC", count: pendingQc, sub: "received books", href: "/qc", icon: ClipboardCheck },
+          { label: "Labels", count: pendingLabels, sub: "ready to print", href: "/labels", icon: Tag },
+          { label: "Stock", count: pendingStock, sub: "ready to shelve", href: "/stock", icon: Layers },
+          { label: "Returns", count: pendingReturns, sub: "open requests", href: "/returns", icon: RotateCcw },
+        ].map((item) => (
+          <Link key={item.label} href={item.href}>
+            <div className="bg-card rounded-xl border border-border p-4 hover:bg-muted/20 transition-colors cursor-pointer">
+              <div className="flex items-center justify-between">
+                <span className="section-label">{item.label}</span>
+                <item.icon className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <p className="text-2xl font-bold text-foreground mt-1">
+                {isLoading ? "â€”" : item.count}
+              </p>
+              <p className="text-xs text-muted-foreground">{item.sub}</p>
+            </div>
+          </Link>
+        ))}
       </div>
 
       {/* ── QUICK ACTIONS ── */}

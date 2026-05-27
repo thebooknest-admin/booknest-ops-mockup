@@ -104,12 +104,21 @@ export const shippingRouter = router({
 
       if (!shipment) throw new Error('Shipment not found');
       if (shipment.status === 'shipped') throw new Error('Shipment already marked as shipped');
+      if (shipment.status !== 'packed') {
+        throw new Error(`Shipment is ${shipment.status}; pack it before marking it shipped`);
+      }
 
       // 2. Update shipment → shipped
       const shipmentBooks = await sbJson<
-        { id: string; book_title_id: string; book_copy_id: string | null }[]
+        {
+          id: string;
+          book_title_id: string;
+          book_copy_id: string | null;
+          status: string | null;
+          book_copies: { status: string | null } | null;
+        }[]
       >(
-        `/shipment_books?shipment_id=eq.${shipment_id}&select=id,book_title_id,book_copy_id&limit=200`
+        `/shipment_books?shipment_id=eq.${shipment_id}&select=id,book_title_id,book_copy_id,status,book_copies(status)&limit=200`
       );
 
       if (shipmentBooks.length === 0) {
@@ -122,6 +131,16 @@ export const shippingRouter = router({
 
       if (copyIds.length !== shipmentBooks.length) {
         throw new Error('Cannot mark shipment as shipped until every book has a scanned copy');
+      }
+
+      const unreadyBook = shipmentBooks.find(
+        (book) =>
+          book.status !== 'picked' ||
+          !['reserved', 'in_transit'].includes(book.book_copies?.status ?? '')
+      );
+
+      if (unreadyBook) {
+        throw new Error('Cannot ship until every picked book is reserved for this shipment');
       }
 
       const now = new Date().toISOString();
@@ -158,6 +177,14 @@ export const shippingRouter = router({
 
       if (shipmentBooks.length > 0 && shipment.member_id) {
         const today = new Date().toISOString().split('T')[0];
+        const existingHistory = await sbJson<
+          { book_title_id: string | null }[]
+        >(
+          `/member_book_history?member_id=eq.${shipment.member_id}&shipment_id=eq.${shipment_id}&select=book_title_id&limit=200`
+        );
+        const existingTitleIds = new Set(
+          existingHistory.map((row) => row.book_title_id).filter(Boolean)
+        );
         const historyRows = shipmentBooks.map((sb) => ({
           member_id: shipment.member_id,
           book_title_id: sb.book_title_id,
@@ -165,18 +192,20 @@ export const shippingRouter = router({
           received_date: today,
           kept: false,
           created_at: new Date().toISOString(),
-        }));
+        })).filter((row) => !existingTitleIds.has(row.book_title_id));
 
-        const histRes = await sbFetch('/member_book_history', {
-          method: 'POST',
-          body: JSON.stringify(historyRows),
-          headers: { Prefer: 'return=minimal' },
-        });
+        if (historyRows.length > 0) {
+          const histRes = await sbFetch('/member_book_history', {
+            method: 'POST',
+            body: JSON.stringify(historyRows),
+            headers: { Prefer: 'return=minimal' },
+          });
 
-        if (!histRes.ok) {
-          console.error(`[markShipped] Failed to create member_book_history for shipment ${shipment_id}`);
-        } else {
-          console.log(`[markShipped] Created ${historyRows.length} member_book_history rows`);
+          if (!histRes.ok) {
+            console.error(`[markShipped] Failed to create member_book_history for shipment ${shipment_id}`);
+          } else {
+            console.log(`[markShipped] Created ${historyRows.length} member_book_history rows`);
+          }
         }
       }
 

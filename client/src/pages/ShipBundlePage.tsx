@@ -128,9 +128,15 @@ export default function ShipBundlePage() {
     refetch,
   } = trpc.shipments.byId.useQuery({ id: id! }, { enabled: !!id });
 
-  const updateStatus = trpc.shipments.updateStatus.useMutation({
-    onSuccess: () => refetch(),
-    onError: (err) => toast.error("Failed to update: " + err.message),
+  const markShipped = trpc.shipping.markShipped.useMutation({
+    onSuccess: () => {
+      toast.success(
+        `${shipment?.order_number ?? shipment?.shipment_number ?? "Bundle"} marked as shipped!`
+      );
+      refetch();
+      setTimeout(() => navigate("/shipping"), 1200);
+    },
+    onError: (err) => toast.error("Failed to ship: " + err.message),
   });
 
   const [checklist, setChecklist] = useState<Record<string, boolean>>({
@@ -146,18 +152,14 @@ export default function ShipBundlePage() {
 
   const handleMarkShipped = () => {
     if (!shipment) return;
-    const today = new Date().toISOString().split("T")[0];
-    updateStatus.mutate(
-      { id: shipment.id, status: "shipped", actual_ship_date: today },
-      {
-        onSuccess: () => {
-          toast.success(
-            `${shipment.order_number ?? shipment.shipment_number} marked as shipped!`
-          );
-          setTimeout(() => navigate("/shipping"), 1200);
-        },
-      }
-    );
+    if (!shipment.tracking_number) {
+      toast.error("Add a tracking number before marking this bundle shipped.");
+      return;
+    }
+    markShipped.mutate({
+      shipment_id: shipment.id,
+      tracking_number: shipment.tracking_number,
+    });
   };
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -401,6 +403,12 @@ export default function ShipBundlePage() {
       {!isShipped && (
         <div className="bg-card rounded-xl border border-border p-5">
           <h2 className="section-label mb-4">Pre-Ship Checklist</h2>
+          <TrackingEntry
+            shipmentId={shipment.id}
+            currentTracking={shipment.tracking_number}
+            currentCarrier={shipment.carrier}
+            onSaved={() => refetch()}
+          />
           <div className="space-y-3">
             {CHECKLIST_ITEMS.map((item) => (
               <button
@@ -457,25 +465,30 @@ export default function ShipBundlePage() {
           <div className="mt-5">
             <button
               onClick={handleMarkShipped}
-              disabled={!allChecked || updateStatus.isPending}
+              disabled={!allChecked || !shipment.tracking_number || markShipped.isPending}
               className={cn(
                 "w-full flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl text-white transition-all",
-                !allChecked || updateStatus.isPending
+                !allChecked || !shipment.tracking_number || markShipped.isPending
                   ? "opacity-40 cursor-not-allowed"
                   : "hover:opacity-90"
               )}
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
             >
-              {updateStatus.isPending ? (
+              {markShipped.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <CheckCircle2 className="w-5 h-5" />
               )}
-              {updateStatus.isPending ? "Saving…" : "Mark as Shipped"}
+              {markShipped.isPending ? "Shipping…" : "Mark as Shipped"}
             </button>
             {!allChecked && (
               <p className="text-xs text-center text-muted-foreground mt-2">
                 Complete the checklist above to ship this order
+              </p>
+            )}
+            {allChecked && !shipment.tracking_number && (
+              <p className="text-xs text-center text-muted-foreground mt-2">
+                Add tracking before shipping this order
               </p>
             )}
           </div>

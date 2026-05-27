@@ -617,6 +617,9 @@ inTransit: publicProcedure.query(async () => {
       )
       .mutation(async ({ input }) => {
         const { id, status, ...extra } = input;
+        if (status === "shipped") {
+          throw new Error("Use shipping.markShipped so copies, shipment books, and member history stay in sync.");
+        }
         await updateShipmentStatus(id, status, extra as any);
         return { success: true };
       }),
@@ -646,10 +649,9 @@ inTransit: publicProcedure.query(async () => {
   // ─── Labels ─────────────────────────────────────────────────────────────────
   labels: router({
     pending: publicProcedure.query(async () => {
-      const res = await sbFetch(
-        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=200&order=received_at.asc"
+      const copies = await sbJson<any[]>(
+        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=1000&order=received_at.asc"
       );
-      const copies: any[] = await res.json();
       const titleIds = Array.from(
         new Set(copies.map(c => c.book_title_id).filter(Boolean))
       );
@@ -658,16 +660,15 @@ inTransit: publicProcedure.query(async () => {
   { title: string; author: string; isbn: string | null; bin_theme: string | null }
 > = {};
       if (titleIds.length > 0) {
-        const tr = await sbFetch(
-          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn,bin_theme&limit=300`
-        );
-        const titles: {
+        const titles = await sbJson<{
   id: string;
   title: string;
   author: string;
   isbn: string | null;
   bin_theme: string | null;
-}[] = await tr.json();
+}[]>(
+          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn,bin_theme&limit=1000`
+        );
         titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
       }
       return copies.map(c => ({
@@ -758,6 +759,7 @@ const canonicalBinId =
 
         // ── Upsert book title ────────────────────────────────────────────────
         let existing: any[] = [];
+        let createdTitleForThisCopy = false;
 
 // First try ISBN match
 if (input.isbn?.trim()) {
@@ -814,6 +816,7 @@ if (existing.length === 0) {
     }),
   });
           titleId = newTitle[0].id;
+          createdTitleForThisCopy = true;
         }
 
         // ── Build SKU prefix ─────────────────────────────────────────────────
@@ -839,32 +842,52 @@ if (existing.length === 0) {
         const sku = `BN-${agePrefix}-${String(nextNum).padStart(6, "0")}`;
 
         // ── Create book copy ─────────────────────────────────────────────────
-        const copy = await sbJson<any[]>("/book_copies", {
-          method: "POST",
-          body: JSON.stringify({
-            sku,
-            book_title_id: titleId,
-            isbn: input.isbn,
-            age_group: ageGroupKey,
-            bin_id: canonicalBinId,
-            status: BOOK_COPY_STATUSES.pendingQc,
-            condition: input.condition,
-            label_status: LABEL_STATUSES.pending,
-            received_at: new Date().toISOString(),
-          }),
-        });
-        return { success: true, sku, copy_id: copy[0]?.id, title_id: titleId };
+        let copy: any[] = [];
+        try {
+          copy = await sbJson<any[]>("/book_copies", {
+            method: "POST",
+            body: JSON.stringify({
+              sku,
+              book_title_id: titleId,
+              isbn: input.isbn,
+              age_group: ageGroupKey,
+              bin_id: canonicalBinId,
+              status: BOOK_COPY_STATUSES.pendingQc,
+              condition: input.condition,
+              label_status: LABEL_STATUSES.pending,
+              received_at: new Date().toISOString(),
+            }),
+          });
+        } catch (error) {
+          if (createdTitleForThisCopy) {
+            await sbVoid(`/book_titles?id=eq.${titleId}`, {
+              method: "DELETE",
+              headers: { Prefer: "return=minimal" },
+            }).catch(() => undefined);
+          }
+          throw error;
+        }
+
+        if (!copy[0]?.id) {
+          if (createdTitleForThisCopy) {
+            await sbVoid(`/book_titles?id=eq.${titleId}`, {
+              method: "DELETE",
+              headers: { Prefer: "return=minimal" },
+            }).catch(() => undefined);
+          }
+          throw new Error("Book title saved, but no physical copy was created.");
+        }
+
+        return { success: true, sku, copy_id: copy[0].id, title_id: titleId };
       }),
   }),
 
   // ─── QC Queue ────────────────────────────────────────────────────────────────
   qc: router({
     queue: publicProcedure.query(async () => {
-      const res = await sbFetch(
-        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=200"
+      const data = await sbJson<any[]>(
+        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
       );
-      if (!res.ok) return [];
-      const data: any[] = await res.json();
       return data.map(c => ({
         id: c.id as string,
         sku: c.sku as string,
@@ -913,7 +936,9 @@ if (existing.length === 0) {
             condition: input.condition,
             qc_notes: input.notes ?? null,
             qc_passed_at: new Date().toISOString(),
-            ...(input.reprint_label ? { label_status: LABEL_STATUSES.pending } : {}),
+            label_status: input.reprint_label
+              ? LABEL_STATUSES.pending
+              : LABEL_STATUSES.printed,
           }),
           headers: { Prefer: "return=minimal" },
         });
@@ -934,15 +959,12 @@ if (existing.length === 0) {
         });
         return { success: true };
       }),
-      // Add this inside the qc: router({}) block in router.ts,
-// after the existing `fail` procedure:
-
 passAll: publicProcedure
   .input(z.object({ copy_ids: z.array(z.string()) }))
   .mutation(async ({ input }) => {
     if (input.copy_ids.length === 0) return { success: true, count: 0 };
     const now = new Date().toISOString();
-    const res = await sbFetch(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
+    await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
       method: "PATCH",
       body: JSON.stringify({
         status: "pending_label",
@@ -953,7 +975,6 @@ passAll: publicProcedure
       }),
       headers: { Prefer: "return=minimal" },
     });
-    if (!res.ok) throw new Error(`Failed to batch accept: ${await res.text()}`);
     return { success: true, count: input.copy_ids.length };
   }),
   }),
@@ -961,11 +982,9 @@ passAll: publicProcedure
   // ─── Stock Queue ─────────────────────────────────────────────────────────────
   stock: router({
     queue: publicProcedure.query(async () => {
-      const res = await sbFetch(
-        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=200"
+      const data = await sbJson<any[]>(
+        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
       );
-      if (!res.ok) return [];
-      const data: any[] = await res.json();
       return data.map(c => ({
         id: c.id as string,
         sku: c.sku as string,
@@ -1000,7 +1019,7 @@ passAll: publicProcedure
     confirmPlaced: publicProcedure
       .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
       .mutation(async ({ input }) => {
-        const res = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             status: "in_house",
@@ -1009,7 +1028,6 @@ passAll: publicProcedure
           }),
           headers: { Prefer: "return=minimal" },
         });
-        if (!res.ok) throw new Error(`Failed to update copy: ${await res.text()}`);
         return { success: true };
       }),
     confirmAll: publicProcedure
@@ -1216,6 +1234,100 @@ await Promise.all(
 
   // ─── Returns ────────────────────────────────────────────────────────────────
   returns: router({
+    openRequests: publicProcedure.query(async () => {
+      const returns = await sbJson<
+        {
+          id: string;
+          member_id: string | null;
+          return_number: string | null;
+          original_shipment_id: string | null;
+          status: string;
+          created_at: string | null;
+        }[]
+      >(
+        "/returns?status=in.(requested,in_transit,receiving)&order=created_at.asc&limit=50&select=id,member_id,return_number,original_shipment_id,status,created_at"
+      );
+
+      if (returns.length === 0) return [];
+
+      const memberIds = Array.from(
+        new Set(returns.map((r) => r.member_id).filter(Boolean))
+      );
+      const shipmentIds = Array.from(
+        new Set(returns.map((r) => r.original_shipment_id).filter(Boolean))
+      );
+
+      const [members, shipments] = await Promise.all([
+        memberIds.length
+          ? sbJson<{ id: string; name: string | null }[]>(
+              `/members?id=in.(${memberIds.join(",")})&select=id,name&limit=100`
+            )
+          : Promise.resolve([]),
+        shipmentIds.length
+          ? sbJson<{ id: string; shipment_number: string | null }[]>(
+              `/shipments?id=in.(${shipmentIds.join(",")})&select=id,shipment_number&limit=100`
+            )
+          : Promise.resolve([]),
+      ]);
+
+      const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
+      const shipmentMap = Object.fromEntries(shipments.map((s) => [s.id, s]));
+      const result = [];
+
+      for (const returnRecord of returns) {
+        const expected = returnRecord.original_shipment_id
+          ? await sbJson<
+              {
+                id: string;
+                book_copy_id: string | null;
+                book_copies: {
+                  sku: string | null;
+                  status: string | null;
+                  book_titles: { title: string | null } | null;
+                } | null;
+              }[]
+            >(
+              `/shipment_books?shipment_id=eq.${returnRecord.original_shipment_id}&book_copy_id=not.is.null&select=id,book_copy_id,book_copies(sku,status,book_titles(title))&limit=200`
+            )
+          : [];
+        const received = await sbJson<
+          { book_copy_id: string; received: boolean | null }[]
+        >(
+          `/return_books?return_id=eq.${returnRecord.id}&select=book_copy_id,received&limit=200`
+        );
+        const receivedIds = new Set(
+          received
+            .filter((book) => book.received)
+            .map((book) => book.book_copy_id)
+        );
+
+        result.push({
+          ...returnRecord,
+          member_name: returnRecord.member_id
+            ? memberMap[returnRecord.member_id]?.name ?? "Unknown member"
+            : "Unknown member",
+          shipment_number: returnRecord.original_shipment_id
+            ? shipmentMap[returnRecord.original_shipment_id]
+                ?.shipment_number ?? null
+            : null,
+          expected_count: expected.length,
+          received_count: receivedIds.size,
+          expected_books: expected.map((book) => ({
+            shipment_book_id: book.id,
+            copy_id: book.book_copy_id,
+            sku: book.book_copies?.sku ?? null,
+            title: book.book_copies?.book_titles?.title ?? null,
+            copy_status: book.book_copies?.status ?? null,
+            received: book.book_copy_id
+              ? receivedIds.has(book.book_copy_id)
+              : false,
+          })),
+        });
+      }
+
+      return result;
+    }),
+
     lookupBySku: publicProcedure
       .input(z.object({ sku: z.string() }))
       .query(async ({ input }) => {
@@ -1256,54 +1368,136 @@ await Promise.all(
       )
       .mutation(async ({ input }) => {
         const now = new Date().toISOString();
+        const today = now.slice(0, 10);
+        const [copy] = await sbJson<
+          {
+            id: string;
+            book_title_id: string;
+            status: string;
+          }[]
+        >(
+          `/book_copies?id=eq.${input.copy_id}&select=id,book_title_id,status&limit=1`
+        );
+
+        if (!copy) {
+          throw new Error("Book copy not found");
+        }
+
+        let shipmentBookId = input.last_shipment_book_id ?? null;
+        let shipmentId = input.last_shipment_id ?? null;
+        let memberId: string | null = null;
+
+        if (shipmentBookId || shipmentId) {
+          const shipmentBookFilters = shipmentBookId
+            ? `id=eq.${shipmentBookId}`
+            : `shipment_id=eq.${shipmentId}&book_copy_id=eq.${input.copy_id}`;
+          const shipmentBooks = await sbJson<
+            {
+              id: string;
+              shipment_id: string;
+              shipments: { member_id: string | null } | null;
+            }[]
+          >(
+            `/shipment_books?${shipmentBookFilters}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
+          );
+          const shipmentBook = shipmentBooks[0];
+          shipmentBookId = shipmentBook?.id ?? shipmentBookId;
+          shipmentId = shipmentBook?.shipment_id ?? shipmentId;
+          memberId = shipmentBook?.shipments?.member_id ?? null;
+        }
+
+        if (!shipmentId || !shipmentBookId || !memberId) {
+          const shipmentBooks = await sbJson<
+            {
+              id: string;
+              shipment_id: string;
+              shipments: { member_id: string | null } | null;
+            }[]
+          >(
+            `/shipment_books?book_copy_id=eq.${input.copy_id}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
+          );
+          const shipmentBook = shipmentBooks[0];
+          shipmentBookId = shipmentBook?.id ?? shipmentBookId;
+          shipmentId = shipmentBook?.shipment_id ?? shipmentId;
+          memberId = shipmentBook?.shipments?.member_id ?? memberId;
+        }
+
         const patch: Record<string, any> = {
           status: "in_house",
           updated_at: now,
         };
         if (input.condition) patch.condition = input.condition;
-        const copyRes = await sbFetch(`/book_copies?id=eq.${input.copy_id}`, {
+        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
           body: JSON.stringify(patch),
           headers: { Prefer: "return=minimal" },
         });
-        if (!copyRes.ok)
-          throw new Error(
-            `Failed to update book copy: ${await copyRes.text()}`
-          );
 
         const datePart = now.slice(0, 10).replace(/-/g, "");
         const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
         const returnNumber = `RET-${datePart}-${randPart}`;
 
-        const returnRes = await sbFetch("/returns", {
-          method: "POST",
-          body: JSON.stringify({
-            return_number: returnNumber,
-            original_shipment_id: input.last_shipment_id ?? null,
-            status: "received",
-            return_type: "standard",
-            actual_return_date: now.slice(0, 10),
-            processed_at: now,
-            notes: input.notes ?? null,
-            created_at: now,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=representation" },
-        });
-        if (!returnRes.ok)
-          throw new Error(
-            `Failed to create return record: ${await returnRes.text()}`
+        let returnRows: any[] = [];
+        if (shipmentId) {
+          returnRows = await sbJson<any[]>(
+            `/returns?original_shipment_id=eq.${shipmentId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
           );
-        const returnRows: any[] = await returnRes.json();
-        const returnId = returnRows[0]?.id;
+        }
+        if (!returnRows[0] && memberId) {
+          returnRows = await sbJson<any[]>(
+            `/returns?member_id=eq.${memberId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
+          );
+        }
 
-        if (returnId) {
-          await sbFetch("/return_books", {
+        let returnRecord = returnRows[0] ?? null;
+        if (!returnRecord) {
+          const created = await sbJson<any[]>("/returns", {
+            method: "POST",
+            body: JSON.stringify({
+              member_id: memberId,
+              return_number: returnNumber,
+              original_shipment_id: shipmentId,
+              status: shipmentId ? "receiving" : "received",
+              return_type: "standard",
+              actual_return_date: today,
+              processed_at: now,
+              notes: input.notes ?? null,
+              created_at: now,
+              updated_at: now,
+            }),
+          });
+          returnRecord = created[0] ?? null;
+        }
+
+        if (!returnRecord?.id) {
+          throw new Error("Failed to create or locate return record");
+        }
+
+        const returnId = returnRecord.id as string;
+        const existingReturnBooks = await sbJson<{ id: string }[]>(
+          `/return_books?return_id=eq.${returnId}&book_copy_id=eq.${input.copy_id}&select=id&limit=1`
+        );
+
+        if (existingReturnBooks[0]) {
+          await sbVoid(`/return_books?id=eq.${existingReturnBooks[0].id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              shipment_book_id: shipmentBookId,
+              received: true,
+              condition_on_return: input.condition ?? "good",
+              condition_notes: input.notes ?? null,
+              action: "restock",
+              processed_at: now,
+            }),
+            headers: { Prefer: "return=minimal" },
+          });
+        } else {
+          await sbVoid("/return_books", {
             method: "POST",
             body: JSON.stringify({
               return_id: returnId,
               book_copy_id: input.copy_id,
-              shipment_book_id: input.last_shipment_book_id ?? null,
+              shipment_book_id: shipmentBookId,
               received: true,
               condition_on_return: input.condition ?? "good",
               condition_notes: input.notes ?? null,
@@ -1315,10 +1509,54 @@ await Promise.all(
           });
         }
 
+        if (memberId && shipmentId && copy.book_title_id) {
+          await sbVoid(
+            `/member_book_history?member_id=eq.${memberId}&shipment_id=eq.${shipmentId}&book_title_id=eq.${copy.book_title_id}`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({
+                returned_date: today,
+                kept: false,
+                notes: input.notes ?? null,
+              }),
+              headers: { Prefer: "return=minimal" },
+            }
+          );
+        }
+
+        let nextReturnStatus = "received";
+        if (shipmentId) {
+          const [shipmentBooks, receivedBooks] = await Promise.all([
+            sbJson<{ id: string }[]>(
+              `/shipment_books?shipment_id=eq.${shipmentId}&book_copy_id=not.is.null&select=id&limit=200`
+            ),
+            sbJson<{ id: string }[]>(
+              `/return_books?return_id=eq.${returnId}&received=eq.true&select=id&limit=200`
+            ),
+          ]);
+          nextReturnStatus =
+            receivedBooks.length >= shipmentBooks.length
+              ? "received"
+              : "receiving";
+        }
+
+        await sbVoid(`/returns?id=eq.${returnId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: nextReturnStatus,
+            actual_return_date: today,
+            processed_at: now,
+            notes: input.notes ?? returnRecord.notes ?? null,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+
         return {
           success: true,
-          return_number: returnNumber,
-          return_id: returnId ?? null,
+          return_number: returnRecord.return_number ?? returnNumber,
+          return_id: returnId,
+          status: nextReturnStatus,
         };
       }),
 
@@ -1429,6 +1667,8 @@ await Promise.all(
           method: "POST",
           body: JSON.stringify({
             ...input,
+            reading_level:
+              normalizeAgeGroup(input.reading_level) ?? input.reading_level,
             created_at: new Date().toISOString(),
           }),
         });

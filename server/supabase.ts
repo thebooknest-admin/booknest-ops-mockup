@@ -589,22 +589,35 @@ export async function getBookTitlesWithCopies(params?: {
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
 export async function getDashboardStats() {
-  const [membersRes, shipmentsRes, inventoryRes, returnsRes] =
+  const [membersRes, shipmentsRes, inventoryRes, returnsRes, qcRes, labelsRes, stockRes] =
     await Promise.all([
       sbFetch("/members?select=id,subscription_status&limit=500"),
       sbFetch(
-        "/shipments?select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
+        "/shipments?shipment_type=eq.outbound&select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
       ),
       getInventorySummary(),
-      sbFetch("/returns?select=id&status=eq.requested", {
+      sbFetch("/returns?select=id&status=in.(requested,in_transit,receiving)", {
+        headers: { Prefer: "count=exact", Range: "0-0" },
+      }),
+      sbFetch("/book_copies?status=eq.pending_qc&select=id", {
+        headers: { Prefer: "count=exact", Range: "0-0" },
+      }),
+      sbFetch(
+        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id",
+        { headers: { Prefer: "count=exact", Range: "0-0" } }
+      ),
+      sbFetch("/book_copies?status=eq.pending_stock&select=id", {
         headers: { Prefer: "count=exact", Range: "0-0" },
       }),
     ]);
 
-  const pendingSwaps = parseInt(
-    returnsRes.headers.get("content-range")?.split("/")[1] ?? "0",
-    10
-  );
+  const getCount = (res: Response) =>
+    parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
+
+  const pendingReturns = getCount(returnsRes);
+  const pendingQc = getCount(qcRes);
+  const pendingLabels = getCount(labelsRes);
+  const pendingStock = getCount(stockRes);
 
   const members: { id: string; subscription_status: string }[] =
     await membersRes.json();
@@ -663,7 +676,11 @@ export async function getDashboardStats() {
     overdueShipments,
     shippedToday,
     totalOrders,
-    pendingSwaps,
+    pendingReturns,
+    pendingSwaps: pendingReturns,
+    pendingQc,
+    pendingLabels,
+    pendingStock,
     inventory: inventoryRes,
   };
 }

@@ -50,6 +50,8 @@ export default function ReturnsPage() {
 
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } =
     trpc.returns.history.useQuery({ limit: 20 });
+  const { data: openRequests = [], refetch: refetchOpenRequests } =
+    trpc.returns.openRequests.useQuery(undefined, { refetchInterval: 60_000 });
 
   const processReturn = trpc.returns.processReturn.useMutation({
     onSuccess: (result) => {
@@ -58,6 +60,9 @@ export default function ReturnsPage() {
       setLastReturnNumber(result.return_number ?? null);
       toast.success(`${found?.book_title?.title ?? "Book"} checked back in — ${result.return_number}`);
       utils.returns.history.invalidate();
+      utils.returns.openRequests.invalidate();
+      utils.inventory.summary.invalidate();
+      utils.inventory.bookTitles.invalidate();
     },
     onError: (err: any) => {
       toast.error("Failed to process return: " + err.message);
@@ -116,6 +121,78 @@ export default function ReturnsPage() {
           </div>
         )}
       </div>
+
+      {openRequests.length > 0 && (
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <div>
+              <h2 className="font-semibold text-foreground text-sm">Open Return Requests</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Expected books to scan back into inventory</p>
+            </div>
+            <button
+              onClick={() => refetchOpenRequests()}
+              className="p-2 rounded-lg hover:bg-muted transition-colors"
+              title="Refresh open returns"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+          </div>
+          <div className="divide-y divide-border/50">
+            {openRequests.map((request) => (
+              <div key={request.id} className="px-5 py-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-semibold text-foreground">{request.return_number}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
+                        {request.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {request.member_name}
+                      {request.shipment_number ? ` · ${request.shipment_number}` : " · no shipment attached"}
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                    {request.received_count}/{request.expected_count || "?"} received
+                  </span>
+                </div>
+                {request.expected_books.length > 0 ? (
+                  <div className="grid gap-1.5">
+                    {request.expected_books.map((book) => (
+                      <button
+                        key={book.shipment_book_id}
+                        onClick={() => {
+                          if (book.sku && !book.received) setSku(book.sku);
+                        }}
+                        disabled={book.received}
+                        className={cn(
+                          "text-left flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors",
+                          book.received
+                            ? "bg-muted/40 border-border text-muted-foreground"
+                            : "border-border hover:bg-muted/40"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-mono font-semibold">{book.sku ?? "No SKU"}</p>
+                          <p className="text-xs text-muted-foreground truncate">{book.title ?? "Unknown title"}</p>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground shrink-0">
+                          {book.received ? "received" : book.copy_status?.replace(/_/g, " ") ?? "pending"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No original shipment is attached. Scan any returned BookNest SKU for this member.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* SKU Search */}
       <div className="bg-card rounded-xl border border-border p-6">

@@ -14,7 +14,6 @@ import {
   X,
   Sparkles,
   Info,
-  Tag,
   ClipboardCheck,
   Copy,
   Zap,
@@ -817,12 +816,12 @@ export default function ReceivePage() {
     }
   }, [classifyError]);
 
-  const { data: pendingLabels, refetch: refetchPendingCount } =
-    trpc.labels.pending.useQuery(undefined, {
+  const { data: qcCount, refetch: refetchPendingCount } =
+    trpc.qc.count.useQuery(undefined, {
       refetchOnWindowFocus: false,
     });
 
-  const pendingCount = pendingLabels?.length ?? 0;
+  const pendingCount = qcCount?.count ?? 0;
     const addBookMutation = trpc.receive.addBook.useMutation({
     onSuccess: (data) => {
       setLastSku(data.sku);
@@ -835,6 +834,10 @@ export default function ReceivePage() {
 
       handleReset();
       refetchPendingCount();
+      utils.qc.queue.invalidate();
+      utils.qc.count.invalidate();
+      utils.labels.pending.invalidate();
+      utils.inventory.summary.invalidate();
     },
 
     onError: (err) =>
@@ -971,7 +974,7 @@ addBookMutation.mutate({
 
           {pendingCount > 0 && (
             <button
-              onClick={() => navigate("/labels")}
+              onClick={() => navigate("/qc")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80"
               style={{
                 backgroundColor: "oklch(0.97 0.04 75)",
@@ -979,8 +982,8 @@ addBookMutation.mutate({
                 color: "oklch(0.38 0.12 75)",
               }}
             >
-              <Tag className="w-3 h-3" />
-              {pendingCount} label{pendingCount !== 1 ? "s" : ""} pending
+              <ClipboardCheck className="w-3 h-3" />
+              {pendingCount} QC pending
             </button>
           )}
         </div>
@@ -1937,7 +1940,7 @@ addBookMutation.mutate({
         />
       </div>
 
-      {/* Label Queue Prompt */}
+      {/* QC Queue Prompt */}
       {step === 0 && receivedCount > 0 && pendingCount > 0 && (
         <div
           className="rounded-3xl p-4 flex items-center justify-between gap-4 shadow-sm"
@@ -1949,7 +1952,7 @@ addBookMutation.mutate({
               className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
               style={{ backgroundColor: "oklch(0.90 0.08 75)" }}
             >
-              <Tag
+              <ClipboardCheck
                 className="w-4 h-4"
                 style={{ color: "oklch(0.45 0.14 75)" }}
               />
@@ -1960,8 +1963,8 @@ addBookMutation.mutate({
                 className="text-sm font-semibold"
                 style={{ color: "oklch(0.32 0.10 75)" }}
               >
-                {pendingCount} label
-                {pendingCount !== 1 ? "s" : ""} waiting to print
+                {pendingCount} book
+                {pendingCount !== 1 ? "s" : ""} waiting for QC
               </p>
 
               <p
@@ -1975,62 +1978,17 @@ addBookMutation.mutate({
 
           <button
             type="button"
-            onClick={() => navigate("/labels")}
-            className="shrink-0 px-4 py-2 rounded-2xl text-sm font-semibold text-white transition-colors"
-            style={{
-              backgroundColor: "oklch(0.55 0.14 75)",
-            }}
-          >
-            Go to Label Queue
-          </button>
-        </div>
-      )}
-
-      {/* QC Queue Prompt */}
-      {receivedCount > 0 && (
-        <div
-          className="flex items-center gap-4 p-4 rounded-3xl shadow-sm"
-          style={{ backgroundColor: "oklch(0.96 0.02 155)" }}
-        >
-          <div
-            className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ backgroundColor: "oklch(0.88 0.06 155)" }}
-          >
-            <ClipboardCheck
-              className="w-4 h-4"
-              style={{ color: "oklch(0.38 0.12 155)" }}
-            />
-          </div>
-
-          <div className="flex-1">
-            <p
-              className="text-sm font-semibold"
-              style={{ color: "oklch(0.28 0.10 155)" }}
-            >
-              {receivedCount} book
-              {receivedCount !== 1 ? "s" : ""} waiting for QC
-            </p>
-
-            <p
-              className="text-xs"
-              style={{ color: "oklch(0.45 0.08 155)" }}
-            >
-              Inspect, clean, and grade before shelving
-            </p>
-          </div>
-
-          <button
-            type="button"
             onClick={() => navigate("/qc")}
             className="shrink-0 px-4 py-2 rounded-2xl text-sm font-semibold text-white transition-colors"
             style={{
-              backgroundColor: "oklch(0.42 0.11 155)",
+              backgroundColor: "oklch(0.55 0.14 75)",
             }}
           >
             Go to QC Queue
           </button>
         </div>
       )}
+
     </div>
   );
 }

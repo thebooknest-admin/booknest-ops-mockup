@@ -60,7 +60,8 @@ interface NavItem {
 const buildNavItems = (
   pendingLabelCount: number,
   qcCount: number,
-  stockCount: number
+  stockCount: number,
+  returnCount: number
 ): NavItem[] => [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
@@ -97,7 +98,12 @@ const buildNavItems = (
         icon: Layers,
         badge: stockCount > 0 ? stockCount : undefined,
       },
-      { label: "Process Returns", href: "/returns", icon: RotateCcw },
+      {
+        label: "Process Returns",
+        href: "/returns",
+        icon: RotateCcw,
+        badge: returnCount > 0 ? returnCount : undefined,
+      },
     ],
   },
   { label: "Members", href: "/members", icon: Users },
@@ -494,10 +500,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
+  const { data: openReturns = [] } = trpc.returns.openRequests.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
   const qcCount = qcData?.count ?? 0;
   const stockCount = stockData?.count ?? 0;
+  const returnCount = openReturns.length;
 
-  const navItems = buildNavItems(pendingLabelCount, qcCount, stockCount);
+  const navItems = buildNavItems(pendingLabelCount, qcCount, stockCount, returnCount);
 
   return (
     <>

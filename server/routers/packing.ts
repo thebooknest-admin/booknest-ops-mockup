@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
-import { sbFetch } from "../supabase";
+import { sbFetch, sbJson, sbVoid } from "../supabase";
 
 export const packingRouter = router({
   /**
@@ -67,7 +67,41 @@ export const packingRouter = router({
   markPacked: publicProcedure
     .input(z.object({ shipment_id: z.string() }))
     .mutation(async ({ input }) => {
-      const res = await sbFetch(`/shipments?id=eq.${input.shipment_id}`, {
+      const [shipment] = await sbJson<{ id: string; status: string }[]>(
+        `/shipments?id=eq.${input.shipment_id}&select=id,status&limit=1`
+      );
+      if (!shipment) throw new Error("Shipment not found.");
+      if (shipment.status !== "packing") {
+        throw new Error(`Shipment is already ${shipment.status}; refresh the queue.`);
+      }
+
+      const shipmentBooks = await sbJson<
+        {
+          id: string;
+          book_copy_id: string | null;
+          status: string | null;
+          book_copies: { status: string | null } | null;
+        }[]
+      >(
+        `/shipment_books?shipment_id=eq.${input.shipment_id}&select=id,book_copy_id,status,book_copies(status)&limit=200`
+      );
+
+      if (shipmentBooks.length === 0) {
+        throw new Error("Cannot pack a shipment with no books assigned.");
+      }
+
+      const incompleteBook = shipmentBooks.find(
+        (book) =>
+          !book.book_copy_id ||
+          book.status !== "picked" ||
+          !["reserved", "in_transit"].includes(book.book_copies?.status ?? "")
+      );
+
+      if (incompleteBook) {
+        throw new Error("Cannot pack until every assigned book has been scanned in picking.");
+      }
+
+      await sbVoid(`/shipments?id=eq.${input.shipment_id}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "packed",
@@ -75,7 +109,6 @@ export const packingRouter = router({
         }),
         headers: { Prefer: "return=minimal" },
       });
-      if (!res.ok) throw new Error(`Failed to mark as packed: ${await res.text()}`);
       return { success: true };
     }),
 });

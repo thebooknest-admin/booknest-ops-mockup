@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { normalizeAgeGroup } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
-import { sbFetch } from "../supabase";
+import { sbFetch, sbJson, sbVoid } from "../supabase";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
@@ -368,18 +368,21 @@ export const pickingRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const assignedRes = await sbFetch(
-        `/shipment_books?shipment_id=eq.${input.shipment_id}&select=book_copy_id&limit=100`
+      const assignedRows = await sbJson<
+        { id: string; book_copy_id: string | null; book_title_id: string | null }[]
+      >(
+        `/shipment_books?shipment_id=eq.${input.shipment_id}&select=id,book_copy_id,book_title_id&limit=100`
       );
-
-      if (!assignedRes.ok) {
-        throw new Error(`Failed to get assigned books: ${await assignedRes.text()}`);
-      }
-
-      const assignedRows: any[] = await assignedRes.json();
       const assignedCopyIds = new Set(
         assignedRows.map((row) => row.book_copy_id).filter(Boolean)
       );
+      const oldShipmentBook = assignedRows.find(
+        (row) => row.book_copy_id === input.old_book_copy_id
+      );
+
+      if (!oldShipmentBook) {
+        throw new Error("The selected book is no longer assigned to this shipment.");
+      }
 
       const candidateRes = await sbFetch(`/rpc/select_books_for_shipment`, {
         method: "POST",
@@ -421,7 +424,7 @@ export const pickingRouter = router({
       }
 
       const patchRes = await sbFetch(
-        `/shipment_books?shipment_id=eq.${input.shipment_id}&book_copy_id=eq.${input.old_book_copy_id}`,
+        `/shipment_books?id=eq.${oldShipmentBook.id}`,
         {
           method: "PATCH",
           body: JSON.stringify({
@@ -445,7 +448,7 @@ export const pickingRouter = router({
 //
 // Release old copy back to inventory
 //
-await sbFetch(
+await sbVoid(
   `/book_copies?id=eq.${input.old_book_copy_id}`,
   {
     method: "PATCH",
@@ -461,7 +464,7 @@ await sbFetch(
 //
 // Reserve new copy
 //
-await sbFetch(
+await sbVoid(
   `/book_copies?id=eq.${replacement.book_copy_id}`,
   {
     method: "PATCH",
@@ -477,14 +480,12 @@ await sbFetch(
 //
 // Audit trail
 //
-await sbFetch(`/shipment_book_swaps`, {
+await sbVoid(`/shipment_book_swaps`, {
   method: "POST",
   body: JSON.stringify({
     shipment_id: input.shipment_id,
     old_book_copy_id: input.old_book_copy_id,
-    old_book_title_id: assignedRows.find(
-      (r) => r.book_copy_id === input.old_book_copy_id
-    )?.book_title_id ?? null,
+    old_book_title_id: oldShipmentBook.book_title_id,
     new_book_copy_id: replacement.book_copy_id,
     new_book_title_id: replacement.book_title_id,
     reason: "Manual picker swap",
@@ -516,13 +517,60 @@ return updated;
 
       for (const pick of input.picks) {
         const { member_id, shipment_id, book_title_ids, copy_ids } = pick;
+        const now = new Date().toISOString();
+
+        if (book_title_ids.length !== copy_ids.length) {
+          throw new Error("Each scanned copy must have a matching title.");
+        }
+
+        const uniqueCopyIds = Array.from(new Set(copy_ids.filter(Boolean)));
+        if (uniqueCopyIds.length !== copy_ids.length) {
+          throw new Error("A copy was scanned more than once for this shipment.");
+        }
 
         // Get the existing shipment
-        const shipmentRes = await sbFetch(
-          `/shipments?id=eq.${shipment_id}&select=id,shipment_number,member_id&limit=1`
+        const [shipment] = await sbJson<
+          { id: string; shipment_number: string; member_id: string; status: string }[]
+        >(
+          `/shipments?id=eq.${shipment_id}&select=id,shipment_number,member_id,status&limit=1`
         );
-        const [shipment] = await shipmentRes.json();
-        if (!shipment) continue;
+        if (!shipment) throw new Error("Shipment not found.");
+        if (shipment.member_id !== member_id) {
+          throw new Error("Shipment does not belong to the selected member.");
+        }
+        if (shipment.status !== "picking") {
+          throw new Error(`Shipment is already ${shipment.status}; refresh the queue.`);
+        }
+
+        const assignedRows = await sbJson<
+          {
+            id: string;
+            book_title_id: string | null;
+            book_copy_id: string | null;
+            status: string | null;
+          }[]
+        >(
+          `/shipment_books?shipment_id=eq.${shipment_id}&select=id,book_title_id,book_copy_id,status&limit=200`
+        );
+
+        if (assignedRows.length === 0) {
+          throw new Error("Shipment has no assigned books to pick.");
+        }
+
+        if (uniqueCopyIds.length !== assignedRows.length) {
+          throw new Error("Scan every assigned book before completing the order.");
+        }
+
+        const copies = await sbJson<
+          { id: string; book_title_id: string; status: string }[]
+        >(
+          `/book_copies?id=in.(${uniqueCopyIds.join(",")})&select=id,book_title_id,status&limit=200`
+        );
+        const copyMap = new Map(copies.map((copy) => [copy.id, copy]));
+
+        if (copies.length !== uniqueCopyIds.length) {
+          throw new Error("One or more scanned copies no longer exists.");
+        }
 
         // Get member's default address
         const addrRes = await sbFetch(
@@ -530,68 +578,78 @@ return updated;
         );
         const [address] = await addrRes.json();
 
-        // Update shipment to packing status
-        const shipPatch = await sbFetch(`/shipments?id=eq.${shipment_id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "packing",
-            address_id: address?.id ?? null,
-            updated_at: new Date().toISOString(),
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        if (!shipPatch.ok) throw new Error(`Failed to update shipment status: ${await shipPatch.text()}`);
-
-        // Assign specific scanned copies to shipment
+        const usedShipmentBookIds = new Set<string>();
         for (let i = 0; i < book_title_ids.length; i++) {
           const titleId = book_title_ids[i];
           const copyId = copy_ids[i];
           if (!titleId || !copyId) continue;
 
-          // Mark copy as in_transit
-          const copyPatch = await sbFetch(`/book_copies?id=eq.${copyId}`, {
+          const copy = copyMap.get(copyId);
+          if (!copy) throw new Error(`Scanned copy ${copyId} was not found.`);
+          if (copy.book_title_id !== titleId) {
+            throw new Error("A scanned copy does not match its assigned title.");
+          }
+          if (!["in_house", "reserved"].includes(copy.status)) {
+            throw new Error("A scanned copy is not available for picking. Refresh and try again.");
+          }
+
+          const shipmentBook = assignedRows.find(
+            (row) =>
+              !usedShipmentBookIds.has(row.id) &&
+              (row.book_copy_id === copyId ||
+                (!row.book_copy_id && row.book_title_id === titleId))
+          );
+
+          if (!shipmentBook) {
+            throw new Error("A scanned copy is not assigned to this shipment.");
+          }
+
+          usedShipmentBookIds.add(shipmentBook.id);
+
+          await sbVoid(`/book_copies?id=eq.${copyId}`, {
             method: "PATCH",
             body: JSON.stringify({
-              status: "in_transit",
-              updated_at: new Date().toISOString(),
+              status: "reserved",
+              shipment_id,
+              updated_at: now,
             }),
             headers: { Prefer: "return=minimal" },
           });
-          if (!copyPatch.ok) throw new Error(`Failed to update copy ${copyId}: ${await copyPatch.text()}`);
 
-          // Update existing shipment_books row instead of creating a duplicate
-const now = new Date().toISOString();
-
-const sbPatch = await sbFetch(
-  `/shipment_books?shipment_id=eq.${shipment_id}&book_copy_id=eq.${copyId}`,
-  {
-    method: "PATCH",
-    body: JSON.stringify({
-      status: "picked",
-      picked_at: now,
-      scanned_at: now,
-    }),
-    headers: { Prefer: "return=minimal" },
-  }
-);
-
-if (!sbPatch.ok) {
-  throw new Error(`Failed to update shipment_books row: ${await sbPatch.text()}`);
-}
+          await sbVoid(`/shipment_books?id=eq.${shipmentBook.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              book_copy_id: copyId,
+              book_title_id: titleId,
+              status: "picked",
+              picked_at: now,
+              scanned_at: now,
+            }),
+            headers: { Prefer: "return=minimal" },
+          });
         }
+
+        await sbVoid(`/shipments?id=eq.${shipment_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "packing",
+            address_id: address?.id ?? null,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
 
         // Update member's next_ship_date (advance by ~4 weeks)
         const nextDate = new Date();
         nextDate.setDate(nextDate.getDate() + 28);
-        const memberPatch = await sbFetch(`/members?id=eq.${member_id}`, {
+        await sbVoid(`/members?id=eq.${member_id}`, {
           method: "PATCH",
           body: JSON.stringify({
             next_ship_date: nextDate.toISOString().split("T")[0],
-            updated_at: new Date().toISOString(),
+            updated_at: now,
           }),
           headers: { Prefer: "return=minimal" },
         });
-        if (!memberPatch.ok) throw new Error(`Failed to update member next_ship_date: ${await memberPatch.text()}`);
 
         results.push({
           member_id,
