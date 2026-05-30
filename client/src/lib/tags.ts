@@ -38,10 +38,10 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Treasure",
       "Mystery",
       "Adventure",
-      "Fantasy",
-      "Magic",
+      "Action",
       "Heroes",
       "Journey",
+      "Sports",
       "Wilderness",
       "Survival",
     ],
@@ -69,6 +69,8 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "High Energy",
       "Absurd",
       "Gentle Humor",
+      "Mischief",
+      "Comics",
     ],
   },
 
@@ -102,6 +104,11 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Identity",
       "Representation",
       "Different Perspectives",
+      "Courage",
+      "Grief",
+      "Manners",
+      "Sharing",
+      "Teamwork",
       "Calming",
       "Read Aloud",
       "Quiet Stories",
@@ -134,6 +141,9 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Imagination",
       "Wizards",
       "Castles",
+      "Princesses",
+      "Mermaids",
+      "Superheroes",
     ],
   },
 
@@ -159,6 +169,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Gardening",
       "Camping",
       "Weather",
+      "Horses",
     ],
   },
 
@@ -184,6 +195,10 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Human Body",
       "Facts",
       "Nonfiction",
+      "Biography",
+      "Careers",
+      "Art",
+      "Music",
     ],
   },
 
@@ -207,6 +222,7 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Ancient Worlds",
       "Moral Lessons",
       "Retellings",
+      "Vintage",
     ],
   },
 
@@ -231,6 +247,8 @@ export const TAG_TAXONOMY: TagCategory[] = [
       "Fall",
       "Traditions",
       "Celebrations",
+      "Valentine's Day",
+      "Thanksgiving",
     ],
   },
 ];
@@ -244,8 +262,8 @@ export interface TagSuggestion {
 }
 
 export interface AutoTagResult {
-  suggestedTags: string[];           // top 3-4 tags
-  suggestedCategory: BinCategory;    // primary bin category
+  suggestedTags: string[]; // up to 7 tags
+  suggestedCategory: BinCategory; // primary bin category
   categoryScores: Record<BinCategory, number>;
   allMatches: TagSuggestion[];
 }
@@ -260,15 +278,25 @@ for (const cat of TAG_TAXONOMY) {
 
 const SUBJECT_TO_TAG: Record<string, string[]> = {
   adventure: ["Adventure", "Quest", "Exploration"],
+  action: ["Action", "Adventure"],
   quest: ["Quest"],
   pirate: ["Pirates"],
   treasure: ["Treasure"],
   mystery: ["Mystery"],
   survival: ["Survival"],
+  hero: ["Heroes"],
+  heroes: ["Heroes"],
+  sports: ["Sports"],
+  sport: ["Sports"],
 
   funny: ["Funny", "Silly", "Giggles"],
   humor: ["Funny", "Silly"],
+  comic: ["Comics", "Funny"],
+  comics: ["Comics", "Funny"],
+  graphic: ["Comics"],
   silly: ["Silly", "Goofy"],
+  prank: ["Pranks", "Mischief"],
+  mischief: ["Mischief"],
   rhyme: ["Rhyming"],
   rhyming: ["Rhyming"],
 
@@ -278,16 +306,28 @@ const SUBJECT_TO_TAG: Record<string, string[]> = {
   feelings: ["Feelings"],
   kindness: ["Kindness"],
   bedtime: ["Bedtime"],
+  courage: ["Courage", "Confidence"],
+  brave: ["Courage"],
+  grief: ["Grief", "Feelings"],
+  loss: ["Grief", "Feelings"],
+  manners: ["Manners"],
+  sharing: ["Sharing"],
+  teamwork: ["Teamwork"],
 
   magic: ["Magic"],
   fantasy: ["Fantasy"],
   dragon: ["Dragons"],
   unicorn: ["Unicorns"],
   fairy: ["Fairies"],
+  princess: ["Princesses"],
+  mermaid: ["Mermaids"],
+  superhero: ["Superheroes"],
 
   animal: ["Animals"],
   animals: ["Animals"],
   pet: ["Pets"],
+  horse: ["Horses"],
+  horses: ["Horses"],
   ocean: ["Ocean"],
   dinosaur: ["Dinosaurs"],
   dinosaurs: ["Dinosaurs"],
@@ -302,18 +342,26 @@ const SUBJECT_TO_TAG: Record<string, string[]> = {
   history: ["History"],
   math: ["Math"],
   nonfiction: ["Nonfiction", "Facts"],
+  biography: ["Biography", "Nonfiction"],
+  career: ["Careers"],
+  careers: ["Careers"],
+  art: ["Art"],
+  music: ["Music"],
 
   folklore: ["Folklore"],
   fable: ["Fables"],
   mythology: ["Mythology"],
   classic: ["Classics"],
   historical: ["Historical Fiction"],
+  vintage: ["Vintage"],
 
   christmas: ["Christmas"],
   halloween: ["Halloween"],
   easter: ["Easter"],
   birthday: ["Birthdays"],
   birthdays: ["Birthdays"],
+  valentine: ["Valentine's Day"],
+  thanksgiving: ["Thanksgiving"],
 
   diversity: ["Diversity"],
   culture: ["Cultures"],
@@ -330,18 +378,22 @@ const SUBJECT_TO_TAG: Record<string, string[]> = {
 };
 
 /** Score Open Library subjects against the BookNest tag taxonomy */
-export function autoAssignTags(subjects: string[], title = "", author = ""): AutoTagResult {
+export function autoAssignTags(
+  subjects: string[],
+  title = "",
+  author = ""
+): AutoTagResult {
   const tagScores: Record<string, number> = {};
   const categoryScores: Record<BinCategory, number> = {
-  ADVENTURE: 0,
-  LAUGHS_CHAOS: 0,
-  HEART_HOME: 0,
-  WONDER_IMAGINATION: 0,
-  WILD_WONDERFUL: 0,
-  DISCOVERY_DEN: 0,
-  LEGENDS_LONG_AGO: 0,
-  SEASONS_CELEBRATIONS: 0,
-};
+    ADVENTURE: 0,
+    LAUGHS_CHAOS: 0,
+    HEART_HOME: 0,
+    WONDER_IMAGINATION: 0,
+    WILD_WONDERFUL: 0,
+    DISCOVERY_DEN: 0,
+    LEGENDS_LONG_AGO: 0,
+    SEASONS_CELEBRATIONS: 0,
+  };
 
   // Combine all text to search
   const allText = [...subjects, title, author]
@@ -366,14 +418,14 @@ export function autoAssignTags(subjects: string[], title = "", author = ""): Aut
     .filter(m => m.category)
     .sort((a, b) => b.score - a.score);
 
-  // Pick top 3-4 tags, ensuring at least 2 different categories if possible
+  // Pick up to 7 tags, ensuring at least 2 different categories if possible
   const selected: TagSuggestion[] = [];
   const usedCategories = new Set<BinCategory>();
 
   // First pass: pick highest-scoring tags, max 2 per category
   const catCount: Record<string, number> = {};
   for (const match of allMatches) {
-    if (selected.length >= 4) break;
+    if (selected.length >= 7) break;
     const cc = catCount[match.category] || 0;
     if (cc < 2) {
       selected.push(match);
@@ -393,8 +445,9 @@ export function autoAssignTags(subjects: string[], title = "", author = ""): Aut
   }
 
   // Determine primary bin category (highest score)
-  const suggestedCategory = (Object.entries(categoryScores)
-  .sort((a, b) => b[1] - a[1])[0]?.[0] || "HEART_HOME") as BinCategory;
+  const suggestedCategory = (Object.entries(categoryScores).sort(
+    (a, b) => b[1] - a[1]
+  )[0]?.[0] || "HEART_HOME") as BinCategory;
 
   return {
     suggestedTags: selected.map(s => s.tag),
@@ -415,10 +468,7 @@ export function getCategoryForTag(tag: string): TagCategory | undefined {
 }
 
 /** Build bin name from age group + category */
-export function buildBinName(
-  ageGroup: string,
-  category: BinCategory
-): string {
+export function buildBinName(ageGroup: string, category: BinCategory): string {
   const prefixMap: Record<string, string> = {
     "Hatchlings (0-2)": "HATCH",
     "Fledglings (3-5)": "FLED",

@@ -47,10 +47,10 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Treasure",
     "Mystery",
     "Adventure",
-    "Fantasy",
-    "Magic",
+    "Action",
     "Heroes",
     "Journey",
+    "Sports",
     "Wilderness",
     "Survival",
   ],
@@ -67,6 +67,8 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "High Energy",
     "Absurd",
     "Gentle Humor",
+    "Mischief",
+    "Comics",
   ],
   "Heart & Home": [
     "Family",
@@ -89,6 +91,11 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Identity",
     "Representation",
     "Different Perspectives",
+    "Courage",
+    "Grief",
+    "Manners",
+    "Sharing",
+    "Teamwork",
     "Calming",
     "Read Aloud",
     "Quiet Stories",
@@ -110,6 +117,9 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Imagination",
     "Wizards",
     "Castles",
+    "Princesses",
+    "Mermaids",
+    "Superheroes",
   ],
   "Wild & Wonderful": [
     "Animals",
@@ -124,6 +134,7 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Gardening",
     "Camping",
     "Weather",
+    "Horses",
   ],
   "Discovery Den": [
     "STEM",
@@ -138,6 +149,10 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Human Body",
     "Facts",
     "Nonfiction",
+    "Biography",
+    "Careers",
+    "Art",
+    "Music",
   ],
   "Legends & Long Ago": [
     "Fairy Tales",
@@ -150,6 +165,7 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Ancient Worlds",
     "Moral Lessons",
     "Retellings",
+    "Vintage",
   ],
   "Seasons & Celebrations": [
     "Christmas",
@@ -163,6 +179,8 @@ export const BOOK_TAG_TAXONOMY: Record<string, string[]> = {
     "Fall",
     "Traditions",
     "Celebrations",
+    "Valentine's Day",
+    "Thanksgiving",
   ],
 };
 
@@ -184,10 +202,10 @@ const BOOK_TAG_ALIASES: Record<string, string> = {
   humour: "Funny",
   comedy: "Funny",
   magical: "Magic",
-  princesses: "Castles",
-  princess: "Castles",
-  mermaid: "Mythical Creatures",
-  mermaids: "Mythical Creatures",
+  princess: "Princesses",
+  mermaid: "Mermaids",
+  "graphic novel": "Comics",
+  "graphic novels": "Comics",
   "realistic fiction": "Growing Up",
   relationships: "Friendship",
   siblings: "Family",
@@ -200,6 +218,11 @@ const BOOK_TAG_ALIASES: Record<string, string> = {
   classic: "Classics",
   "childhood classic": "Classics",
   "nursery rhymes": "Rhyming",
+  bravery: "Courage",
+  brave: "Courage",
+  "team work": "Teamwork",
+  "valentines day": "Valentine's Day",
+  valentine: "Valentine's Day",
 };
 
 function normalizeBookTagKey(value: string): string {
@@ -250,7 +273,15 @@ export function getThemeFromBookSignals(
   }
 
   const animalTagged = cleanTags.some(tag =>
-    ["Animals", "Pets", "Ocean", "Forest", "Farm", "Wildlife"].includes(tag)
+    [
+      "Animals",
+      "Pets",
+      "Ocean",
+      "Forest",
+      "Farm",
+      "Wildlife",
+      "Horses",
+    ].includes(tag)
   );
 
   if (
@@ -313,8 +344,7 @@ export function getThemeFromBookSignals(
       "mythical",
     ])
   ) {
-    counts["Wonder & Imagination"] =
-      (counts["Wonder & Imagination"] ?? 0) + 2;
+    counts["Wonder & Imagination"] = (counts["Wonder & Imagination"] ?? 0) + 2;
   }
 
   const max = Math.max(0, ...Object.values(counts));

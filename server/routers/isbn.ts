@@ -1014,7 +1014,7 @@ Do NOT move individual books unless the theme shift is VERY strong.
 TAG GUIDANCE
 --------------------------------------------------
 
-Choose 3-7 supporting tags.
+Choose up to 7 supporting tags. It is fine to return fewer when only a few tags strongly fit.
 
 Include:
 - emotional themes
@@ -1042,6 +1042,12 @@ Good examples:
 - Castles
 - Feelings
 - Nonfiction
+- Sports
+- Comics
+- Biography
+- Courage
+- Princesses
+- Horses
 
 Avoid overly generic tags if stronger discovery tags exist.
 

@@ -1,5 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import {
+  BOOK_TAG_TO_THEME,
   BOOK_COPY_STATUSES,
   LABEL_STATUSES,
   TERMINAL_BOOK_COPY_STATUSES,
@@ -825,17 +826,37 @@ export const appRouter = router({
             sanitizedTags,
             classificationText,
             requestedBinTheme
-          ) ??
-          requestedBinTheme;
+          ) ?? requestedBinTheme;
         const canonicalBinId =
           getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
-        const tagRows =
+        let tagRows =
           sanitizedTags.length > 0
             ? await sbJson<{ id: string; tag: string; bin_theme: string }[]>(
                 "/book_sorting_tags?select=id,tag,bin_theme&limit=1000"
               )
             : [];
         const selectedTagSet = new Set(sanitizedTags);
+        const existingTagSet = new Set(tagRows.map(row => row.tag));
+        const missingTags = sanitizedTags.filter(
+          tag => !existingTagSet.has(tag)
+        );
+
+        if (missingTags.length > 0) {
+          const createdTags = await sbJson<
+            { id: string; tag: string; bin_theme: string }[]
+          >("/book_sorting_tags", {
+            method: "POST",
+            body: JSON.stringify(
+              missingTags.map(tag => ({
+                tag,
+                bin_theme: BOOK_TAG_TO_THEME[tag],
+              }))
+            ),
+          });
+
+          tagRows = [...tagRows, ...createdTags];
+        }
+
         const tagIds = tagRows
           .filter(row => selectedTagSet.has(row.tag))
           .map(row => row.id);

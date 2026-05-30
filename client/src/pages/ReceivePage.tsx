@@ -118,7 +118,15 @@ function getCategoryFromTags(
 
   const text = summaryText.toLowerCase();
   const animalTagged = tags.some(tag =>
-    ["Animals", "Pets", "Ocean", "Forest", "Farm", "Wildlife"].includes(tag)
+    [
+      "Animals",
+      "Pets",
+      "Ocean",
+      "Forest",
+      "Farm",
+      "Wildlife",
+      "Horses",
+    ].includes(tag)
   );
 
   if (
