@@ -228,11 +228,93 @@ export function getThemeFromBookTags(
   tags: string[] | null | undefined,
   preferredTheme?: string | null
 ): string | null {
-  const counts: Record<string, number> = {};
+  return getThemeFromBookSignals(tags, "", preferredTheme);
+}
 
-  for (const tag of sanitizeBookTags(tags)) {
+function containsAny(text: string, keywords: string[]): boolean {
+  return keywords.some(keyword => text.includes(keyword));
+}
+
+export function getThemeFromBookSignals(
+  tags: string[] | null | undefined,
+  summaryText?: string | null,
+  preferredTheme?: string | null
+): string | null {
+  const counts: Record<string, number> = {};
+  const text = (summaryText ?? "").toLowerCase();
+  const cleanTags = sanitizeBookTags(tags);
+
+  for (const tag of cleanTags) {
     const theme = BOOK_TAG_TO_THEME[tag];
     if (theme) counts[theme] = (counts[theme] ?? 0) + 1;
+  }
+
+  const animalTagged = cleanTags.some(tag =>
+    ["Animals", "Pets", "Ocean", "Forest", "Farm", "Wildlife"].includes(tag)
+  );
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "friendship",
+      "friend",
+      "family",
+      "home",
+      "feelings",
+      "emotion",
+      "empathy",
+      "belong",
+      "caring",
+      "kindness",
+      "rescue",
+      "love",
+      "loss",
+      "bravery",
+      "confidence",
+    ])
+  ) {
+    counts["Heart & Home"] = (counts["Heart & Home"] ?? 0) + 3;
+  }
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "facts",
+      "nonfiction",
+      "habitat",
+      "ecosystem",
+      "wildlife",
+      "nature",
+      "zoology",
+      "species",
+      "learn",
+      "science",
+      "ocean",
+      "forest",
+      "farm",
+    ])
+  ) {
+    counts["Wild & Wonderful"] = (counts["Wild & Wonderful"] ?? 0) + 3;
+  }
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "magic",
+      "magical",
+      "fantasy",
+      "talking",
+      "enchanted",
+      "kingdom",
+      "fairy",
+      "dragon",
+      "unicorn",
+      "mermaid",
+      "mythical",
+    ])
+  ) {
+    counts["Wonder & Imagination"] =
+      (counts["Wonder & Imagination"] ?? 0) + 2;
   }
 
   const max = Math.max(0, ...Object.values(counts));

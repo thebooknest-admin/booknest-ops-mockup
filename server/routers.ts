@@ -5,7 +5,7 @@ import {
   TERMINAL_BOOK_COPY_STATUSES,
   getAgeGroupLabel,
   getBinCodeForAgeGroupAndTheme,
-  getThemeFromBookTags,
+  getThemeFromBookSignals,
   getSkuPrefixForAgeGroup,
   normalizeAgeGroup,
   sanitizeBookTags,
@@ -777,6 +777,7 @@ export const appRouter = router({
           publisher: z.string().nullable().optional(),
           published_date: z.string().nullable().optional(),
           page_count: z.number().nullable().optional(),
+          description: z.string().nullable().optional(),
           subjects: z.array(z.string()).optional(),
           age_group: z.string(),
           bin_id: z.string(),
@@ -813,8 +814,18 @@ export const appRouter = router({
 
         const sanitizedTags = sanitizeBookTags(input.tags);
         const requestedBinTheme = input.bin_theme ?? derivedBinTheme;
+        const classificationText = [
+          input.title,
+          input.author,
+          input.description ?? "",
+          ...(input.subjects ?? []),
+        ].join(" ");
         const binTheme =
-          getThemeFromBookTags(sanitizedTags, requestedBinTheme) ??
+          getThemeFromBookSignals(
+            sanitizedTags,
+            classificationText,
+            requestedBinTheme
+          ) ??
           requestedBinTheme;
         const canonicalBinId =
           getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
@@ -864,6 +875,7 @@ export const appRouter = router({
               published_date:
                 input.published_date ?? existing[0].published_date,
               page_count: input.page_count ?? existing[0].page_count,
+              description: input.description ?? existing[0].description,
               subjects: input.subjects ?? existing[0].subjects,
               age_group: titleAgeGroup,
               bin_theme: binTheme ?? existing[0].bin_theme ?? null,
@@ -887,6 +899,7 @@ export const appRouter = router({
               publisher: input.publisher ?? null,
               published_date: input.published_date ?? null,
               page_count: input.page_count ?? null,
+              description: input.description ?? null,
               subjects: input.subjects ?? null,
             }),
           });

@@ -76,6 +76,7 @@ interface BookData {
   pages: string;
   coverUrl: string | null;
   coverCandidates: string[];
+  description: string;
   subjects: string[];
   openLibraryUrl: string | null;
 }
@@ -91,9 +92,14 @@ function sanitizeTags(tags: string[]): string[] {
   );
 }
 
+function containsAny(text: string, keywords: string[]) {
+  return keywords.some(keyword => text.includes(keyword));
+}
+
 function getCategoryFromTags(
   tags: string[],
-  preferredCategory: BinCategory = "HEART_HOME"
+  preferredCategory: BinCategory = "HEART_HOME",
+  summaryText = ""
 ): BinCategory {
   const tagToCategory = new Map<string, BinCategory>();
   for (const category of TAG_TAXONOMY) {
@@ -108,6 +114,74 @@ function getCategoryFromTags(
   for (const tag of tags) {
     const category = tagToCategory.get(tag);
     if (category) counts[category] += 1;
+  }
+
+  const text = summaryText.toLowerCase();
+  const animalTagged = tags.some(tag =>
+    ["Animals", "Pets", "Ocean", "Forest", "Farm", "Wildlife"].includes(tag)
+  );
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "friendship",
+      "friend",
+      "family",
+      "home",
+      "feelings",
+      "emotion",
+      "empathy",
+      "belong",
+      "caring",
+      "kindness",
+      "rescue",
+      "love",
+      "loss",
+      "bravery",
+      "confidence",
+    ])
+  ) {
+    counts.HEART_HOME += 3;
+  }
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "facts",
+      "nonfiction",
+      "habitat",
+      "ecosystem",
+      "wildlife",
+      "nature",
+      "zoology",
+      "species",
+      "learn",
+      "science",
+      "ocean",
+      "forest",
+      "farm",
+    ])
+  ) {
+    counts.WILD_WONDERFUL += 3;
+  }
+
+  if (
+    animalTagged &&
+    containsAny(text, [
+      "magic",
+      "magical",
+      "fantasy",
+      "talking",
+      "enchanted",
+      "kingdom",
+      "fairy",
+      "dragon",
+      "unicorn",
+      "mermaid",
+      "mythical",
+    ])
+  ) {
+    counts.WONDER_IMAGINATION += 2;
   }
 
   const max = Math.max(...Object.values(counts));
@@ -835,6 +909,7 @@ export default function ReceivePage() {
       pages: b.pageCount ? String(b.pageCount) : "",
       coverUrl: b.coverUrl,
       coverCandidates: b.coverCandidates ?? [],
+      description: b.description ?? "",
       subjects: b.categories ?? [],
       openLibraryUrl: null,
     });
@@ -847,9 +922,16 @@ export default function ReceivePage() {
     setTooOldReason(classification.tooOldReason ?? "");
 
     const suggestedTags = sanitizeTags(classification.supportingTags ?? []);
+    const classificationText = [
+      b.title,
+      b.authors.join(" "),
+      b.description ?? "",
+      ...(b.categories ?? []),
+    ].join(" ");
     const mappedBin = getCategoryFromTags(
       suggestedTags,
-      BIN_TO_CATEGORY[classification.themeBin] ?? "HEART_HOME"
+      BIN_TO_CATEGORY[classification.themeBin] ?? "HEART_HOME",
+      classificationText
     );
 
     setSelectedCategory(mappedBin);
@@ -928,7 +1010,16 @@ export default function ReceivePage() {
         : prev.length < 7
           ? [...prev, tag]
           : prev;
-      const nextCategory = getCategoryFromTags(next, selectedCategory);
+      const nextCategory = getCategoryFromTags(
+        next,
+        selectedCategory,
+        [
+          book?.title ?? "",
+          book?.author ?? "",
+          book?.description ?? "",
+          ...(book?.subjects ?? []),
+        ].join(" ")
+      );
 
       setSelectedCategory(nextCategory);
       setSuggestedCategory(nextCategory);
@@ -947,6 +1038,7 @@ export default function ReceivePage() {
       author: book.author,
       cover_url: book.coverUrl ?? undefined,
       published_date: book.publishYear || undefined,
+      description: book.description || undefined,
       page_count: book.pages
         ? parseInt(book.pages, 10) || undefined
         : undefined,
@@ -991,6 +1083,7 @@ export default function ReceivePage() {
       pages: "",
       coverUrl: null,
       coverCandidates: [],
+      description: "",
       subjects: [],
       openLibraryUrl: null,
     });

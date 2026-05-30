@@ -13,7 +13,7 @@ import { z } from "zod";
 import {
   ALLOWED_BOOK_TAGS,
   BOOK_TAG_TAXONOMY,
-  getThemeFromBookTags,
+  getThemeFromBookSignals,
   sanitizeBookTags,
 } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
@@ -1140,8 +1140,9 @@ Return ONLY valid JSON.
         : []
     );
     const normalizedTheme = normalizeTheme(parsed.themeBin);
-    const tagTheme = getThemeFromBookTags(
+    const tagTheme = getThemeFromBookSignals(
       supportingTags,
+      getSearchText(book),
       normalizedTheme
     ) as ThemeBin | null;
 
@@ -1298,7 +1299,11 @@ async function classifyBook(book: BookMetadata): Promise<Classification> {
   } else {
     trace.tagSources.push("AI-generated tags filtered to allowed taxonomy");
   }
-  const tagTheme = getThemeFromBookTags(tags, themeBin) as ThemeBin | null;
+  const tagTheme = getThemeFromBookSignals(
+    tags,
+    getSearchText(book),
+    themeBin
+  ) as ThemeBin | null;
   if (tagTheme && tagTheme !== themeBin) {
     trace.notes.push(
       `Theme adjusted to ${tagTheme} based on selected tag majority`
