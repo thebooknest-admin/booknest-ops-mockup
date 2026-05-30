@@ -423,7 +423,10 @@ export interface BookTitleWithCopies extends BookTitle {
   in_house_count: number;
   in_transit_count: number;
   pending_qc_count: number;
+  pending_label_count: number;
+  pending_stock_count: number;
   returned_count: number;
+  restricted_count: number;
   bin_id: string | null;
   sku_min: string | null;
   sku_max: string | null;
@@ -448,12 +451,13 @@ export async function getBookTitlesWithCopies(params?: {
     return { data: [], total: 0, catalog_only_count: 0 };
   }
 
-  const titleIds = titlesResult.data.map((title) => title.id);
+  const titleIds = titlesResult.data.map(title => title.id);
   const BATCH_SIZE = 50;
 
   const allCopies: {
     book_title_id: string;
     status: string;
+    label_status: string | null;
     bin_id: string | null;
     sku: string | null;
   }[] = [];
@@ -464,13 +468,14 @@ export async function getBookTitlesWithCopies(params?: {
     const copiesRes = await sbFetch(
       `/book_copies?book_title_id=in.(${batch.join(
         ","
-      )})&select=book_title_id,status,bin_id,sku&limit=2000`
+      )})&select=book_title_id,status,label_status,bin_id,sku&limit=2000`
     );
 
     if (copiesRes.ok) {
       const batchCopies: {
         book_title_id: string;
         status: string;
+        label_status: string | null;
         bin_id: string | null;
         sku: string | null;
       }[] = await copiesRes.json();
@@ -493,7 +498,10 @@ export async function getBookTitlesWithCopies(params?: {
       in_house: number;
       in_transit: number;
       pending_qc: number;
+      pending_label: number;
+      pending_stock: number;
       returned: number;
+      restricted: number;
       bin_id: string | null;
       skus: string[];
     }
@@ -506,7 +514,10 @@ export async function getBookTitlesWithCopies(params?: {
         in_house: 0,
         in_transit: 0,
         pending_qc: 0,
+        pending_label: 0,
+        pending_stock: 0,
         returned: 0,
+        restricted: 0,
         bin_id: null,
         skus: [],
       };
@@ -521,7 +532,16 @@ export async function getBookTitlesWithCopies(params?: {
     if (copy.status === "in_house") entry.in_house++;
     else if (copy.status === "in_transit") entry.in_transit++;
     else if (copy.status === "pending_qc") entry.pending_qc++;
+    else if (copy.status === "pending_stock") entry.pending_stock++;
     else if (copy.status === "returned") entry.returned++;
+    else if (copy.status === "restricted") entry.restricted++;
+
+    if (
+      copy.label_status === "pending" &&
+      ["in_house", "pending_label"].includes(copy.status)
+    ) {
+      entry.pending_label++;
+    }
 
     if (copy.bin_id && !entry.bin_id) {
       entry.bin_id = copy.bin_id;
@@ -535,7 +555,7 @@ export async function getBookTitlesWithCopies(params?: {
   const allTagIds = Array.from(
     new Set(
       titlesResult.data
-        .flatMap((title) => title.tag_ids ?? [])
+        .flatMap(title => title.tag_ids ?? [])
         .filter((id): id is string => Boolean(id))
     )
   );
@@ -552,31 +572,34 @@ export async function getBookTitlesWithCopies(params?: {
     if (tagRes.ok) {
       const tags: BookTag[] = await tagRes.json();
 
-      tagMap = Object.fromEntries(tags.map((tag) => [tag.id, tag]));
+      tagMap = Object.fromEntries(tags.map(tag => [tag.id, tag]));
     }
   }
 
-  const data: BookTitleWithCopies[] = titlesResult.data.map((title) => {
+  const data: BookTitleWithCopies[] = titlesResult.data.map(title => {
     const entry = copyMap[title.id];
     const skus = entry?.skus.sort() ?? [];
 
     return {
       ...title,
       tags: (title.tag_ids ?? [])
-        .map((id) => tagMap[id])
+        .map(id => tagMap[id])
         .filter((tag): tag is BookTag => Boolean(tag)),
       copy_count: entry?.total ?? 0,
       in_house_count: entry?.in_house ?? 0,
       in_transit_count: entry?.in_transit ?? 0,
       pending_qc_count: entry?.pending_qc ?? 0,
+      pending_label_count: entry?.pending_label ?? 0,
+      pending_stock_count: entry?.pending_stock ?? 0,
       returned_count: entry?.returned ?? 0,
+      restricted_count: entry?.restricted ?? 0,
       bin_id: entry?.bin_id ?? null,
       sku_min: skus.length > 0 ? skus[0] : null,
       sku_max: skus.length > 1 ? skus[skus.length - 1] : null,
     };
   });
 
-  const filteredData = data.filter((book) => (book.copy_count ?? 0) > 0);
+  const filteredData = data.filter(book => (book.copy_count ?? 0) > 0);
   const catalogOnlyCount = data.length - filteredData.length;
 
   return {
@@ -589,27 +612,34 @@ export async function getBookTitlesWithCopies(params?: {
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 
 export async function getDashboardStats() {
-  const [membersRes, shipmentsRes, inventoryRes, returnsRes, qcRes, labelsRes, stockRes] =
-    await Promise.all([
-      sbFetch("/members?select=id,subscription_status&limit=500"),
-      sbFetch(
-        "/shipments?shipment_type=eq.outbound&select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
-      ),
-      getInventorySummary(),
-      sbFetch("/returns?select=id&status=in.(requested,in_transit,receiving)", {
-        headers: { Prefer: "count=exact", Range: "0-0" },
-      }),
-      sbFetch("/book_copies?status=eq.pending_qc&select=id", {
-        headers: { Prefer: "count=exact", Range: "0-0" },
-      }),
-      sbFetch(
-        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id",
-        { headers: { Prefer: "count=exact", Range: "0-0" } }
-      ),
-      sbFetch("/book_copies?status=eq.pending_stock&select=id", {
-        headers: { Prefer: "count=exact", Range: "0-0" },
-      }),
-    ]);
+  const [
+    membersRes,
+    shipmentsRes,
+    inventoryRes,
+    returnsRes,
+    qcRes,
+    labelsRes,
+    stockRes,
+  ] = await Promise.all([
+    sbFetch("/members?select=id,subscription_status&limit=500"),
+    sbFetch(
+      "/shipments?shipment_type=eq.outbound&select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
+    ),
+    getInventorySummary(),
+    sbFetch("/returns?select=id&status=in.(requested,in_transit,receiving)", {
+      headers: { Prefer: "count=exact", Range: "0-0" },
+    }),
+    sbFetch("/book_copies?status=eq.pending_qc&select=id", {
+      headers: { Prefer: "count=exact", Range: "0-0" },
+    }),
+    sbFetch(
+      "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id",
+      { headers: { Prefer: "count=exact", Range: "0-0" } }
+    ),
+    sbFetch("/book_copies?status=eq.pending_stock&select=id", {
+      headers: { Prefer: "count=exact", Range: "0-0" },
+    }),
+  ]);
 
   const getCount = (res: Response) =>
     parseInt(res.headers.get("content-range")?.split("/")[1] ?? "0", 10);
@@ -632,27 +662,27 @@ export async function getDashboardStats() {
   const today = new Date().toISOString().split("T")[0];
 
   const activeMembers = members.filter(
-    (member) => member.subscription_status === "active"
+    member => member.subscription_status === "active"
   ).length;
 
   const waitlistMembers = members.filter(
-    (member) => member.subscription_status === "waitlist"
+    member => member.subscription_status === "waitlist"
   ).length;
 
   const toPick = shipments.filter(
-    (shipment) => shipment.status === "picking"
+    shipment => shipment.status === "picking"
   ).length;
 
   const toPack = shipments.filter(
-    (shipment) => shipment.status === "packing"
+    shipment => shipment.status === "packing"
   ).length;
 
   const toShip = shipments.filter(
-    (shipment) => shipment.status === "packed"
+    shipment => shipment.status === "packed"
   ).length;
 
   const overdueShipments = shipments.filter(
-    (shipment) =>
+    shipment =>
       (shipment.status === "picking" ||
         shipment.status === "packing" ||
         shipment.status === "packed") &&
@@ -661,7 +691,7 @@ export async function getDashboardStats() {
   ).length;
 
   const shippedToday = shipments.filter(
-    (shipment) =>
+    shipment =>
       shipment.status === "shipped" && shipment.actual_ship_date === today
   ).length;
 

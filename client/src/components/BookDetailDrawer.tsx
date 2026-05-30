@@ -15,6 +15,7 @@ import {
   FlaskConical,
   Tags,
   Sparkles,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -61,11 +62,13 @@ type BookDetail = {
 };
 
 const STATUS_OPTIONS = [
-  { value: "in_house", label: "In House" },
-  { value: "pending_qc", label: "Pending QC" },
-  { value: "pending_stock", label: "Pending Stock" },
-  { value: "in_transit", label: "In Transit" },
-  { value: "returned", label: "Returned" },
+  { value: "in_house", label: "Available" },
+  { value: "pending_qc", label: "QC" },
+  { value: "pending_label", label: "Labels" },
+  { value: "pending_stock", label: "Stock" },
+  { value: "in_transit", label: "With Members" },
+  { value: "returned", label: "Returns" },
+  { value: "restricted", label: "Restricted" },
   { value: "donated_lfl", label: "Donated (LFL)" },
   { value: "lost", label: "Lost" },
   { value: "withdrawn", label: "Withdrawn" },
@@ -74,9 +77,11 @@ const STATUS_OPTIONS = [
 const STATUS_COLORS: Record<string, string> = {
   in_house: "bg-green-100 text-green-800 border-green-200",
   pending_qc: "bg-amber-100 text-amber-800 border-amber-200",
-  pending_stock: "bg-blue-100 text-blue-800 border-blue-200",
-  in_transit: "bg-purple-100 text-purple-800 border-purple-200",
-  returned: "bg-slate-100 text-slate-700 border-slate-200",
+  pending_label: "bg-purple-100 text-purple-800 border-purple-200",
+  pending_stock: "bg-slate-100 text-slate-700 border-slate-200",
+  in_transit: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  returned: "bg-blue-100 text-blue-800 border-blue-200",
+  restricted: "bg-red-100 text-red-800 border-red-200",
   donated_lfl: "bg-rose-100 text-rose-800 border-rose-200",
   lost: "bg-red-100 text-red-800 border-red-200",
   withdrawn: "bg-gray-100 text-gray-600 border-gray-200",
@@ -99,7 +104,7 @@ const THEME_OPTIONS = [
   "Wonder & Imagination",
   "Legends & Long Ago",
   "Seasons & Celebrations",
-].map((theme) => ({ value: theme, label: theme }));
+].map(theme => ({ value: theme, label: theme }));
 
 function formatAgeTier(age: string | null | undefined) {
   if (!age) return "—";
@@ -133,6 +138,21 @@ function normalizeAgeGroupValue(age: string) {
   return age;
 }
 
+function getStatusLabel(status: string | null | undefined) {
+  if (!status) return "Unknown";
+
+  return (
+    STATUS_OPTIONS.find(option => option.value === status)?.label ??
+    status.replace(/_/g, " ")
+  );
+}
+
+function getStatusColor(status: string | null | undefined) {
+  return (
+    STATUS_COLORS[status ?? ""] ?? "bg-gray-100 text-gray-600 border-gray-200"
+  );
+}
+
 function FieldInput({
   label,
   value,
@@ -153,7 +173,7 @@ function FieldInput({
       </label>
       <input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
           "w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
@@ -183,11 +203,11 @@ function FieldSelect({
       <div className="relative">
         <select
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           className="w-full text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none pr-8"
         >
           <option value="">— select —</option>
-          {options.map((option) => (
+          {options.map(option => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -217,15 +237,7 @@ function InfoPill({
     </span>
   );
 }
-function CopyRow({
-  copy,
-  titleId,
-  onSaved,
-}: {
-  copy: BookCopy;
-  titleId: string;
-  onSaved: () => void;
-}) {
+function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [sku, setSku] = useState(copy.sku);
   const [bin, setBin] = useState(copy.bin_id);
@@ -233,13 +245,23 @@ function CopyRow({
   const [condition, setCondition] = useState(copy.condition ?? "");
   const [notes, setNotes] = useState(copy.notes ?? "");
 
+  useEffect(() => {
+    if (editing) return;
+
+    setSku(copy.sku);
+    setBin(copy.bin_id);
+    setStatus(copy.status);
+    setCondition(copy.condition ?? "");
+    setNotes(copy.notes ?? "");
+  }, [copy, editing]);
+
   const updateCopy = trpc.inventory.updateCopy.useMutation({
     onSuccess: () => {
       toast.success(`${sku} updated`);
       setEditing(false);
       onSaved();
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const sendToQC = trpc.inventory.updateCopy.useMutation({
@@ -247,7 +269,7 @@ function CopyRow({
       toast.success(`${copy.sku} sent to QC queue`);
       onSaved();
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const save = () => {
@@ -270,9 +292,6 @@ function CopyRow({
     setEditing(false);
   };
 
-  const statusColor =
-    STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
-
   return (
     <div
       className={cn(
@@ -281,68 +300,68 @@ function CopyRow({
       )}
     >
       {!editing ? (
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-semibold text-foreground w-28 shrink-0">
-            {copy.sku}
-          </span>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-foreground">
+                {copy.sku}
+              </span>
 
-          <span
-            className={cn(
-              "text-xs px-2 py-0.5 rounded-full border font-medium shrink-0",
-              statusColor
-            )}
-          >
-            {STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}
-          </span>
+              <span
+                className={cn(
+                  "text-xs px-2 py-0.5 rounded-full border font-medium",
+                  getStatusColor(status)
+                )}
+              >
+                {getStatusLabel(status)}
+              </span>
 
-          <span className="text-xs font-mono text-foreground bg-muted border border-border rounded-md px-2 py-0.5 shrink-0">
-            {copy.bin_id || "No bin"}
-          </span>
+              <span className="text-xs font-mono text-foreground bg-muted border border-border rounded-md px-2 py-0.5">
+                {copy.bin_id || "No bin"}
+              </span>
+            </div>
 
-          {copy.condition && (
-            <span className="text-xs text-muted-foreground capitalize shrink-0">
-              {copy.condition}
-            </span>
-          )}
-
-          {copy.notes && (
-            <span className="text-xs text-muted-foreground truncate flex-1 italic">
-              "{copy.notes}"
-            </span>
-          )}
-
-          <div className="flex-1" />
-
-          {copy.received_at && (
-            <span className="text-xs text-muted-foreground/60 shrink-0">
-              {new Date(copy.received_at).toLocaleDateString()}
-            </span>
-          )}
-
-          {copy.status !== "pending_qc" && (
-            <button
-              onClick={() =>
-                sendToQC.mutate({ id: copy.id, status: "pending_qc" })
-              }
-              disabled={sendToQC.isPending}
-              title="Send to QC queue"
-              className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 shrink-0"
-            >
-              {sendToQC.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <FlaskConical className="w-3 h-3" />
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {copy.condition && (
+                <span className="capitalize">{copy.condition}</span>
               )}
-              QC
-            </button>
-          )}
 
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-primary hover:underline shrink-0"
-          >
-            Edit
-          </button>
+              {copy.received_at && (
+                <span>
+                  Received {new Date(copy.received_at).toLocaleDateString()}
+                </span>
+              )}
+
+              {copy.notes && <span className="italic">"{copy.notes}"</span>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:justify-end">
+            {copy.status !== "pending_qc" && (
+              <button
+                onClick={() =>
+                  sendToQC.mutate({ id: copy.id, status: "pending_qc" })
+                }
+                disabled={sendToQC.isPending}
+                title="Send to QC queue"
+                className="min-h-9 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
+              >
+                {sendToQC.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <FlaskConical className="w-3 h-3" />
+                )}
+                QC
+              </button>
+            )}
+
+            <button
+              onClick={() => setEditing(true)}
+              className="min-h-9 text-xs font-medium px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              Edit
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -413,18 +432,23 @@ interface BookDetailDrawerProps {
 export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
   const utils = trpc.useUtils();
 
-  const { data: book, isLoading, refetch } =
-    trpc.inventory.getBookDetail.useQuery(
-      { id: bookId! },
-      { enabled: !!bookId }
-    );
+  const {
+    data: book,
+    isLoading,
+    refetch,
+  } = trpc.inventory.getBookDetail.useQuery(
+    { id: bookId! },
+    { enabled: !!bookId }
+  );
 
   const [titleEdit, setTitleEdit] = useState<Partial<BookDetail>>({});
   const [titleDirty, setTitleDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "copies">("overview");
 
   useEffect(() => {
     setTitleEdit({});
     setTitleDirty(false);
+    setActiveTab("overview");
   }, [bookId]);
 
   const updateTitle = trpc.inventory.updateBookTitle.useMutation({
@@ -435,11 +459,11 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
       refetch();
       utils.inventory.bookTitles.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const handleTitleChange = (field: keyof BookDetail, value: string) => {
-    setTitleEdit((prev) => ({ ...prev, [field]: value }));
+    setTitleEdit(prev => ({ ...prev, [field]: value }));
     setTitleDirty(true);
   };
 
@@ -552,7 +576,7 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                         </div>
 
                         <div className="flex flex-wrap gap-1.5">
-                          {display.tags.map((tag) => (
+                          {display.tags.map(tag => (
                             <span
                               key={tag.id}
                               className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground border border-border"
@@ -577,232 +601,277 @@ export function BookDetailDrawer({ bookId, onClose }: BookDetailDrawerProps) {
                   </div>
                 )}
               </section>
-                            <section>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                  Title Information
-                </h3>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <FieldInput
-                      label="Title"
-                      value={display.title ?? ""}
-                      onChange={(value) => handleTitleChange("title", value)}
-                    />
-                  </div>
+              <div className="flex gap-2 border-b border-border overflow-x-auto">
+                {[
+                  { value: "overview", label: "Details", icon: BookOpen },
+                  { value: "copies", label: "Copies", icon: Copy },
+                ].map(tab => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.value;
 
-                  <div className="col-span-2">
-                    <FieldInput
-                      label="Author"
-                      value={display.author ?? ""}
-                      onChange={(value) => handleTitleChange("author", value)}
-                    />
-                  </div>
-
-                  <FieldInput
-                    label="ISBN"
-                    value={display.isbn ?? ""}
-                    onChange={(value) => handleTitleChange("isbn", value)}
-                    placeholder="978-…"
-                    mono
-                  />
-
-                  <FieldSelect
-                    label="Age Tier"
-                    value={display.age_group ?? ""}
-                    options={AGE_GROUP_OPTIONS}
-                    onChange={(value) =>
-  handleTitleChange("age_group", normalizeAgeGroupValue(value))
-}
-                  />
-
-                  <FieldSelect
-  label="Theme"
-  value={display.bin_theme ?? ""}
-  options={THEME_OPTIONS}
-  onChange={(value) => handleTitleChange("bin_theme", value)}
-/>
-
-                  <FieldInput
-                    label="Publisher"
-                    value={display.publisher ?? ""}
-                    onChange={(value) => handleTitleChange("publisher", value)}
-                  />
-
-                  <FieldInput
-                    label="Published Date"
-                    value={display.published_date ?? ""}
-                    onChange={(value) =>
-                      handleTitleChange("published_date", value)
-                    }
-                    placeholder="2023-01-01"
-                  />
-
-                  <FieldInput
-                    label="Page Count"
-                    value={display.page_count?.toString() ?? ""}
-                    onChange={(value) => handleTitleChange("page_count", value)}
-                  />
-
-                  <div className="col-span-2">
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">
-                      Cover Image URL
-                    </label>
-
-                    <div className="flex gap-2">
-                      <input
-                        value={display.cover_url ?? ""}
-                        onChange={(e) =>
-                          handleTitleChange("cover_url", e.target.value)
-                        }
-                        className="flex-1 text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        placeholder="https://…"
-                      />
-
-                      {display.cover_url && (
-                        <a
-                          href={display.cover_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground"
-                          title="Open cover URL"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Classification Metadata
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div>
-                      <span className="font-medium text-foreground">
-                        Theme:
-                      </span>{" "}
-                      {display.bin_theme ?? "—"}
-                    </div>
-
-                    <div>
-                      <span className="font-medium text-foreground">
-                        AI Age:
-                      </span>{" "}
-                      {formatAgeTier(display.suggested_age_tier)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium text-foreground">
-                        Source:
-                      </span>{" "}
-                      {display.metadata_source ?? "—"}
-                    </div>
-
-                    <div>
-                      <span className="font-medium text-foreground">
-                        Version:
-                      </span>{" "}
-                      {display.classification_version ?? "—"}
-                    </div>
-                  </div>
-
-                  {Array.isArray(display.subjects) && display.subjects.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-xs font-medium text-foreground mb-1">
-                        Subjects
-                      </p>
-
-                      <div className="flex flex-wrap gap-1.5">
-                        {display.subjects.slice(0, 12).map((subject) => (
-                          <span
-                            key={subject}
-                            className="text-xs px-2 py-0.5 rounded-md bg-background border border-border text-muted-foreground"
-                          >
-                            {subject}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {titleDirty && (
-                  <div className="mt-3 flex justify-end">
+                  return (
                     <button
-                      onClick={saveTitle}
-                      disabled={updateTitle.isPending}
-                      className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50"
-                      style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-                    >
-                      {updateTitle.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Save className="w-4 h-4" />
+                      key={tab.value}
+                      type="button"
+                      onClick={() =>
+                        setActiveTab(tab.value as "overview" | "copies")
+                      }
+                      className={cn(
+                        "min-h-11 flex items-center gap-2 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                        isActive
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
                       )}
-                      Save Changes
+                    >
+                      <Icon className="w-4 h-4" />
+                      {tab.label}
                     </button>
-                  </div>
-                )}
-              </section>
-                            <section>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Physical Copies ({book.copies.length})
+                  );
+                })}
+              </div>
+
+              {activeTab === "overview" && (
+                <section>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                    Title Information
                   </h3>
 
-                  <div className="flex gap-1.5 flex-wrap justify-end">
-                    {(() => {
-                      const counts: Record<string, number> = {};
-
-                      book.copies.forEach((copy: BookCopy) => {
-                        counts[copy.status] =
-                          (counts[copy.status] ?? 0) + 1;
-                      });
-
-                      return Object.entries(counts).map(
-                        ([statusKey, count]) => (
-                          <span
-                            key={statusKey}
-                            className={cn(
-                              "text-xs px-2 py-0.5 rounded-full border",
-                              STATUS_COLORS[statusKey] ??
-                                "bg-gray-100 text-gray-600 border-gray-200"
-                            )}
-                          >
-                            {count}{" "}
-                            {STATUS_OPTIONS.find(
-                              (s) => s.value === statusKey
-                            )?.label ?? statusKey}
-                          </span>
-                        )
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {book.copies.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    No copies on record.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {book.copies.map((copy: BookCopy) => (
-                      <CopyRow
-                        key={copy.id}
-                        copy={copy}
-                        titleId={book.id}
-                        onSaved={() => {
-                          refetch();
-                          utils.inventory.bookTitles.invalidate();
-                        }}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <FieldInput
+                        label="Title"
+                        value={display.title ?? ""}
+                        onChange={value => handleTitleChange("title", value)}
                       />
-                    ))}
+                    </div>
+
+                    <div className="col-span-2">
+                      <FieldInput
+                        label="Author"
+                        value={display.author ?? ""}
+                        onChange={value => handleTitleChange("author", value)}
+                      />
+                    </div>
+
+                    <FieldInput
+                      label="ISBN"
+                      value={display.isbn ?? ""}
+                      onChange={value => handleTitleChange("isbn", value)}
+                      placeholder="978-…"
+                      mono
+                    />
+
+                    <FieldSelect
+                      label="Age Tier"
+                      value={display.age_group ?? ""}
+                      options={AGE_GROUP_OPTIONS}
+                      onChange={value =>
+                        handleTitleChange(
+                          "age_group",
+                          normalizeAgeGroupValue(value)
+                        )
+                      }
+                    />
+
+                    <FieldSelect
+                      label="Theme"
+                      value={display.bin_theme ?? ""}
+                      options={THEME_OPTIONS}
+                      onChange={value => handleTitleChange("bin_theme", value)}
+                    />
+
+                    <details className="col-span-2 rounded-lg border border-border bg-muted/20 p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Publishing and cover
+                      </summary>
+
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <FieldInput
+                          label="Publisher"
+                          value={display.publisher ?? ""}
+                          onChange={value =>
+                            handleTitleChange("publisher", value)
+                          }
+                        />
+
+                        <FieldInput
+                          label="Published Date"
+                          value={display.published_date ?? ""}
+                          onChange={value =>
+                            handleTitleChange("published_date", value)
+                          }
+                          placeholder="2023-01-01"
+                        />
+
+                        <FieldInput
+                          label="Page Count"
+                          value={display.page_count?.toString() ?? ""}
+                          onChange={value =>
+                            handleTitleChange("page_count", value)
+                          }
+                        />
+
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">
+                            Cover Image URL
+                          </label>
+
+                          <div className="flex gap-2">
+                            <input
+                              value={display.cover_url ?? ""}
+                              onChange={e =>
+                                handleTitleChange("cover_url", e.target.value)
+                              }
+                              className="flex-1 text-sm px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                              placeholder="https://…"
+                            />
+
+                            {display.cover_url && (
+                              <a
+                                href={display.cover_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground"
+                                title="Open cover URL"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </details>
                   </div>
-                )}
-              </section>
+
+                  <details className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Classification metadata
+                    </summary>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mt-3">
+                      <div>
+                        <span className="font-medium text-foreground">
+                          Theme:
+                        </span>{" "}
+                        {display.bin_theme ?? "—"}
+                      </div>
+
+                      <div>
+                        <span className="font-medium text-foreground">
+                          AI Age:
+                        </span>{" "}
+                        {formatAgeTier(display.suggested_age_tier)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium text-foreground">
+                          Source:
+                        </span>{" "}
+                        {display.metadata_source ?? "—"}
+                      </div>
+
+                      <div>
+                        <span className="font-medium text-foreground">
+                          Version:
+                        </span>{" "}
+                        {display.classification_version ?? "—"}
+                      </div>
+                    </div>
+
+                    {Array.isArray(display.subjects) &&
+                      display.subjects.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-xs font-medium text-foreground mb-1">
+                            Subjects
+                          </p>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {display.subjects.slice(0, 12).map(subject => (
+                              <span
+                                key={subject}
+                                className="text-xs px-2 py-0.5 rounded-md bg-background border border-border text-muted-foreground"
+                              >
+                                {subject}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </details>
+
+                  {titleDirty && (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={saveTitle}
+                        disabled={updateTitle.isPending}
+                        className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+                      >
+                        {updateTitle.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        Save Changes
+                      </button>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === "copies" && (
+                <section>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Physical Copies ({book.copies.length})
+                    </h3>
+
+                    <div className="flex gap-1.5 flex-wrap justify-end">
+                      {(() => {
+                        const counts: Record<string, number> = {};
+
+                        book.copies.forEach((copy: BookCopy) => {
+                          counts[copy.status] = (counts[copy.status] ?? 0) + 1;
+                        });
+
+                        return Object.entries(counts).map(
+                          ([statusKey, count]) => (
+                            <span
+                              key={statusKey}
+                              className={cn(
+                                "text-xs px-2 py-0.5 rounded-full border",
+                                getStatusColor(statusKey)
+                              )}
+                            >
+                              {count} {getStatusLabel(statusKey)}
+                            </span>
+                          )
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {book.copies.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      No copies on record.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {book.copies.map((copy: BookCopy) => (
+                        <CopyRow
+                          key={copy.id}
+                          copy={copy}
+                          onSaved={() => {
+                            refetch();
+                            utils.inventory.bookTitles.invalidate();
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
             </>
           )}
         </div>

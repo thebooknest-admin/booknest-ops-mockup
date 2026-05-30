@@ -1087,7 +1087,9 @@ addBookMutation.mutate({
                     <input
                       ref={isbnInputRef}
                       type={numpadMode ? "tel" : "text"}
-                      inputMode={numpadMode ? "numeric" : "text"}
+                      inputMode={numpadMode ? "tel" : "text"}
+                      pattern={numpadMode ? "[0-9Xx]*" : undefined}
+                      enterKeyHint="search"
                       value={isbnInput}
                       onChange={(e) => setIsbnInput(e.target.value)}
                       placeholder="Enter ISBN…"

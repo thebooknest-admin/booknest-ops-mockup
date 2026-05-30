@@ -2,7 +2,14 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Search, BookOpen, RefreshCw, XCircle, Sparkles, Download } from "lucide-react";
+import {
+  Search,
+  BookOpen,
+  RefreshCw,
+  XCircle,
+  Sparkles,
+  Download,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BookDetailDrawer } from "@/components/BookDetailDrawer";
 
@@ -23,6 +30,19 @@ const THEME_FILTER_OPTIONS = [
   "Legends & Long Ago",
   "Seasons & Celebrations",
 ];
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "available", label: "Available" },
+  { value: "with_members", label: "With Members" },
+  { value: "qc", label: "QC" },
+  { value: "labels", label: "Labels" },
+  { value: "stock", label: "Stock" },
+  { value: "returns", label: "Returns" },
+  { value: "restricted", label: "Restricted" },
+] as const;
+
+type StatusFilter = (typeof STATUS_FILTER_OPTIONS)[number]["value"];
 
 function normalizeAge(age: string | null | undefined) {
   return (age ?? "").toLowerCase().replace(/\s+/g, "_");
@@ -69,7 +89,7 @@ function TagPreview({
 
   return (
     <div className="flex flex-wrap gap-1">
-      {shown.map((tag) => (
+      {shown.map(tag => (
         <span
           key={tag.id}
           className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border whitespace-nowrap"
@@ -89,6 +109,7 @@ function TagPreview({
 
 export default function InventoryPage() {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [ageFilter, setAgeFilter] = useState("all");
   const [themeFilter, setThemeFilter] = useState("all");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
@@ -108,11 +129,34 @@ export default function InventoryPage() {
 
   const books = data?.data ?? [];
 
-  const filtered = books.filter((book) => {
+  const statusCounts: Record<StatusFilter, number> = {
+    all: books.reduce((sum, book) => sum + (book.copy_count ?? 0), 0),
+    available: books.reduce((sum, book) => sum + (book.in_house_count ?? 0), 0),
+    with_members: books.reduce(
+      (sum, book) => sum + (book.in_transit_count ?? 0),
+      0
+    ),
+    qc: books.reduce((sum, book) => sum + (book.pending_qc_count ?? 0), 0),
+    labels: books.reduce(
+      (sum, book) => sum + (book.pending_label_count ?? 0),
+      0
+    ),
+    stock: books.reduce(
+      (sum, book) => sum + (book.pending_stock_count ?? 0),
+      0
+    ),
+    returns: books.reduce((sum, book) => sum + (book.returned_count ?? 0), 0),
+    restricted: books.reduce(
+      (sum, book) => sum + (book.restricted_count ?? 0),
+      0
+    ),
+  };
+
+  const filtered = books.filter(book => {
     const q = search.toLowerCase();
 
     const tagText =
-      book.tags?.map((tag) => tag.tag.toLowerCase()).join(" ") ?? "";
+      book.tags?.map(tag => tag.tag.toLowerCase()).join(" ") ?? "";
 
     const matchesSearch =
       !search ||
@@ -131,7 +175,17 @@ export default function InventoryPage() {
     const matchesTheme =
       themeFilter === "all" || book.bin_theme === themeFilter;
 
-    return matchesSearch && matchesAge && matchesTheme;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "available" && (book.in_house_count ?? 0) > 0) ||
+      (statusFilter === "with_members" && (book.in_transit_count ?? 0) > 0) ||
+      (statusFilter === "qc" && (book.pending_qc_count ?? 0) > 0) ||
+      (statusFilter === "labels" && (book.pending_label_count ?? 0) > 0) ||
+      (statusFilter === "stock" && (book.pending_stock_count ?? 0) > 0) ||
+      (statusFilter === "returns" && (book.returned_count ?? 0) > 0) ||
+      (statusFilter === "restricted" && (book.restricted_count ?? 0) > 0);
+
+    return matchesSearch && matchesAge && matchesTheme && matchesStatus;
   });
 
   const totalInFlight =
@@ -141,67 +195,71 @@ export default function InventoryPage() {
 
   const totalMembers = inTransitGroups?.length ?? 0;
   const exportFilteredInventory = () => {
-  const headers = [
-    "Title",
-    "Author",
-    "ISBN",
-    "Age Group",
-    "Theme",
-    "Tags",
-    "Bin",
-    "Copy Count",
-    "In House",
-    "In Flight",
-    "Pending QC",
-    "Returned",
-    "SKU Min",
-    "SKU Max",
-  ];
+    const headers = [
+      "Title",
+      "Author",
+      "ISBN",
+      "Age Group",
+      "Theme",
+      "Tags",
+      "Bin",
+      "Copy Count",
+      "Available",
+      "With Members",
+      "Pending QC",
+      "Pending Labels",
+      "Ready to Stock",
+      "Returns",
+      "Restricted",
+      "SKU Min",
+      "SKU Max",
+    ];
 
-  const rows = filtered.map((book) => [
-    book.title ?? "",
-    book.author ?? "",
-    book.isbn ?? "",
-    formatAgeTier(book.age_group),
-    book.bin_theme ?? "",
-    book.tags?.map((tag) => tag.tag).join(", ") ?? "",
-    book.bin_id ?? "",
-    book.copy_count ?? 0,
-    book.in_house_count ?? 0,
-    book.in_transit_count ?? 0,
-    book.pending_qc_count ?? 0,
-    book.returned_count ?? 0,
-    book.sku_min ?? "",
-    book.sku_max ?? "",
-  ]);
+    const rows = filtered.map(book => [
+      book.title ?? "",
+      book.author ?? "",
+      book.isbn ?? "",
+      formatAgeTier(book.age_group),
+      book.bin_theme ?? "",
+      book.tags?.map(tag => tag.tag).join(", ") ?? "",
+      book.bin_id ?? "",
+      book.copy_count ?? 0,
+      book.in_house_count ?? 0,
+      book.in_transit_count ?? 0,
+      book.pending_qc_count ?? 0,
+      book.pending_label_count ?? 0,
+      book.pending_stock_count ?? 0,
+      book.returned_count ?? 0,
+      book.restricted_count ?? 0,
+      book.sku_min ?? "",
+      book.sku_max ?? "",
+    ]);
 
-  const csv = [headers, ...rows]
-    .map((row) =>
-      row
-        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-        .join(",")
-    )
-    .join("\n");
+    const csv = [headers, ...rows]
+      .map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
 
-  const blob = new Blob([csv], {
-    type: "text/csv;charset=utf-8;",
-  });
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
 
-  const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `book-nest-inventory-${new Date()
-    .toISOString()
-    .slice(0, 10)}.csv`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `book-nest-inventory-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
 
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-  URL.revokeObjectURL(url);
-};
-    return (
+    URL.revokeObjectURL(url);
+  };
+  return (
     <>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         {/* Header */}
@@ -224,15 +282,14 @@ export default function InventoryPage() {
           </div>
 
           <div className="flex items-center gap-2">
-
-<button
-  onClick={exportFilteredInventory}
-  disabled={filtered.length === 0}
-  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
->
-  <Download className="w-3.5 h-3.5" />
-  Export Excel
-</button>
+            <button
+              onClick={exportFilteredInventory}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Excel
+            </button>
 
             <button
               onClick={() => refetch()}
@@ -259,43 +316,43 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="stat-card">
-            <span className="section-label">Total Copies</span>
-            <p className="text-3xl font-bold text-foreground mt-1">
-              {summary?.total ?? 0}
-            </p>
-            <p className="text-xs text-muted-foreground">across all bins</p>
-          </div>
+        {/* Status Filters */}
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
+            {STATUS_FILTER_OPTIONS.map(option => {
+              const isActive = statusFilter === option.value;
 
-          <div className="stat-card">
-            <span className="section-label">In House</span>
-            <p className="text-3xl font-bold text-foreground mt-1">
-              {summary?.in_house ?? 0}
-            </p>
-            <p className="text-xs text-muted-foreground">available to ship</p>
-          </div>
-
-          <button
-            onClick={() => setShowInTransit(true)}
-            className="stat-card text-left hover:border-primary hover:shadow-sm transition-all cursor-pointer w-full"
-          >
-            <span className="section-label">In Flight</span>
-            <p className="text-3xl font-bold text-foreground mt-1">
-              {summary?.in_transit ?? 0}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              with members · click to view
-            </p>
-          </button>
-
-          <div className="stat-card">
-            <span className="section-label">Returned</span>
-            <p className="text-3xl font-bold text-foreground mt-1">
-              {summary?.returned ?? 0}
-            </p>
-            <p className="text-xs text-muted-foreground">back in warehouse</p>
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setStatusFilter(option.value)}
+                  className={cn(
+                    "min-h-11 shrink-0 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-colors whitespace-nowrap",
+                    "focus:outline-none focus:ring-2 focus:ring-primary/25 focus:ring-offset-2 focus:ring-offset-background",
+                    isActive
+                      ? "border-primary text-white shadow-sm"
+                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                  style={
+                    isActive
+                      ? { backgroundColor: "oklch(0.42 0.11 155)" }
+                      : undefined
+                  }
+                  aria-pressed={isActive}
+                >
+                  {option.label}{" "}
+                  <span
+                    className={cn(
+                      "ml-1 tabular-nums",
+                      isActive ? "text-white/85" : "text-muted-foreground"
+                    )}
+                  >
+                    ({statusCounts[option.value] ?? 0})
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -307,7 +364,7 @@ export default function InventoryPage() {
               type="text"
               placeholder="Search by title, author, ISBN, SKU, bin, theme, or tag…"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={event => setSearch(event.target.value)}
               className="w-full pl-9 pr-4 py-2.5 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             />
           </div>
@@ -326,7 +383,7 @@ export default function InventoryPage() {
                 All Ages
               </button>
 
-              {AGE_FILTER_OPTIONS.map((option) => (
+              {AGE_FILTER_OPTIONS.map(option => (
                 <button
                   key={option.value}
                   onClick={() => setAgeFilter(option.value)}
@@ -355,7 +412,7 @@ export default function InventoryPage() {
                 All Themes
               </button>
 
-              {THEME_FILTER_OPTIONS.map((theme) => (
+              {THEME_FILTER_OPTIONS.map(theme => (
                 <button
                   key={theme}
                   onClick={() => setThemeFilter(theme)}
@@ -372,7 +429,7 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
-                {/* Books Table */}
+        {/* Books Table */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           {isLoading ? (
             <div className="p-8 text-center">
@@ -413,12 +470,15 @@ export default function InventoryPage() {
               </div>
 
               <div className="divide-y divide-border/50">
-                {filtered.map((book) => {
+                {filtered.map(book => {
                   const hasStatuses =
-  (book.in_house_count ?? 0) > 0 ||
-  (book.in_transit_count ?? 0) > 0 ||
-  (book.pending_qc_count ?? 0) > 0 ||
-  (book.returned_count ?? 0) > 0;
+                    (book.in_house_count ?? 0) > 0 ||
+                    (book.in_transit_count ?? 0) > 0 ||
+                    (book.pending_qc_count ?? 0) > 0 ||
+                    (book.pending_label_count ?? 0) > 0 ||
+                    (book.pending_stock_count ?? 0) > 0 ||
+                    (book.returned_count ?? 0) > 0 ||
+                    (book.restricted_count ?? 0) > 0;
 
                   return (
                     <button
@@ -494,10 +554,10 @@ export default function InventoryPage() {
                         )}
 
                         {(book.in_house_count ?? 0) > 0 && (
-  <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-green-50 text-green-700">
-    {book.in_house_count} In House
-  </span>
-)}
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-green-50 text-green-700">
+                            {book.in_house_count} Available
+                          </span>
+                        )}
 
                         {(book.in_transit_count ?? 0) > 0 && (
                           <span
@@ -507,7 +567,7 @@ export default function InventoryPage() {
                               color: "oklch(0.35 0.12 155)",
                             }}
                           >
-                            ✈ {book.in_transit_count} In Flight
+                            {book.in_transit_count} With Members
                           </span>
                         )}
 
@@ -517,9 +577,27 @@ export default function InventoryPage() {
                           </span>
                         )}
 
+                        {(book.pending_label_count ?? 0) > 0 && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-purple-50 text-purple-700">
+                            {book.pending_label_count} Labels
+                          </span>
+                        )}
+
+                        {(book.pending_stock_count ?? 0) > 0 && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-slate-100 text-slate-700">
+                            {book.pending_stock_count} Stock
+                          </span>
+                        )}
+
                         {(book.returned_count ?? 0) > 0 && (
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-blue-50 text-blue-600">
-                            {book.returned_count} Returned
+                            {book.returned_count} Returns
+                          </span>
+                        )}
+
+                        {(book.restricted_count ?? 0) > 0 && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap bg-red-50 text-red-700">
+                            {book.restricted_count} Restricted
                           </span>
                         )}
                       </div>
@@ -538,13 +616,13 @@ export default function InventoryPage() {
           </p>
         )}
       </div>
-            {/* Detail drawer */}
+      {/* Detail drawer */}
       <BookDetailDrawer
         bookId={selectedBookId}
         onClose={() => setSelectedBookId(null)}
       />
 
-      {/* In Flight Drawer */}
+      {/* With Members Drawer */}
       {showInTransit && (
         <div className="fixed inset-0 z-50 flex">
           <div
@@ -556,7 +634,7 @@ export default function InventoryPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
-                <h2 className="font-bold text-foreground">In Flight</h2>
+                <h2 className="font-bold text-foreground">With Members</h2>
 
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {totalInFlight} book
@@ -579,9 +657,7 @@ export default function InventoryPage() {
                 <div className="p-8 text-center">
                   <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground mx-auto mb-2" />
 
-                  <p className="text-sm text-muted-foreground">
-                    Loading…
-                  </p>
+                  <p className="text-sm text-muted-foreground">Loading…</p>
                 </div>
               ) : inTransitGroups.length === 0 ? (
                 <div className="p-8 text-center">
@@ -591,7 +667,7 @@ export default function InventoryPage() {
                 </div>
               ) : (
                 <div className="divide-y divide-border/50">
-                  {inTransitGroups.map((group) => (
+                  {inTransitGroups.map(group => (
                     <div
                       key={group.member_id}
                       className="px-6 py-4 space-y-2.5"
@@ -616,7 +692,7 @@ export default function InventoryPage() {
 
                       {/* Books */}
                       <div className="space-y-2 pl-2 border-l-2 border-border ml-1">
-                        {group.books.map((book) => (
+                        {group.books.map(book => (
                           <div
                             key={book.id}
                             className="flex items-start justify-between gap-3"
