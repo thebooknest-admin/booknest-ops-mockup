@@ -10,14 +10,15 @@
  */
 
 import { z } from "zod";
+import {
+  ALLOWED_BOOK_TAGS,
+  BOOK_TAG_TAXONOMY,
+  getThemeFromBookTags,
+  sanitizeBookTags,
+} from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
 
-type AgeTier =
-  | "Hatchlings"
-  | "Fledglings"
-  | "Soarers"
-  | "Sky Readers"
-  | "13+";
+type AgeTier = "Hatchlings" | "Fledglings" | "Soarers" | "Sky Readers" | "13+";
 type ThemeBin =
   | "Adventure"
   | "Laughs & Chaos"
@@ -26,29 +27,51 @@ type ThemeBin =
   | "Wild & Wonderful"
   | "Discovery Den"
   | "Legends & Long Ago"
-  | "Seasons & Celebrations"
+  | "Seasons & Celebrations";
 
 type ConfidenceLevel = "high" | "medium" | "low" | "needs-review";
 
 interface RawBook {
-  isbn: string; title: string | null; authors: string[]; description: string;
-  coverUrl: string | null; categories: string[]; pageCount: number | null;
-  publishedDate: string | null; source: "google" | "openlibrary";
+  isbn: string;
+  title: string | null;
+  authors: string[];
+  description: string;
+  coverUrl: string | null;
+  categories: string[];
+  pageCount: number | null;
+  publishedDate: string | null;
+  source: "google" | "openlibrary";
 }
 interface BookMetadata {
-  isbn: string; title: string; authors: string[]; description: string;
-  coverUrl: string | null; coverCandidates: string[]; categories: string[];
-  pageCount: number | null; publishedDate: string | null; sources: ("google" | "openlibrary")[];
+  isbn: string;
+  title: string;
+  authors: string[];
+  description: string;
+  coverUrl: string | null;
+  coverCandidates: string[];
+  categories: string[];
+  pageCount: number | null;
+  publishedDate: string | null;
+  sources: ("google" | "openlibrary")[];
 }
 interface RuleTrace {
-  tierSource: string; binSource: string; tagSources: string[];
-  usedAIFallback: boolean; tierUsedAI: boolean; binUsedAI: boolean;
-  signalsAligned: number; notes: string[];
+  tierSource: string;
+  binSource: string;
+  tagSources: string[];
+  usedAIFallback: boolean;
+  tierUsedAI: boolean;
+  binUsedAI: boolean;
+  signalsAligned: number;
+  notes: string[];
 }
 interface Classification {
-  ageTier: AgeTier; ageTierRange: string; themeBin: ThemeBin;
-  supportingTags: string[]; confidence: ConfidenceLevel;
-  reasoning: string; trace: RuleTrace;
+  ageTier: AgeTier;
+  ageTierRange: string;
+  themeBin: ThemeBin;
+  supportingTags: string[];
+  confidence: ConfidenceLevel;
+  reasoning: string;
+  trace: RuleTrace;
   isTooOld: boolean;
   tooOldReason: string;
 }
@@ -105,15 +128,24 @@ const TIER_KEYWORD_OVERRIDES: Record<AgeTier, string[]> = {
   "13+": ["young adult", "teen", "ya fiction", "ya novel", "mature"],
 };
 const STRONG_CATEGORY_TO_TIER: { match: string; tier: AgeTier }[] = [
-  { match: "board book", tier: "Hatchlings" }, { match: "picture book", tier: "Fledglings" },
-  { match: "stories in rhyme", tier: "Fledglings" }, { match: "rhyming", tier: "Fledglings" },
-  { match: "preschool", tier: "Fledglings" }, { match: "kindergarten", tier: "Fledglings" },
-  { match: "read-aloud", tier: "Fledglings" }, { match: "early reader", tier: "Soarers" },
-  { match: "beginning reader", tier: "Soarers" }, { match: "first chapter", tier: "Soarers" },
-  { match: "chapter book", tier: "Soarers" }, { match: "middle grade", tier: "Sky Readers" },
+  { match: "board book", tier: "Hatchlings" },
+  { match: "picture book", tier: "Fledglings" },
+  { match: "stories in rhyme", tier: "Fledglings" },
+  { match: "rhyming", tier: "Fledglings" },
+  { match: "preschool", tier: "Fledglings" },
+  { match: "kindergarten", tier: "Fledglings" },
+  { match: "read-aloud", tier: "Fledglings" },
+  { match: "early reader", tier: "Soarers" },
+  { match: "beginning reader", tier: "Soarers" },
+  { match: "first chapter", tier: "Soarers" },
+  { match: "chapter book", tier: "Soarers" },
+  { match: "middle grade", tier: "Sky Readers" },
   { match: "young adult", tier: "13+" },
 ];
-const CATEGORY_TO_TIER = [...STRONG_CATEGORY_TO_TIER, { match: "juvenile fiction", tier: "Soarers" as AgeTier }];
+const CATEGORY_TO_TIER = [
+  ...STRONG_CATEGORY_TO_TIER,
+  { match: "juvenile fiction", tier: "Soarers" as AgeTier },
+];
 const BIN_KEYWORDS: Record<ThemeBin, string[]> = {
   Adventure: [
     "quest",
@@ -227,7 +259,6 @@ const BIN_PRECEDENCE: Record<ThemeBin, number> = {
   "Discovery Den": 5,
   "Legends & Long Ago": 4,
   "Seasons & Celebrations": 2,
-
 };
 const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
   { match: "humor", bin: "Laughs & Chaos" },
@@ -258,138 +289,223 @@ const CATEGORY_TO_BIN: { match: string; bin: ThemeBin }[] = [
   { match: "holiday", bin: "Seasons & Celebrations" },
   { match: "christmas", bin: "Seasons & Celebrations" },
   { match: "halloween", bin: "Seasons & Celebrations" },
-
 ];
-const BIN_TAGS: Record<ThemeBin, string[]> = {
-  Adventure: ["Quest", "Exploration", "Pirates", "Treasure", "Mystery", "Adventure", "Fantasy", "Magic", "Heroes", "Journey", "Wilderness", "Survival"],
-  "Laughs & Chaos": ["Silly", "Goofy", "Pranks", "Wordplay", "Giggles", "Chaos", "Funny", "Rhyming", "Interactive", "High Energy", "Absurd"],
-  "Heart & Home": ["Family", "Friendship", "School", "Feelings", "Kindness", "Confidence", "Empathy", "Bedtime", "Community", "Growing Up", "New Experiences", "Emotional Growth", "Realistic Fiction", "Relationships", "Siblings", "Neighbor", "Community", "Divorce", "Grandparent"],
-  "Wonder & Imagination": ["Dragons", "Unicorns", "Magic", "Fantasy", "Fairies", "Dreams", "Pretend Play", "Mythical Creatures", "Imagination", "Wizards", "Castles", "Magical", "Kingdom", "Princess", "Mermaid", "Spell", "butterfly kingdom",
-"magical creatures",
-"enchanted",
-"fairy world",
-"forest magic",
-"tiny creatures",
-"whimsical",],
-  "Wild & Wonderful": ["Animals", "Ocean", "Forest", "Dinosaurs", "Nature", "Wildlife", "Bugs", "Farm", "Gardening", "Camping", "Weather"],
-  "Discovery Den": ["STEM", "Science", "Space", "Vehicles", "History", "Math", "Technology", "Engineering", "Experiments", "Human Body", "Facts", "Nonfiction"],
-  "Legends & Long Ago": ["Fairy Tales", "Folklore", "Fables", "Mythology", "Classics", "Historical Fiction", "Legends", "Ancient Worlds", "Moral Lessons", "Retellings"],
-  "Seasons & Celebrations": ["Christmas", "Halloween", "Easter", "Birthdays", "Back to School", "Summer", "Winter", "Spring", "Fall", "Traditions", "Celebrations"],
- };
-const CLASSICS_TAGS = ["Timeless","Household Staple","Must Read","Fan Favorite","Bestseller","Award Winner","Caldecott","Newbery","Vintage","Generational Favorite","Childhood Classic","Fairy Tale","Folktale","Fable","Nursery Rhymes"];
+const BIN_TAGS = BOOK_TAG_TAXONOMY as Record<ThemeBin, string[]>;
 const MAX_TAGS = 7;
 
-const cache = new Map<string, { book: BookMetadata; classification: Classification }>();
+const cache = new Map<
+  string,
+  { book: BookMetadata; classification: Classification }
+>();
 const MAX_CACHE = 500;
-function getCached(isbn: string) { return cache.get(isbn) ?? null; }
-function setCached(isbn: string, book: BookMetadata, classification: Classification) {
+function getCached(isbn: string) {
+  return cache.get(isbn) ?? null;
+}
+function setCached(
+  isbn: string,
+  book: BookMetadata,
+  classification: Classification
+) {
   if (classification.confidence !== "high") return;
-  if (cache.size >= MAX_CACHE) { const k = cache.keys().next().value; if (k) cache.delete(k); }
+  if (cache.size >= MAX_CACHE) {
+    const k = cache.keys().next().value;
+    if (k) cache.delete(k);
+  }
   cache.set(isbn, { book, classification });
 }
 
-function cleanIsbn(input: string) { return input.replace(/[^0-9Xx]/g, "").replace(/x/g, "X"); }
+function cleanIsbn(input: string) {
+  return input.replace(/[^0-9Xx]/g, "").replace(/x/g, "X");
+}
 function isValidIsbn10(isbn: string) {
   if (isbn.length !== 10) return false;
   let sum = 0;
-  for (let i = 0; i < 9; i++) { const d = parseInt(isbn[i], 10); if (isNaN(d)) return false; sum += d * (10 - i); }
-  const last = isbn[9]; sum += last === "X" ? 10 : parseInt(last, 10);
+  for (let i = 0; i < 9; i++) {
+    const d = parseInt(isbn[i], 10);
+    if (isNaN(d)) return false;
+    sum += d * (10 - i);
+  }
+  const last = isbn[9];
+  sum += last === "X" ? 10 : parseInt(last, 10);
   return sum % 11 === 0;
 }
 function isValidIsbn13(isbn: string) {
   if (isbn.length !== 13) return false;
   let sum = 0;
-  for (let i = 0; i < 13; i++) { const d = parseInt(isbn[i], 10); if (isNaN(d)) return false; sum += i % 2 === 0 ? d : d * 3; }
+  for (let i = 0; i < 13; i++) {
+    const d = parseInt(isbn[i], 10);
+    if (isNaN(d)) return false;
+    sum += i % 2 === 0 ? d : d * 3;
+  }
   return sum % 10 === 0;
 }
-function isValidIsbn(isbn: string) { const c = cleanIsbn(isbn); return isValidIsbn10(c) || isValidIsbn13(c); }
+function isValidIsbn(isbn: string) {
+  const c = cleanIsbn(isbn);
+  return isValidIsbn10(c) || isValidIsbn13(c);
+}
 function toIsbn13(isbn: string): string {
   const c = cleanIsbn(isbn);
   if (c.length === 13) return c;
   const prefix = "978" + c.slice(0, 9);
   let sum = 0;
-  for (let i = 0; i < 12; i++) sum += parseInt(prefix[i], 10) * (i % 2 === 0 ? 1 : 3);
+  for (let i = 0; i < 12; i++)
+    sum += parseInt(prefix[i], 10) * (i % 2 === 0 ? 1 : 3);
   return prefix + String((10 - (sum % 10)) % 10);
 }
 
 const TIMEOUT_MS = 10000;
 async function fetchFromGoogleBooks(isbn: string): Promise<RawBook | null> {
   try {
-    console.log('>>> fetchFromGoogleBooks start', isbn);
+    console.log(">>> fetchFromGoogleBooks start", isbn);
     const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
     const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1${apiKey ? `&key=${apiKey}` : ""}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    console.log('>>> Google status:', res.status);
+    console.log(">>> Google status:", res.status);
     if (!res.ok) return null;
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     if (!data.items?.length) return null;
     const vol = data.items[0].volumeInfo;
-    let coverUrl = vol.imageLinks?.thumbnail || vol.imageLinks?.smallThumbnail || null;
-    if (coverUrl) coverUrl = coverUrl.replace("http://", "https://").replace("zoom=1", "zoom=2");
-    const title = vol.subtitle ? `${vol.title ?? ""}: ${vol.subtitle}`.trim() : vol.title ?? null;
-    return { isbn, title, authors: vol.authors || [], description: vol.description || "", coverUrl, categories: vol.categories || [], pageCount: vol.pageCount || null, publishedDate: vol.publishedDate || null, source: "google" };
+    let coverUrl =
+      vol.imageLinks?.thumbnail || vol.imageLinks?.smallThumbnail || null;
+    if (coverUrl)
+      coverUrl = coverUrl
+        .replace("http://", "https://")
+        .replace("zoom=1", "zoom=2");
+    const title = vol.subtitle
+      ? `${vol.title ?? ""}: ${vol.subtitle}`.trim()
+      : (vol.title ?? null);
+    return {
+      isbn,
+      title,
+      authors: vol.authors || [],
+      description: vol.description || "",
+      coverUrl,
+      categories: vol.categories || [],
+      pageCount: vol.pageCount || null,
+      publishedDate: vol.publishedDate || null,
+      source: "google",
+    };
   } catch (e) {
-    console.log('>>> Google fetch ERROR:', e);
+    console.log(">>> Google fetch ERROR:", e);
     return null;
   }
 }
 
 async function fetchFromOpenLibrary(isbn: string): Promise<RawBook | null> {
   try {
-    console.log('>>> fetchFromOpenLibrary start', isbn);
-    const fetchJson = async (url: string) => { const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) }); return r.ok ? r.json() : null; };
-    const edition = await fetchJson(`https://openlibrary.org/isbn/${isbn}.json`) as any;
-    console.log('>>> OpenLib edition:', edition ? 'found' : 'null');
+    console.log(">>> fetchFromOpenLibrary start", isbn);
+    const fetchJson = async (url: string) => {
+      const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      return r.ok ? r.json() : null;
+    };
+    const edition = (await fetchJson(
+      `https://openlibrary.org/isbn/${isbn}.json`
+    )) as any;
+    console.log(">>> OpenLib edition:", edition ? "found" : "null");
     if (!edition) return null;
     const [authorData, work] = await Promise.all([
-      edition.authors?.length ? fetchJson(`https://openlibrary.org${edition.authors[0].key}.json`) : null,
-      edition.works?.length ? fetchJson(`https://openlibrary.org${edition.works[0].key}.json`) : null,
+      edition.authors?.length
+        ? fetchJson(`https://openlibrary.org${edition.authors[0].key}.json`)
+        : null,
+      edition.works?.length
+        ? fetchJson(`https://openlibrary.org${edition.works[0].key}.json`)
+        : null,
     ]);
-    const authors: string[] = (authorData as any)?.name ? [(authorData as any).name] : [];
-    let description = ""; let subjects: string[] = edition.subjects || [];
-    if (work) { const w = work as any; description = typeof w.description === "string" ? w.description : w.description?.value ?? ""; if (w.subjects) subjects = [...subjects, ...w.subjects]; }
+    const authors: string[] = (authorData as any)?.name
+      ? [(authorData as any).name]
+      : [];
+    let description = "";
+    let subjects: string[] = edition.subjects || [];
+    if (work) {
+      const w = work as any;
+      description =
+        typeof w.description === "string"
+          ? w.description
+          : (w.description?.value ?? "");
+      if (w.subjects) subjects = [...subjects, ...w.subjects];
+    }
     if (edition.physical_format) subjects.push(edition.physical_format);
-    const coverUrl = edition.covers?.length ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg` : null;
-    const title = edition.subtitle ? `${edition.title ?? ""}: ${edition.subtitle}`.trim() : edition.title ?? null;
-    return { isbn, title, authors, description, coverUrl, categories: Array.from(new Set(subjects)).slice(0, 15) as string[], pageCount: edition.number_of_pages || null, publishedDate: edition.publish_date || null, source: "openlibrary" };
+    const coverUrl = edition.covers?.length
+      ? `https://covers.openlibrary.org/b/id/${edition.covers[0]}-L.jpg`
+      : null;
+    const title = edition.subtitle
+      ? `${edition.title ?? ""}: ${edition.subtitle}`.trim()
+      : (edition.title ?? null);
+    return {
+      isbn,
+      title,
+      authors,
+      description,
+      coverUrl,
+      categories: Array.from(new Set(subjects)).slice(0, 15) as string[],
+      pageCount: edition.number_of_pages || null,
+      publishedDate: edition.publish_date || null,
+      source: "openlibrary",
+    };
   } catch (e) {
-    console.log('>>> OpenLib fetch ERROR:', e);
+    console.log(">>> OpenLib fetch ERROR:", e);
     return null;
   }
 }
 
-function mergeBookSources(isbn: string, sources: (RawBook | null)[]): BookMetadata | null {
+function mergeBookSources(
+  isbn: string,
+  sources: (RawBook | null)[]
+): BookMetadata | null {
   const valid = sources.filter((s): s is RawBook => s !== null);
   if (!valid.length) return null;
-  const longest = (arr: string[]) => arr.reduce((b, v) => v.length > b.length ? v : b, "");
-  const firstNonNull = <T>(arr: (T | null)[]): T | null => arr.find(v => v != null) ?? null;
-  const catSet = new Set<string>(); valid.forEach(s => s.categories.forEach(c => catSet.add(c)));
+  const longest = (arr: string[]) =>
+    arr.reduce((b, v) => (v.length > b.length ? v : b), "");
+  const firstNonNull = <T>(arr: (T | null)[]): T | null =>
+    arr.find(v => v != null) ?? null;
+  const catSet = new Set<string>();
+  valid.forEach(s => s.categories.forEach(c => catSet.add(c)));
   const mergedCover = firstNonNull(valid.map(s => s.coverUrl));
   return {
-    isbn, title: longest(valid.map(s => s.title).filter((t): t is string => !!t)) || "Unknown Title",
-    authors: valid.map(s => s.authors).reduce((b, a) => a.length > b.length ? a : b, []),
-    description: longest(valid.map(s => s.description)), coverUrl: mergedCover,
+    isbn,
+    title:
+      longest(valid.map(s => s.title).filter((t): t is string => !!t)) ||
+      "Unknown Title",
+    authors: valid
+      .map(s => s.authors)
+      .reduce((b, a) => (a.length > b.length ? a : b), []),
+    description: longest(valid.map(s => s.description)),
+    coverUrl: mergedCover,
     coverCandidates: [
       `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`,
       `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`,
       `https://books.google.com/books/content?vid=ISBN${isbn}&printsec=frontcover&img=1&zoom=1`,
       ...(mergedCover ? [mergedCover] : []),
     ],
-    categories: Array.from(catSet), pageCount: firstNonNull(valid.map(s => s.pageCount)),
-    publishedDate: firstNonNull(valid.map(s => s.publishedDate)), sources: valid.map(s => s.source),
+    categories: Array.from(catSet),
+    pageCount: firstNonNull(valid.map(s => s.pageCount)),
+    publishedDate: firstNonNull(valid.map(s => s.publishedDate)),
+    sources: valid.map(s => s.source),
   };
 }
 
-function escapeRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function escapeRe(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 function containsKeyword(text: string, kw: string) {
   const k = kw.toLowerCase();
   if (k.includes(" ") || k.includes("-")) return text.includes(k);
   return new RegExp(`\\b${escapeRe(k)}\\b`, "i").test(text);
 }
-function findFirstKeyword(text: string, keywords: string[]) { return keywords.find(k => containsKeyword(text, k)) ?? null; }
-function findAllKeywords(text: string, keywords: string[]) { return keywords.filter(k => containsKeyword(text, k)); }
-function getSearchText(b: BookMetadata) { return [b.title, b.description, ...b.categories, ...b.authors].join(" ").toLowerCase(); }
-function getNarrativeText(b: BookMetadata) { return [b.title, b.description].join(" ").toLowerCase(); }
+function findFirstKeyword(text: string, keywords: string[]) {
+  return keywords.find(k => containsKeyword(text, k)) ?? null;
+}
+function findAllKeywords(text: string, keywords: string[]) {
+  return keywords.filter(k => containsKeyword(text, k));
+}
+function getSearchText(b: BookMetadata) {
+  return [b.title, b.description, ...b.categories, ...b.authors]
+    .join(" ")
+    .toLowerCase();
+}
+function getNarrativeText(b: BookMetadata) {
+  return [b.title, b.description].join(" ").toLowerCase();
+}
 function isBoardBook(b: BookMetadata) {
   const t = getSearchText(b);
 
@@ -402,162 +518,210 @@ function isBoardBook(b: BookMetadata) {
   );
 }
 
-function resolveAgeTier(book: BookMetadata): { tier: AgeTier; source: string } | null {
-  if (isBoardBook(book)) return { tier: "Hatchlings", source: "board book format" };
+function resolveAgeTier(
+  book: BookMetadata
+): { tier: AgeTier; source: string } | null {
+  if (isBoardBook(book))
+    return { tier: "Hatchlings", source: "board book format" };
   const narrativeText = getNarrativeText(book);
-  for (const [tier, keywords] of Object.entries(TIER_KEYWORD_OVERRIDES) as [AgeTier, string[]][]) {
+  for (const [tier, keywords] of Object.entries(TIER_KEYWORD_OVERRIDES) as [
+    AgeTier,
+    string[],
+  ][]) {
     const matched = findFirstKeyword(narrativeText, keywords);
     if (matched) {
-      if (book.pageCount != null && book.pageCount < 20 && (tier === "Soarers" || tier === "Sky Readers")) continue;
+      if (
+        book.pageCount != null &&
+        book.pageCount < 20 &&
+        (tier === "Soarers" || tier === "Sky Readers")
+      )
+        continue;
       return { tier, source: `keyword "${matched}"` };
     }
   }
   for (const entry of STRONG_CATEGORY_TO_TIER) {
     for (const cat of book.categories) {
       if (cat.toLowerCase().includes(entry.match)) {
-        if (book.pageCount != null && book.pageCount < 20 && (entry.tier === "Soarers" || entry.tier === "Sky Readers")) continue;
+        if (
+          book.pageCount != null &&
+          book.pageCount < 20 &&
+          (entry.tier === "Soarers" || entry.tier === "Sky Readers")
+        )
+          continue;
         return { tier: entry.tier, source: `category "${entry.match}"` };
       }
     }
   }
- const text = getSearchText(book);
+  const text = getSearchText(book);
 
+  // Strong Sky Readers signals
+  if (
+    text.includes("middle grade") ||
+    text.includes("middle-grade") ||
+    text.includes("tween")
+  ) {
+    return {
+      tier: "Sky Readers",
+      source: "middle grade signal",
+    };
+  }
 
-// Strong Sky Readers signals
-if (
-  text.includes("middle grade") ||
-  text.includes("middle-grade") ||
-  text.includes("tween")
-) {
-  return {
-    tier: "Sky Readers",
-    source: "middle grade signal",
-  };
-}
+  // Strong Soarers signals
+  if (
+    text.includes("chapter book") ||
+    text.includes("early reader") ||
+    text.includes("branches")
+  ) {
+    return {
+      tier: "Soarers",
+      source: "early chapter signal",
+    };
+  }
 
-// Strong Soarers signals
-if (
-  text.includes("chapter book") ||
-  text.includes("early reader") ||
-  text.includes("branches")
-) {
-  return {
-    tier: "Soarers",
-    source: "early chapter signal",
-  };
-}
-
-// Strong Fledglings signals
-if (
-  text.includes("picture book") ||
-  text.includes("read-aloud") ||
-  text.includes("preschool")
-) {
-  return {
-    tier: "Fledglings",
-    source: "picture book signal",
-  };
-}
+  // Strong Fledglings signals
+  if (
+    text.includes("picture book") ||
+    text.includes("read-aloud") ||
+    text.includes("preschool")
+  ) {
+    return {
+      tier: "Fledglings",
+      source: "picture book signal",
+    };
+  }
   for (const entry of CATEGORY_TO_TIER) {
     for (const cat of book.categories) {
-      if (cat.toLowerCase().includes(entry.match)) return { tier: entry.tier, source: `category "${entry.match}"` };
+      if (cat.toLowerCase().includes(entry.match))
+        return { tier: entry.tier, source: `category "${entry.match}"` };
     }
   }
   return null;
 }
-function resolveBin(book: BookMetadata): { bin: ThemeBin; source: string } | null {
+function resolveBin(
+  book: BookMetadata
+): { bin: ThemeBin; source: string } | null {
   const text = getSearchText(book);
 
-const isAnimalEmotionalStory =
-  (text.includes("pet") ||
-    text.includes("puppy") ||
-    text.includes("kitten") ||
-    text.includes("dog") ||
-    text.includes("cat") ||
-    text.includes("skunk") ||
-    text.includes("animal")) &&
-  (text.includes("friendship") ||
-    text.includes("family") ||
-    text.includes("feelings") ||
-    text.includes("heartfelt") ||
-    text.includes("empathy") ||
-    text.includes("belonging") ||
-    text.includes("caring") ||
-    text.includes("rescue") ||
-    text.includes("home"));
+  const isAnimalEmotionalStory =
+    (text.includes("pet") ||
+      text.includes("puppy") ||
+      text.includes("kitten") ||
+      text.includes("dog") ||
+      text.includes("cat") ||
+      text.includes("skunk") ||
+      text.includes("animal")) &&
+    (text.includes("friendship") ||
+      text.includes("family") ||
+      text.includes("feelings") ||
+      text.includes("heartfelt") ||
+      text.includes("empathy") ||
+      text.includes("belonging") ||
+      text.includes("caring") ||
+      text.includes("rescue") ||
+      text.includes("home"));
 
-if (isAnimalEmotionalStory) {
-  return {
-    bin: "Heart & Home",
-    source: "animal story with emotional/family relationship focus",
-  };
-}
+  if (isAnimalEmotionalStory) {
+    return {
+      bin: "Heart & Home",
+      source: "animal story with emotional/family relationship focus",
+    };
+  }
 
   const scores: Record<ThemeBin, number> = {
-  Adventure: 0,
-  "Laughs & Chaos": 0,
-  "Heart & Home": 0,
-  "Wonder & Imagination": 0,
-  "Wild & Wonderful": 0,
-  "Discovery Den": 0,
-  "Legends & Long Ago": 0,
-  "Seasons & Celebrations": 0,
-};
+    Adventure: 0,
+    "Laughs & Chaos": 0,
+    "Heart & Home": 0,
+    "Wonder & Imagination": 0,
+    "Wild & Wonderful": 0,
+    "Discovery Den": 0,
+    "Legends & Long Ago": 0,
+    "Seasons & Celebrations": 0,
+  };
 
-const matched: Record<ThemeBin, string[]> = {
-  Adventure: [],
-  "Laughs & Chaos": [],
-  "Heart & Home": [],
-  "Wonder & Imagination": [],
-  "Wild & Wonderful": [],
-  "Discovery Den": [],
-  "Legends & Long Ago": [],
-  "Seasons & Celebrations": [],
-};
-  for (const bin of VALID_BINS) { const m = findAllKeywords(text, BIN_KEYWORDS[bin]); scores[bin] += m.length; matched[bin] = m; }
+  const matched: Record<ThemeBin, string[]> = {
+    Adventure: [],
+    "Laughs & Chaos": [],
+    "Heart & Home": [],
+    "Wonder & Imagination": [],
+    "Wild & Wonderful": [],
+    "Discovery Den": [],
+    "Legends & Long Ago": [],
+    "Seasons & Celebrations": [],
+  };
+  for (const bin of VALID_BINS) {
+    const m = findAllKeywords(text, BIN_KEYWORDS[bin]);
+    scores[bin] += m.length;
+    matched[bin] = m;
+  }
   for (const cat of book.categories) {
-  const lower = cat.toLowerCase();
+    const lower = cat.toLowerCase();
 
-  for (const entry of CATEGORY_TO_BIN) {
-    if (lower.includes(entry.match)) {
-      scores[entry.bin] += 1;
+    for (const entry of CATEGORY_TO_BIN) {
+      if (lower.includes(entry.match)) {
+        scores[entry.bin] += 1;
 
-      if (!matched[entry.bin].includes(entry.match)) {
-        matched[entry.bin].push(entry.match);
+        if (!matched[entry.bin].includes(entry.match)) {
+          matched[entry.bin].push(entry.match);
+        }
       }
     }
   }
-}
   const max = Math.max(...Object.values(scores));
   if (max === 0) return null;
-  const bin = VALID_BINS.filter(b => scores[b] === max).sort((a, b) => BIN_PRECEDENCE[b] - BIN_PRECEDENCE[a])[0];
-  return { bin, source: `${scores[bin]} keyword match${scores[bin] !== 1 ? "es" : ""}: ${matched[bin].slice(0, 3).join(", ") || bin}` };
+  const bin = VALID_BINS.filter(b => scores[b] === max).sort(
+    (a, b) => BIN_PRECEDENCE[b] - BIN_PRECEDENCE[a]
+  )[0];
+  return {
+    bin,
+    source: `${scores[bin]} keyword match${scores[bin] !== 1 ? "es" : ""}: ${matched[bin].slice(0, 3).join(", ") || bin}`,
+  };
 }
 function resolveTags(book: BookMetadata, bin: ThemeBin): string[] {
-  const text = getSearchText(book); const candidates = new Set<string>();
-  for (const tag of BIN_TAGS[bin]) { if (containsKeyword(text, tag)) candidates.add(tag); }
-  for (const tag of CLASSICS_TAGS) { if (containsKeyword(text, tag)) candidates.add(tag); }
-  return Array.from(candidates).slice(0, MAX_TAGS);
+  const text = getSearchText(book);
+  const candidates = new Set<string>();
+  for (const tag of BIN_TAGS[bin]) {
+    if (containsKeyword(text, tag)) candidates.add(tag);
+  }
+  return sanitizeBookTags(Array.from(candidates)).slice(0, MAX_TAGS);
 }
 function countAlignedSignals(tierSource: string, binSource: string) {
   let n = 0;
-  if (tierSource.includes("page count") || tierSource.includes("board book")) n++;
+  if (tierSource.includes("page count") || tierSource.includes("board book"))
+    n++;
   if (tierSource.includes("keyword")) n++;
   if (tierSource.includes("category")) n++;
-  const m = binSource.match(/(\d+) keyword/); if (m && parseInt(m[1]) >= 2) n++;
+  const m = binSource.match(/(\d+) keyword/);
+  if (m && parseInt(m[1]) >= 2) n++;
   if (binSource.includes("category")) n++;
   return n;
 }
-function computeConfidence(trace: RuleTrace, book: BookMetadata): ConfidenceLevel {
-  const signals = [book.description.length >= 20, book.pageCount != null, book.categories.length > 0].filter(Boolean).length;
+function computeConfidence(
+  trace: RuleTrace,
+  book: BookMetadata
+): ConfidenceLevel {
+  const signals = [
+    book.description.length >= 20,
+    book.pageCount != null,
+    book.categories.length > 0,
+  ].filter(Boolean).length;
   if (signals === 0) return "needs-review";
-  if (trace.tierUsedAI && trace.binUsedAI) return signals < 2 ? "needs-review" : "low";
-  if (!trace.tierUsedAI && !trace.binUsedAI) return trace.signalsAligned >= 2 ? "high" : "medium";
+  if (trace.tierUsedAI && trace.binUsedAI)
+    return signals < 2 ? "needs-review" : "low";
+  if (!trace.tierUsedAI && !trace.binUsedAI)
+    return trace.signalsAligned >= 2 ? "high" : "medium";
   return trace.signalsAligned >= 1 ? "medium" : "low";
 }
-async function runAIFallback(book: BookMetadata, needs: { needsTier: boolean; needsBin: boolean }) {
+async function runAIFallback(
+  book: BookMetadata,
+  needs: { needsTier: boolean; needsBin: boolean }
+) {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return { ageTier: "Fledglings" as AgeTier, themeBin: "Heart & Home" as ThemeBin, reasoning: "API key not configured" };
+  if (!key)
+    return {
+      ageTier: "Fledglings" as AgeTier,
+      themeBin: "Heart & Home" as ThemeBin,
+      reasoning: "API key not configured",
+    };
 
   const system = `You are a classifier for a children's book subscription called The Book Nest.
 
@@ -870,17 +1034,21 @@ Good examples:
 - Mystery
 - Family
 - Dinosaurs
-- Humor
+- Funny
 - Adventure
 - Ocean
 - Survival
 - Science
-- Princesses
+- Castles
 - Feelings
-- Sports
 - Nonfiction
 
 Avoid overly generic tags if stronger discovery tags exist.
+
+Only use these allowed tags. Do not invent tags:
+${ALLOWED_BOOK_TAGS.join(", ")}
+
+The theme must match the chosen tags. If most chosen tags belong to Heart & Home, choose Heart & Home; if most belong to Wonder & Imagination, choose Wonder & Imagination, and so on.
 
 --------------------------------------------------
 RESTRICTED RULES
@@ -908,71 +1076,95 @@ Return ONLY valid JSON.
   "reasoning": "Brief explanation of why the age tier and primary shelf theme were selected."
 }`;
 
-  const userPrompt = [`Title: ${book.title}`, `Authors: ${book.authors.join(", ")}`, `Description: ${book.description || "(none)"}`, `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`, `Page count: ${book.pageCount ?? "unknown"}`].join("\n");
+  const userPrompt = [
+    `Title: ${book.title}`,
+    `Authors: ${book.authors.join(", ")}`,
+    `Description: ${book.description || "(none)"}`,
+    `Categories: ${book.categories.slice(0, 8).join(", ") || "(none)"}`,
+    `Page count: ${book.pageCount ?? "unknown"}`,
+  ].join("\n");
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
-        messages: [{ role: "system", content: system }, { role: "user", content: userPrompt }],
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userPrompt },
+        ],
         response_format: { type: "json_object" },
         temperature: 0.1,
         max_tokens: 200,
       }),
     });
-    const data = await res.json() as any;
-    const parsed = JSON.parse(data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ?? "{}");
+    const data = (await res.json()) as any;
+    const parsed = JSON.parse(
+      data.choices?.[0]?.message?.content?.replace(/```json|```/g, "").trim() ??
+        "{}"
+    );
     const normalizeTheme = (theme: string): ThemeBin => {
-  const mapping: Record<string, ThemeBin> = {
-    "Adventure": "Adventure",
-    "Laughs & Chaos": "Laughs & Chaos",
-    "Laughs and Chaos": "Laughs & Chaos",
+      const mapping: Record<string, ThemeBin> = {
+        Adventure: "Adventure",
+        "Laughs & Chaos": "Laughs & Chaos",
+        "Laughs and Chaos": "Laughs & Chaos",
 
-    "Heart & Home": "Heart & Home",
-    "Heart and Home": "Heart & Home",
+        "Heart & Home": "Heart & Home",
+        "Heart and Home": "Heart & Home",
 
-    "Wonder & Imagination": "Wonder & Imagination",
-    "Wonder and Imagination": "Wonder & Imagination",
+        "Wonder & Imagination": "Wonder & Imagination",
+        "Wonder and Imagination": "Wonder & Imagination",
 
-    "Wild & Wonderful": "Wild & Wonderful",
-    "Wild and Wonderful": "Wild & Wonderful",
+        "Wild & Wonderful": "Wild & Wonderful",
+        "Wild and Wonderful": "Wild & Wonderful",
 
-    "Discovery Den": "Discovery Den",
+        "Discovery Den": "Discovery Den",
 
-    "Legends & Long Ago": "Legends & Long Ago",
-    "Legends and Long Ago": "Legends & Long Ago",
+        "Legends & Long Ago": "Legends & Long Ago",
+        "Legends and Long Ago": "Legends & Long Ago",
 
-    "Seasons & Celebrations": "Seasons & Celebrations",
-    "Seasons and Celebrations": "Seasons & Celebrations",
-  };
+        "Seasons & Celebrations": "Seasons & Celebrations",
+        "Seasons and Celebrations": "Seasons & Celebrations",
+      };
 
-  return mapping[theme?.trim()] ?? "Heart & Home";
-};
+      return mapping[theme?.trim()] ?? "Heart & Home";
+    };
 
-return {
-  ageTier: VALID_TIERS.includes(parsed.ageTier)
-    ? parsed.ageTier as AgeTier
-    : "Fledglings" as AgeTier,
+    const supportingTags = sanitizeBookTags(
+      Array.isArray(parsed.supportingTags)
+        ? parsed.supportingTags.slice(0, MAX_TAGS)
+        : []
+    );
+    const normalizedTheme = normalizeTheme(parsed.themeBin);
+    const tagTheme = getThemeFromBookTags(
+      supportingTags,
+      normalizedTheme
+    ) as ThemeBin | null;
 
-  themeBin: normalizeTheme(parsed.themeBin),
+    return {
+      ageTier: VALID_TIERS.includes(parsed.ageTier)
+        ? (parsed.ageTier as AgeTier)
+        : ("Fledglings" as AgeTier),
 
-  supportingTags: Array.isArray(parsed.supportingTags)
-    ? parsed.supportingTags.slice(0, MAX_TAGS)
-    : [],
+      themeBin: (tagTheme ?? normalizedTheme) as ThemeBin,
 
-  reasoning: parsed.reasoning || "AI classification",
-};
+      supportingTags,
+
+      reasoning: parsed.reasoning || "AI classification",
+    };
   } catch (err) {
-  console.error("AI FALLBACK ERROR:", err);
+    console.error("AI FALLBACK ERROR:", err);
 
-  return {
-    ageTier: "Fledglings" as AgeTier,
-    themeBin: "Heart & Home" as ThemeBin,
-    reasoning: "AI fallback error",
-  };
-}
+    return {
+      ageTier: "Fledglings" as AgeTier,
+      themeBin: "Heart & Home" as ThemeBin,
+      reasoning: "AI fallback error",
+    };
+  }
 }
 
 function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
@@ -994,7 +1186,7 @@ function detectTooOld(book: BookMetadata): { tooOld: boolean; reason: string } {
     "16 and up",
   ];
 
-  const matched = tooOldSignals.find((s) => text.includes(s));
+  const matched = tooOldSignals.find(s => text.includes(s));
 
   if (matched) {
     return {
@@ -1037,7 +1229,7 @@ function detectRestrictedContent(book: BookMetadata): {
     ${book.authors?.join(" ")}
   `.toLowerCase();
 
-  const matched = hardRestrictedIndicators.find((keyword) =>
+  const matched = hardRestrictedIndicators.find(keyword =>
     text.includes(keyword)
   );
 
@@ -1055,94 +1247,117 @@ function detectRestrictedContent(book: BookMetadata): {
 }
 
 async function classifyBook(book: BookMetadata): Promise<Classification> {
-  const trace: RuleTrace = { tierSource: "", binSource: "", tagSources: [], usedAIFallback: false, tierUsedAI: false, binUsedAI: false, signalsAligned: 0, notes: [] };
-const tierResult = resolveAgeTier(book);
-const binResult = resolveBin(book);
+  const trace: RuleTrace = {
+    tierSource: "",
+    binSource: "",
+    tagSources: [],
+    usedAIFallback: false,
+    tierUsedAI: false,
+    binUsedAI: false,
+    signalsAligned: 0,
+    notes: [],
+  };
+  const tierResult = resolveAgeTier(book);
+  const binResult = resolveBin(book);
 
-trace.usedAIFallback = true;
-
-const ai = await runAIFallback(book, {
-  needsTier: true,
-  needsBin: true,
-});
-
-let ageTier: AgeTier = ai.ageTier;
-let themeBin: ThemeBin = ai.themeBin;
-
-trace.tierSource = `AI: ${ai.reasoning}`;
-trace.binSource = `AI: ${ai.reasoning}`;
-trace.tierUsedAI = true;
-trace.binUsedAI = true;
-
-// Rule-based safety overrides only
-if (isBoardBook(book)) {
-  ageTier = "Hatchlings";
-  trace.notes.push("Board book override applied");
-}
-  trace.signalsAligned = countAlignedSignals(trace.tierSource, trace.binSource);
-  const confidence = computeConfidence(trace, book);
- 
   trace.usedAIFallback = true;
 
-const aiTags = Array.isArray((ai as any).supportingTags)
-  ? (ai as any).supportingTags
-  : [];
+  const ai = await runAIFallback(book, {
+    needsTier: true,
+    needsBin: true,
+  });
 
-let tags = aiTags.slice(0, MAX_TAGS);
+  let ageTier: AgeTier = ai.ageTier;
+  let themeBin: ThemeBin = ai.themeBin;
 
-if (tags.length === 0) {
-  tags = resolveTags(book, themeBin);
-  trace.notes.push("Fell back to rule-based tags");
-  trace.tagSources.push("Rule-based fallback tags");
-} else {
-  trace.tagSources.push("AI-generated tags");
-}
-const tooOldCheck = detectTooOld(book);
-const restrictedCheck = detectRestrictedContent(book);
+  trace.tierSource = `AI: ${ai.reasoning}`;
+  trace.binSource = `AI: ${ai.reasoning}`;
+  trace.tierUsedAI = true;
+  trace.binUsedAI = true;
 
-if (restrictedCheck.restricted) {
-  trace.notes.push(restrictedCheck.reason);
-}
+  // Rule-based safety overrides only
+  if (isBoardBook(book)) {
+    ageTier = "Hatchlings";
+    trace.notes.push("Board book override applied");
+  }
+  trace.signalsAligned = countAlignedSignals(trace.tierSource, trace.binSource);
+  const confidence = computeConfidence(trace, book);
 
-return {
-  ageTier,
-  ageTierRange: AGE_RANGES[ageTier],
-  themeBin,
-  supportingTags: tags,
-  confidence,
-  reasoning:
-    [
-      trace.tierSource && `Tier: ${trace.tierSource}`,
-      trace.binSource && `Bin: ${trace.binSource}`,
-    ]
-      .filter(Boolean)
-      .join(". ") || "Classified from available metadata.",
-  trace,
-  isTooOld: tooOldCheck.tooOld || restrictedCheck.restricted,
-  tooOldReason: restrictedCheck.reason || tooOldCheck.reason,
-};
+  trace.usedAIFallback = true;
+
+  const aiTags = Array.isArray((ai as any).supportingTags)
+    ? (ai as any).supportingTags
+    : [];
+
+  let tags = sanitizeBookTags(aiTags).slice(0, MAX_TAGS);
+
+  if (tags.length === 0) {
+    tags = resolveTags(book, themeBin);
+    trace.notes.push("Fell back to rule-based tags");
+    trace.tagSources.push("Rule-based fallback tags");
+  } else {
+    trace.tagSources.push("AI-generated tags filtered to allowed taxonomy");
+  }
+  const tagTheme = getThemeFromBookTags(tags, themeBin) as ThemeBin | null;
+  if (tagTheme && tagTheme !== themeBin) {
+    trace.notes.push(
+      `Theme adjusted to ${tagTheme} based on selected tag majority`
+    );
+    themeBin = tagTheme;
+  }
+  const tooOldCheck = detectTooOld(book);
+  const restrictedCheck = detectRestrictedContent(book);
+
+  if (restrictedCheck.restricted) {
+    trace.notes.push(restrictedCheck.reason);
+  }
+
+  return {
+    ageTier,
+    ageTierRange: AGE_RANGES[ageTier],
+    themeBin,
+    supportingTags: tags,
+    confidence,
+    reasoning:
+      [
+        trace.tierSource && `Tier: ${trace.tierSource}`,
+        trace.binSource && `Bin: ${trace.binSource}`,
+      ]
+        .filter(Boolean)
+        .join(". ") || "Classified from available metadata.",
+    trace,
+    isTooOld: tooOldCheck.tooOld || restrictedCheck.restricted,
+    tooOldReason: restrictedCheck.reason || tooOldCheck.reason,
+  };
 }
 
 export const isbnRouter = router({
   classify: publicProcedure
-    .input(z.object({
-  isbn: z.string(),
-  lookupId: z.number().optional(),
-}))
+    .input(
+      z.object({
+        isbn: z.string(),
+        lookupId: z.number().optional(),
+      })
+    )
     .query(async ({ input }) => {
-      console.log('ISBN classify called with:', input.isbn);
+      console.log("ISBN classify called with:", input.isbn);
       const cleaned = cleanIsbn(input.isbn);
-      console.log('Cleaned ISBN:', cleaned, 'Valid:', isValidIsbn(cleaned));
-      if (!isValidIsbn(cleaned)) throw new Error("Invalid ISBN format. Please check the number.");
+      console.log("Cleaned ISBN:", cleaned, "Valid:", isValidIsbn(cleaned));
+      if (!isValidIsbn(cleaned))
+        throw new Error("Invalid ISBN format. Please check the number.");
       const isbn13 = toIsbn13(cleaned);
       const cached = getCached(isbn13);
       if (cached) return { ...cached, fromCache: true };
-      const [google, openlib] = await Promise.all([fetchFromGoogleBooks(isbn13), fetchFromOpenLibrary(isbn13)]);
-console.log('ISBN13:', isbn13);
-console.log('Google result:', JSON.stringify(google));
-console.log('OpenLib result:', JSON.stringify(openlib));
+      const [google, openlib] = await Promise.all([
+        fetchFromGoogleBooks(isbn13),
+        fetchFromOpenLibrary(isbn13),
+      ]);
+      console.log("ISBN13:", isbn13);
+      console.log("Google result:", JSON.stringify(google));
+      console.log("OpenLib result:", JSON.stringify(openlib));
       const book = mergeBookSources(isbn13, [google, openlib]);
-      if (!book) throw new Error("Book not found. Verify the ISBN and try again.");
+      if (!book)
+        throw new Error("Book not found. Verify the ISBN and try again.");
       const classification = await classifyBook(book);
       setCached(isbn13, book, classification);
       return { book, classification, fromCache: false };

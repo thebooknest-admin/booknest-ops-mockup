@@ -84,6 +84,41 @@ function getCategoryMeta(category: BinCategory) {
   return TAG_TAXONOMY.find(cat => cat.id === category) ?? TAG_TAXONOMY[0];
 }
 
+function sanitizeTags(tags: string[]): string[] {
+  const allowed = new Set(TAG_TAXONOMY.flatMap(cat => cat.tags));
+  return tags.filter(
+    (tag, index) => allowed.has(tag) && tags.indexOf(tag) === index
+  );
+}
+
+function getCategoryFromTags(
+  tags: string[],
+  preferredCategory: BinCategory = "HEART_HOME"
+): BinCategory {
+  const tagToCategory = new Map<string, BinCategory>();
+  for (const category of TAG_TAXONOMY) {
+    for (const tag of category.tags) {
+      tagToCategory.set(tag, category.id);
+    }
+  }
+  const counts = Object.fromEntries(
+    TAG_TAXONOMY.map(cat => [cat.id, 0])
+  ) as Record<BinCategory, number>;
+
+  for (const tag of tags) {
+    const category = tagToCategory.get(tag);
+    if (category) counts[category] += 1;
+  }
+
+  const max = Math.max(...Object.values(counts));
+  if (max === 0) return preferredCategory;
+  if (counts[preferredCategory] === max) return preferredCategory;
+
+  return (
+    TAG_TAXONOMY.find(cat => counts[cat.id] === max)?.id ?? preferredCategory
+  );
+}
+
 function CoverImage({
   title,
   coverCandidates,
@@ -811,14 +846,18 @@ export default function ReceivePage() {
     setIsTooOld(classification.isTooOld ?? false);
     setTooOldReason(classification.tooOldReason ?? "");
 
-    const mappedBin = BIN_TO_CATEGORY[classification.themeBin] ?? "HEART_HOME";
+    const suggestedTags = sanitizeTags(classification.supportingTags ?? []);
+    const mappedBin = getCategoryFromTags(
+      suggestedTags,
+      BIN_TO_CATEGORY[classification.themeBin] ?? "HEART_HOME"
+    );
 
     setSelectedCategory(mappedBin);
     setSuggestedCategory(mappedBin);
     setIsManualCategoryOverride(false);
 
-    setAutoTags(classification.supportingTags);
-    setSelectedTags(classification.supportingTags.slice(0, 7));
+    setAutoTags(suggestedTags);
+    setSelectedTags(suggestedTags.slice(0, 7));
 
     setStep(1);
   }, [classifyQuery.data]);
@@ -883,13 +922,20 @@ export default function ReceivePage() {
   };
 
   const toggleTag = (tag: string) => {
-    setSelectedTags(prev =>
-      prev.includes(tag)
+    setSelectedTags(prev => {
+      const next = prev.includes(tag)
         ? prev.filter(t => t !== tag)
         : prev.length < 7
           ? [...prev, tag]
-          : prev
-    );
+          : prev;
+      const nextCategory = getCategoryFromTags(next, selectedCategory);
+
+      setSelectedCategory(nextCategory);
+      setSuggestedCategory(nextCategory);
+      setIsManualCategoryOverride(false);
+
+      return next;
+    });
   };
 
   const handleConfirm = () => {

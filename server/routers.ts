@@ -5,8 +5,10 @@ import {
   TERMINAL_BOOK_COPY_STATUSES,
   getAgeGroupLabel,
   getBinCodeForAgeGroupAndTheme,
+  getThemeFromBookTags,
   getSkuPrefixForAgeGroup,
   normalizeAgeGroup,
+  sanitizeBookTags,
 } from "@shared/booknest";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -64,61 +66,70 @@ export const appRouter = router({
     }),
 
     byId: publicProcedure
-  .input(z.object({ id: z.string() }))
-  .query(async ({ input }) => {
-    const member = await getMemberById(input.id);
-    if (!member) return null;
+      .input(z.object({ id: z.string() }))
+      .query(async ({ input }) => {
+        const member = await getMemberById(input.id);
+        if (!member) return null;
 
-    const [address, shipmentsRes, keptBooksRes, creditsRes] = await Promise.all([
-      getMemberAddress(input.id),
-      sbFetch(`/shipments?member_id=eq.${input.id}&order=created_at.desc&limit=50&select=id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,shipment_type`),
-      sbFetch(`/member_book_history?member_id=eq.${input.id}&kept=eq.true&select=id,book_title_id,shipment_id,received_date&limit=100`),
-      sbFetch(`/member_credits?member_id=eq.${input.id}&limit=1&select=credits_available,next_issue_at`),
-    ]);
+        const [address, shipmentsRes, keptBooksRes, creditsRes] =
+          await Promise.all([
+            getMemberAddress(input.id),
+            sbFetch(
+              `/shipments?member_id=eq.${input.id}&order=created_at.desc&limit=50&select=id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,shipment_type`
+            ),
+            sbFetch(
+              `/member_book_history?member_id=eq.${input.id}&kept=eq.true&select=id,book_title_id,shipment_id,received_date&limit=100`
+            ),
+            sbFetch(
+              `/member_credits?member_id=eq.${input.id}&limit=1&select=credits_available,next_issue_at`
+            ),
+          ]);
 
-    const shipments: any[] = await shipmentsRes.json();
-    const keptBooks: any[] = await keptBooksRes.json();
-    const credits: any[] = await creditsRes.json();
+        const shipments: any[] = await shipmentsRes.json();
+        const keptBooks: any[] = await keptBooksRes.json();
+        const credits: any[] = await creditsRes.json();
 
-    // Fetch book titles for kept books
-    let keptBooksWithTitles: any[] = [];
-    if (keptBooks.length > 0) {
-      const titleIds = [...new Set(keptBooks.map(b => b.book_title_id))];
-      const titlesRes = await sbFetch(
-        `/book_titles?id=in.(${titleIds.join(',')})&select=id,title,author&limit=100`
-      );
-      const titles: any[] = await titlesRes.json();
-      const titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
-      keptBooksWithTitles = keptBooks.map(b => ({
-        ...b,
-        book_title: titleMap[b.book_title_id] ?? null,
-      }));
-    }
+        // Fetch book titles for kept books
+        let keptBooksWithTitles: any[] = [];
+        if (keptBooks.length > 0) {
+          const titleIds = [...new Set(keptBooks.map(b => b.book_title_id))];
+          const titlesRes = await sbFetch(
+            `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author&limit=100`
+          );
+          const titles: any[] = await titlesRes.json();
+          const titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
+          keptBooksWithTitles = keptBooks.map(b => ({
+            ...b,
+            book_title: titleMap[b.book_title_id] ?? null,
+          }));
+        }
 
-    return {
-      ...member,
-      address,
-      shipments,
-      keptBooks: keptBooksWithTitles,
-      creditsAvailable: credits[0]?.credits_available ?? 0,
-      nextCreditAt: credits[0]?.next_issue_at ?? null,
-    };
-  }),
-  create: publicProcedure
-      .input(z.object({
-        name: z.string(),
-        email: z.string(),
-        phone: z.string().optional(),
-        tier: z.string(),
-        age_group: z.string().optional(),
-        subscription_status: z.string(),
-        is_founding_flock: z.boolean().optional(),
-        street: z.string().optional(),
-        street2: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().optional(),
-        zip: z.string().optional(),
-      }))
+        return {
+          ...member,
+          address,
+          shipments,
+          keptBooks: keptBooksWithTitles,
+          creditsAvailable: credits[0]?.credits_available ?? 0,
+          nextCreditAt: credits[0]?.next_issue_at ?? null,
+        };
+      }),
+    create: publicProcedure
+      .input(
+        z.object({
+          name: z.string(),
+          email: z.string(),
+          phone: z.string().optional(),
+          tier: z.string(),
+          age_group: z.string().optional(),
+          subscription_status: z.string(),
+          is_founding_flock: z.boolean().optional(),
+          street: z.string().optional(),
+          street2: z.string().optional(),
+          city: z.string().optional(),
+          state: z.string().optional(),
+          zip: z.string().optional(),
+        })
+      )
       .mutation(async ({ input }) => {
         const { street, street2, city, state, zip, ...memberData } = input;
         const memberRes = await sbFetch("/members", {
@@ -137,7 +148,8 @@ export const appRouter = router({
         });
         if (!memberRes.ok) throw new Error("Failed to create member");
         const [member] = await memberRes.json();
-        const creditCount = input.tier === "Story Nest" ? 2 : input.tier === "Cozy Nest" ? 1 : 0;
+        const creditCount =
+          input.tier === "Story Nest" ? 2 : input.tier === "Cozy Nest" ? 1 : 0;
         if (creditCount > 0) {
           const nextIssueAt = new Date();
           nextIssueAt.setFullYear(nextIssueAt.getFullYear() + 1);
@@ -171,7 +183,7 @@ export const appRouter = router({
         }
         return { success: true, id: member.id };
       }),
-  }),  // ← closes members router
+  }), // ← closes members router
 
   // ─── Inventory ──────────────────────────────────────────────────────────────
   inventory: router({
@@ -220,7 +232,9 @@ export const appRouter = router({
           `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,suggested_age_tier,bin_theme,tag_ids,cover_url,publisher,published_date,page_count,description,subjects,metadata_source,classification_version,created_at,updated_at`
         );
         if (!titleRes.ok) {
-          throw new Error("Failed to fetch book title: " + await titleRes.text());
+          throw new Error(
+            "Failed to fetch book title: " + (await titleRes.text())
+          );
         }
         const titles: any[] = await titleRes.json();
         if (!titles[0]) return null;
@@ -231,17 +245,17 @@ export const appRouter = router({
         );
         const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
 
-let tags: any[] = [];
+        let tags: any[] = [];
 
-if (Array.isArray(title.tag_ids) && title.tag_ids.length > 0) {
-  const tagRes = await sbFetch(
-    `/book_sorting_tags?id=in.(${title.tag_ids.join(",")})&select=id,bin_theme,tag`
-  );
+        if (Array.isArray(title.tag_ids) && title.tag_ids.length > 0) {
+          const tagRes = await sbFetch(
+            `/book_sorting_tags?id=in.(${title.tag_ids.join(",")})&select=id,bin_theme,tag`
+          );
 
-  tags = tagRes.ok ? await tagRes.json() : [];
-}
+          tags = tagRes.ok ? await tagRes.json() : [];
+        }
 
-return { ...title, tags, copies };
+        return { ...title, tags, copies };
       }),
 
     updateCopy: publicProcedure
@@ -285,231 +299,258 @@ return { ...title, tags, copies };
       }),
 
     updateBookTitle: publicProcedure
-  .input(
-    z.object({
-      id: z.string(),
-      title: z.string().optional(),
-      author: z.string().optional(),
-      age_group: z.string().optional(),
-      bin_theme: z.string().optional(),
-      isbn: z.string().optional(),
-      cover_url: z.string().optional(),
-      publisher: z.string().optional(),
-      published_date: z.string().optional(),
-      page_count: z.string().optional(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    const { id, ...fields } = input;
-    const now = new Date().toISOString();
+      .input(
+        z.object({
+          id: z.string(),
+          title: z.string().optional(),
+          author: z.string().optional(),
+          age_group: z.string().optional(),
+          bin_theme: z.string().optional(),
+          isbn: z.string().optional(),
+          cover_url: z.string().optional(),
+          publisher: z.string().optional(),
+          published_date: z.string().optional(),
+          page_count: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...fields } = input;
+        const now = new Date().toISOString();
 
-    const existingTitleRes = await sbFetch(
-      `/book_titles?id=eq.${id}&limit=1&select=id,age_group`
-    );
+        const existingTitleRes = await sbFetch(
+          `/book_titles?id=eq.${id}&limit=1&select=id,age_group`
+        );
 
-    if (!existingTitleRes.ok) {
-      throw new Error(`Failed to load existing book title: ${await existingTitleRes.text()}`);
-    }
+        if (!existingTitleRes.ok) {
+          throw new Error(
+            `Failed to load existing book title: ${await existingTitleRes.text()}`
+          );
+        }
 
-    const existingTitles: { id: string; age_group: string | null }[] =
-      await existingTitleRes.json();
+        const existingTitles: { id: string; age_group: string | null }[] =
+          await existingTitleRes.json();
 
-    const existingTitle = existingTitles[0];
+        const existingTitle = existingTitles[0];
 
-    if (!existingTitle) {
-      throw new Error("Book title not found");
-    }
+        if (!existingTitle) {
+          throw new Error("Book title not found");
+        }
 
-    const oldAgeGroup =
-      normalizeAgeGroup(existingTitle.age_group) ?? existingTitle.age_group;
-    const newAgeGroup =
-      fields.age_group !== undefined
-        ? normalizeAgeGroup(fields.age_group) ?? fields.age_group
-        : oldAgeGroup;
+        const oldAgeGroup =
+          normalizeAgeGroup(existingTitle.age_group) ?? existingTitle.age_group;
+        const newAgeGroup =
+          fields.age_group !== undefined
+            ? (normalizeAgeGroup(fields.age_group) ?? fields.age_group)
+            : oldAgeGroup;
 
-    const ageChanged =
-      fields.age_group !== undefined && oldAgeGroup !== newAgeGroup;
+        const ageChanged =
+          fields.age_group !== undefined && oldAgeGroup !== newAgeGroup;
 
-    const updateFields: Record<string, any> = {};
+        const updateFields: Record<string, any> = {};
 
-    if (fields.title !== undefined) updateFields.title = fields.title;
-    if (fields.author !== undefined) updateFields.author = fields.author;
-    if (fields.age_group !== undefined) updateFields.age_group = newAgeGroup;
-    if (fields.bin_theme !== undefined) updateFields.bin_theme = fields.bin_theme;
-    if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
-    if (fields.cover_url !== undefined) updateFields.cover_url = fields.cover_url;
-    if (fields.publisher !== undefined) updateFields.publisher = fields.publisher;
-    if (fields.published_date !== undefined)
-      updateFields.published_date = fields.published_date;
-    if (fields.page_count !== undefined) {
-      updateFields.page_count =
-        fields.page_count.trim() === "" ? null : Number(fields.page_count);
-    }
+        if (fields.title !== undefined) updateFields.title = fields.title;
+        if (fields.author !== undefined) updateFields.author = fields.author;
+        if (fields.age_group !== undefined)
+          updateFields.age_group = newAgeGroup;
+        if (fields.bin_theme !== undefined)
+          updateFields.bin_theme = fields.bin_theme;
+        if (fields.isbn !== undefined) updateFields.isbn = fields.isbn;
+        if (fields.cover_url !== undefined)
+          updateFields.cover_url = fields.cover_url;
+        if (fields.publisher !== undefined)
+          updateFields.publisher = fields.publisher;
+        if (fields.published_date !== undefined)
+          updateFields.published_date = fields.published_date;
+        if (fields.page_count !== undefined) {
+          updateFields.page_count =
+            fields.page_count.trim() === "" ? null : Number(fields.page_count);
+        }
 
-    const res = await sbFetch(`/book_titles?id=eq.${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        ...updateFields,
-        updated_at: now,
+        const res = await sbFetch(`/book_titles?id=eq.${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...updateFields,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=representation" },
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to update book title: ${await res.text()}`);
+        }
+
+        const updatedTitles = await res.json();
+        const updatedTitle = updatedTitles[0];
+
+        if (fields.age_group !== undefined) {
+          const copiesRes = await sbFetch(
+            `/book_copies?book_title_id=eq.${id}&select=id,sku&order=sku.asc&limit=1000`
+          );
+
+          if (!copiesRes.ok) {
+            throw new Error(
+              `Failed to load copies for SKU sync: ${await copiesRes.text()}`
+            );
+          }
+
+          const copies: { id: string; sku: string | null }[] =
+            await copiesRes.json();
+
+          const newPrefix = getSkuPrefixForAgeGroup(newAgeGroup);
+
+          const existingSkusRes = await sbFetch(
+            `/book_copies?age_group=eq.${newAgeGroup}&select=sku&limit=10000`
+          );
+
+          if (!existingSkusRes.ok) {
+            throw new Error(
+              `Failed to load existing SKUs: ${await existingSkusRes.text()}`
+            );
+          }
+
+          const existingSkus: { sku: string }[] = await existingSkusRes.json();
+
+          const usedNumbers = new Set<number>();
+
+          for (const row of existingSkus) {
+            const match = row.sku?.match(/(\d+)$/);
+            if (match) usedNumbers.add(Number(match[1]));
+          }
+
+          let nextNumber = 1;
+
+          for (const copy of copies) {
+            const alreadyCorrectPrefix = copy.sku?.startsWith(
+              `BN-${newPrefix}-`
+            );
+
+            let newSku = copy.sku;
+
+            if (!alreadyCorrectPrefix) {
+              while (usedNumbers.has(nextNumber)) nextNumber++;
+
+              newSku = `BN-${newPrefix}-${String(nextNumber).padStart(6, "0")}`;
+              usedNumbers.add(nextNumber);
+              nextNumber++;
+            }
+
+            const copyUpdateRes = await sbFetch(
+              `/book_copies?id=eq.${copy.id}`,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  sku: newSku,
+                  age_group: newAgeGroup,
+                  updated_at: now,
+                }),
+                headers: { Prefer: "return=minimal" },
+              }
+            );
+
+            if (!copyUpdateRes.ok) {
+              throw new Error(
+                `Failed to sync copy age/SKU: ${await copyUpdateRes.text()}`
+              );
+            }
+          }
+        }
+
+        return {
+          success: true,
+          book: updatedTitle,
+          skuRegenerated: ageChanged,
+        };
       }),
-      headers: { Prefer: "return=representation" },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to update book title: ${await res.text()}`);
-    }
-
-    const updatedTitles = await res.json();
-    const updatedTitle = updatedTitles[0];
-
-    if (fields.age_group !== undefined) {
-  const copiesRes = await sbFetch(
-    `/book_copies?book_title_id=eq.${id}&select=id,sku&order=sku.asc&limit=1000`
-  );
-
-  if (!copiesRes.ok) {
-    throw new Error(`Failed to load copies for SKU sync: ${await copiesRes.text()}`);
-  }
-
-  const copies: { id: string; sku: string | null }[] = await copiesRes.json();
-
-  const newPrefix = getSkuPrefixForAgeGroup(newAgeGroup);
-
-  const existingSkusRes = await sbFetch(
-    `/book_copies?age_group=eq.${newAgeGroup}&select=sku&limit=10000`
-  );
-
-  if (!existingSkusRes.ok) {
-    throw new Error(`Failed to load existing SKUs: ${await existingSkusRes.text()}`);
-  }
-
-  const existingSkus: { sku: string }[] = await existingSkusRes.json();
-
-  const usedNumbers = new Set<number>();
-
-  for (const row of existingSkus) {
-    const match = row.sku?.match(/(\d+)$/);
-    if (match) usedNumbers.add(Number(match[1]));
-  }
-
-  let nextNumber = 1;
-
-  for (const copy of copies) {
-    const alreadyCorrectPrefix = copy.sku?.startsWith(`BN-${newPrefix}-`);
-
-    let newSku = copy.sku;
-
-    if (!alreadyCorrectPrefix) {
-      while (usedNumbers.has(nextNumber)) nextNumber++;
-
-      newSku = `BN-${newPrefix}-${String(nextNumber).padStart(6, "0")}`;
-      usedNumbers.add(nextNumber);
-      nextNumber++;
-    }
-
-    const copyUpdateRes = await sbFetch(`/book_copies?id=eq.${copy.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        sku: newSku,
-        age_group: newAgeGroup,
-        updated_at: now,
-      }),
-      headers: { Prefer: "return=minimal" },
-    });
-
-    if (!copyUpdateRes.ok) {
-      throw new Error(
-        `Failed to sync copy age/SKU: ${await copyUpdateRes.text()}`
-      );
-    }
-  }
-}
-
-    return {
-      success: true,
-      book: updatedTitle,
-      skuRegenerated: ageChanged,
-    };
-  }),
 
     // ── In Flight — books currently with members, grouped by member ─────────────
-inTransit: publicProcedure.query(async () => {
-  // 1. Get all in_transit copies with book title
-  const res = await sbFetch(
-    `/book_copies?status=eq.in_transit&select=id,sku,bin_id,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
-  );
-  if (!res.ok) return [];
-  const copies: any[] = await res.json();
-  if (!copies.length) return [];
-
-  // 2. Find most recent shipment_books row per copy
-  const copyIds = copies.map((c) => c.id).join(",");
-  const sbRes = await sbFetch(
-    `/shipment_books?book_copy_id=in.(${copyIds})&select=book_copy_id,shipment_id&order=created_at.desc&limit=1000`
-  );
-  const shipmentBooks: any[] = sbRes.ok ? await sbRes.json() : [];
-
-  const copyToShipment: Record<string, string> = {};
-  for (const sb of shipmentBooks) {
-    if (!copyToShipment[sb.book_copy_id]) {
-      copyToShipment[sb.book_copy_id] = sb.shipment_id;
-    }
-  }
-
-  // 3. Fetch members for those shipments
-  const shipmentIds = [...new Set(Object.values(copyToShipment))];
-  const copyToMemberId: Record<string, string> = {};
-  const memberNameMap: Record<string, string> = {};
-
-  if (shipmentIds.length > 0) {
-    const shipmentsRes = await sbFetch(
-      `/shipments?id=in.(${shipmentIds.join(",")})&select=id,member_id&limit=500`
-    );
-    const shipments: any[] = shipmentsRes.ok ? await shipmentsRes.json() : [];
-    const shipmentToMember: Record<string, string> = Object.fromEntries(
-      shipments.map((s) => [s.id, s.member_id])
-    );
-
-    const memberIds = [...new Set(shipments.map((s) => s.member_id))];
-    if (memberIds.length > 0) {
-      const membersRes = await sbFetch(
-        `/members?id=in.(${memberIds.join(",")})&select=id,child_name,name&limit=500`
+    inTransit: publicProcedure.query(async () => {
+      // 1. Get all in_transit copies with book title
+      const res = await sbFetch(
+        `/book_copies?status=eq.in_transit&select=id,sku,bin_id,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
       );
-      const members: any[] = membersRes.ok ? await membersRes.json() : [];
-      for (const m of members) {
-        memberNameMap[m.id] = m.child_name ?? m.name ?? "Unknown";
+      if (!res.ok) return [];
+      const copies: any[] = await res.json();
+      if (!copies.length) return [];
+
+      // 2. Find most recent shipment_books row per copy
+      const copyIds = copies.map(c => c.id).join(",");
+      const sbRes = await sbFetch(
+        `/shipment_books?book_copy_id=in.(${copyIds})&select=book_copy_id,shipment_id&order=created_at.desc&limit=1000`
+      );
+      const shipmentBooks: any[] = sbRes.ok ? await sbRes.json() : [];
+
+      const copyToShipment: Record<string, string> = {};
+      for (const sb of shipmentBooks) {
+        if (!copyToShipment[sb.book_copy_id]) {
+          copyToShipment[sb.book_copy_id] = sb.shipment_id;
+        }
       }
-      for (const [copyId, shipmentId] of Object.entries(copyToShipment)) {
-        const memberId = shipmentToMember[shipmentId];
-        if (memberId) copyToMemberId[copyId] = memberId;
+
+      // 3. Fetch members for those shipments
+      const shipmentIds = [...new Set(Object.values(copyToShipment))];
+      const copyToMemberId: Record<string, string> = {};
+      const memberNameMap: Record<string, string> = {};
+
+      if (shipmentIds.length > 0) {
+        const shipmentsRes = await sbFetch(
+          `/shipments?id=in.(${shipmentIds.join(",")})&select=id,member_id&limit=500`
+        );
+        const shipments: any[] = shipmentsRes.ok
+          ? await shipmentsRes.json()
+          : [];
+        const shipmentToMember: Record<string, string> = Object.fromEntries(
+          shipments.map(s => [s.id, s.member_id])
+        );
+
+        const memberIds = [...new Set(shipments.map(s => s.member_id))];
+        if (memberIds.length > 0) {
+          const membersRes = await sbFetch(
+            `/members?id=in.(${memberIds.join(",")})&select=id,child_name,name&limit=500`
+          );
+          const members: any[] = membersRes.ok ? await membersRes.json() : [];
+          for (const m of members) {
+            memberNameMap[m.id] = m.child_name ?? m.name ?? "Unknown";
+          }
+          for (const [copyId, shipmentId] of Object.entries(copyToShipment)) {
+            const memberId = shipmentToMember[shipmentId];
+            if (memberId) copyToMemberId[copyId] = memberId;
+          }
+        }
       }
-    }
-  }
 
-  // 4. Group copies by member
-  const grouped: Record<string, { member_id: string; member_name: string; books: any[] }> = {};
-  for (const c of copies) {
-    const memberId = copyToMemberId[c.id] ?? "unknown";
-    const memberName = memberId !== "unknown" ? (memberNameMap[memberId] ?? "Unknown") : "Unknown";
-    if (!grouped[memberId]) {
-      grouped[memberId] = { member_id: memberId, member_name: memberName, books: [] };
-    }
-    grouped[memberId].books.push({
-      id: c.id,
-      sku: c.sku,
-      bin_id: c.bin_id,
-      book_title_id: c.book_title_id,
-      title: c.book_titles?.title ?? "Unknown",
-      author: c.book_titles?.author ?? "",
-    });
-  }
+      // 4. Group copies by member
+      const grouped: Record<
+        string,
+        { member_id: string; member_name: string; books: any[] }
+      > = {};
+      for (const c of copies) {
+        const memberId = copyToMemberId[c.id] ?? "unknown";
+        const memberName =
+          memberId !== "unknown"
+            ? (memberNameMap[memberId] ?? "Unknown")
+            : "Unknown";
+        if (!grouped[memberId]) {
+          grouped[memberId] = {
+            member_id: memberId,
+            member_name: memberName,
+            books: [],
+          };
+        }
+        grouped[memberId].books.push({
+          id: c.id,
+          sku: c.sku,
+          bin_id: c.bin_id,
+          book_title_id: c.book_title_id,
+          title: c.book_titles?.title ?? "Unknown",
+          author: c.book_titles?.author ?? "",
+        });
+      }
 
-  return Object.values(grouped).sort((a, b) =>
-    a.member_name.localeCompare(b.member_name)
-  );
-}),
-
-  }),  // ← closes inventory router
+      return Object.values(grouped).sort((a, b) =>
+        a.member_name.localeCompare(b.member_name)
+      );
+    }),
+  }), // ← closes inventory router
 
   // ─── Shipments / Orders ─────────────────────────────────────────────────────
   shipments: router({
@@ -527,7 +568,12 @@ inTransit: publicProcedure.query(async () => {
           const res = await sbFetch(
             `/members?id=in.(${memberIds.join(",")})&select=id,name,tier,age_group&limit=200`
           );
-          const members: { id: string; name: string; tier: string; age_group: string }[] = await res.json();
+          const members: {
+            id: string;
+            name: string;
+            tier: string;
+            age_group: string;
+          }[] = await res.json();
           memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
           memberTierMap = Object.fromEntries(members.map(m => [m.id, m.tier]));
         }
@@ -583,7 +629,7 @@ inTransit: publicProcedure.query(async () => {
         };
       }),
 
-      updateTracking: publicProcedure
+    updateTracking: publicProcedure
       .input(
         z.object({
           id: z.string(),
@@ -593,15 +639,16 @@ inTransit: publicProcedure.query(async () => {
       )
       .mutation(async ({ input }) => {
         const res = await sbFetch(`/shipments?id=eq.${input.id}`, {
-          method: 'PATCH',
+          method: "PATCH",
           body: JSON.stringify({
             tracking_number: input.tracking_number,
-            carrier: input.carrier ?? 'USPS',
+            carrier: input.carrier ?? "USPS",
             updated_at: new Date().toISOString(),
           }),
-          headers: { Prefer: 'return=minimal' },
+          headers: { Prefer: "return=minimal" },
         });
-        if (!res.ok) throw new Error(`Failed to update tracking: ${await res.text()}`);
+        if (!res.ok)
+          throw new Error(`Failed to update tracking: ${await res.text()}`);
         return { success: true };
       }),
 
@@ -618,7 +665,9 @@ inTransit: publicProcedure.query(async () => {
       .mutation(async ({ input }) => {
         const { id, status, ...extra } = input;
         if (status === "shipped") {
-          throw new Error("Use shipping.markShipped so copies, shipment books, and member history stay in sync.");
+          throw new Error(
+            "Use shipping.markShipped so copies, shipment books, and member history stay in sync."
+          );
         }
         await updateShipmentStatus(id, status, extra as any);
         return { success: true };
@@ -632,7 +681,8 @@ inTransit: publicProcedure.query(async () => {
         const res = await sbFetch(
           `/members?id=in.(${memberIds.join(",")})&select=id,name,tier&limit=500`
         );
-        const members: { id: string; name: string; tier: string }[] = await res.json();
+        const members: { id: string; name: string; tier: string }[] =
+          await res.json();
         memberMap = Object.fromEntries(members.map(m => [m.id, m.name]));
         memberTierMap = Object.fromEntries(members.map(m => [m.id, m.tier]));
       }
@@ -656,17 +706,24 @@ inTransit: publicProcedure.query(async () => {
         new Set(copies.map(c => c.book_title_id).filter(Boolean))
       );
       let titleMap: Record<
-  string,
-  { title: string; author: string; isbn: string | null; bin_theme: string | null }
-> = {};
+        string,
+        {
+          title: string;
+          author: string;
+          isbn: string | null;
+          bin_theme: string | null;
+        }
+      > = {};
       if (titleIds.length > 0) {
-        const titles = await sbJson<{
-  id: string;
-  title: string;
-  author: string;
-  isbn: string | null;
-  bin_theme: string | null;
-}[]>(
+        const titles = await sbJson<
+          {
+            id: string;
+            title: string;
+            author: string;
+            isbn: string | null;
+            bin_theme: string | null;
+          }[]
+        >(
           `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn,bin_theme&limit=1000`
         );
         titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
@@ -729,51 +786,66 @@ inTransit: publicProcedure.query(async () => {
         })
       )
       .mutation(async ({ input }) => {
+        const getThemeFromBinId = (binId: string | null | undefined) => {
+          const value = (binId ?? "").toUpperCase();
 
-const getThemeFromBinId = (binId: string | null | undefined) => {
-  const value = (binId ?? "").toUpperCase();
+          if (value.includes("-ADV-")) return "Adventure";
+          if (value.includes("-HUM-") || value.includes("-LCH-"))
+            return "Laughs & Chaos";
+          if (value.includes("-HRT-") || value.includes("HEARTHOME"))
+            return "Heart & Home";
+          if (value.includes("-WON-") || value.includes("-WND-"))
+            return "Wonder & Imagination";
+          if (value.includes("-WLD-")) return "Wild & Wonderful";
+          if (value.includes("-DSC-")) return "Discovery Den";
+          if (value.includes("-LEG-")) return "Legends & Long Ago";
+          if (value.includes("-SEA-")) return "Seasons & Celebrations";
 
-  if (value.includes("-ADV-")) return "Adventure";
-  if (value.includes("-HUM-") || value.includes("-LCH-")) return "Laughs & Chaos";
-  if (value.includes("-HRT-") || value.includes("HEARTHOME")) return "Heart & Home";
-  if (value.includes("-WON-") || value.includes("-WND-")) return "Wonder & Imagination";
-  if (value.includes("-WLD-")) return "Wild & Wonderful";
-  if (value.includes("-DSC-")) return "Discovery Den";
-  if (value.includes("-LEG-")) return "Legends & Long Ago";
-  if (value.includes("-SEA-")) return "Seasons & Celebrations";
+          return null;
+        };
 
-  return null;
-};
+        const derivedBinTheme = getThemeFromBinId(input.bin_id);
+        const ageGroupKey = normalizeAgeGroup(input.age_group);
 
-const derivedBinTheme = getThemeFromBinId(input.bin_id);
-const ageGroupKey = normalizeAgeGroup(input.age_group);
+        if (!ageGroupKey) {
+          throw new Error(`Unsupported age group: ${input.age_group}`);
+        }
 
-if (!ageGroupKey) {
-  throw new Error(`Unsupported age group: ${input.age_group}`);
-}
-
-const binTheme = input.bin_theme ?? derivedBinTheme;
-const canonicalBinId =
-  getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
-
+        const sanitizedTags = sanitizeBookTags(input.tags);
+        const requestedBinTheme = input.bin_theme ?? derivedBinTheme;
+        const binTheme =
+          getThemeFromBookTags(sanitizedTags, requestedBinTheme) ??
+          requestedBinTheme;
+        const canonicalBinId =
+          getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
+        const tagRows =
+          sanitizedTags.length > 0
+            ? await sbJson<{ id: string; tag: string; bin_theme: string }[]>(
+                "/book_sorting_tags?select=id,tag,bin_theme&limit=1000"
+              )
+            : [];
+        const selectedTagSet = new Set(sanitizedTags);
+        const tagIds = tagRows
+          .filter(row => selectedTagSet.has(row.tag))
+          .map(row => row.id);
 
         // ── Upsert book title ────────────────────────────────────────────────
         let existing: any[] = [];
         let createdTitleForThisCopy = false;
 
-// First try ISBN match
-if (input.isbn?.trim()) {
-  existing = await sbJson<any[]>(
-    `/book_titles?isbn=eq.${encodeURIComponent(input.isbn)}&limit=1`
-  );
-}
+        // First try ISBN match
+        if (input.isbn?.trim()) {
+          existing = await sbJson<any[]>(
+            `/book_titles?isbn=eq.${encodeURIComponent(input.isbn)}&limit=1`
+          );
+        }
 
-// Fallback to title + author match
-if (existing.length === 0) {
-  existing = await sbJson<any[]>(
-    `/book_titles?title=ilike.${encodeURIComponent(input.title)}&author=ilike.${encodeURIComponent(input.author)}&limit=1`
-  );
-}
+        // Fallback to title + author match
+        if (existing.length === 0) {
+          existing = await sbJson<any[]>(
+            `/book_titles?title=ilike.${encodeURIComponent(input.title)}&author=ilike.${encodeURIComponent(input.author)}&limit=1`
+          );
+        }
         let titleId: string;
         if (existing.length > 0) {
           titleId = existing[0].id;
@@ -783,38 +855,41 @@ if (existing.length === 0) {
           const titleAgeGroup =
             existingCopies.length === 0
               ? ageGroupKey
-              : normalizeAgeGroup(existing[0].age_group) ?? ageGroupKey;
+              : (normalizeAgeGroup(existing[0].age_group) ?? ageGroupKey);
           await sbVoid(`/book_titles?id=eq.${titleId}`, {
-  method: "PATCH",
-  body: JSON.stringify({
-    cover_url: input.cover_url ?? existing[0].cover_url,
-    publisher: input.publisher ?? existing[0].publisher,
-    published_date:
-      input.published_date ?? existing[0].published_date,
-    page_count: input.page_count ?? existing[0].page_count,
-    subjects: input.subjects ?? existing[0].subjects,
-    age_group: titleAgeGroup,
-    bin_theme: binTheme ?? existing[0].bin_theme ?? null,
-    updated_at: new Date().toISOString(),
-  }),
+            method: "PATCH",
+            body: JSON.stringify({
+              cover_url: input.cover_url ?? existing[0].cover_url,
+              publisher: input.publisher ?? existing[0].publisher,
+              published_date:
+                input.published_date ?? existing[0].published_date,
+              page_count: input.page_count ?? existing[0].page_count,
+              subjects: input.subjects ?? existing[0].subjects,
+              age_group: titleAgeGroup,
+              bin_theme: binTheme ?? existing[0].bin_theme ?? null,
+              tag_ids:
+                tagIds.length > 0 ? tagIds : (existing[0].tag_ids ?? null),
+              updated_at: new Date().toISOString(),
+            }),
             headers: { Prefer: "return=minimal" },
           });
-       } else {
-  const newTitle = await sbJson<any[]>("/book_titles", {
-    method: "POST",
-    body: JSON.stringify({
-      isbn: input.isbn,
-      title: input.title,
-      author: input.author,
-      cover_url: input.cover_url ?? null,
-      age_group: ageGroupKey,
-      bin_theme: binTheme,
-      publisher: input.publisher ?? null,
-      published_date: input.published_date ?? null,
-      page_count: input.page_count ?? null,
-      subjects: input.subjects ?? null,
-    }),
-  });
+        } else {
+          const newTitle = await sbJson<any[]>("/book_titles", {
+            method: "POST",
+            body: JSON.stringify({
+              isbn: input.isbn,
+              title: input.title,
+              author: input.author,
+              cover_url: input.cover_url ?? null,
+              age_group: ageGroupKey,
+              bin_theme: binTheme,
+              tag_ids: tagIds,
+              publisher: input.publisher ?? null,
+              published_date: input.published_date ?? null,
+              page_count: input.page_count ?? null,
+              subjects: input.subjects ?? null,
+            }),
+          });
           titleId = newTitle[0].id;
           createdTitleForThisCopy = true;
         }
@@ -875,7 +950,9 @@ if (existing.length === 0) {
               headers: { Prefer: "return=minimal" },
             }).catch(() => undefined);
           }
-          throw new Error("Book title saved, but no physical copy was created.");
+          throw new Error(
+            "Book title saved, but no physical copy was created."
+          );
         }
 
         return { success: true, sku, copy_id: copy[0].id, title_id: titleId };
@@ -959,24 +1036,24 @@ if (existing.length === 0) {
         });
         return { success: true };
       }),
-passAll: publicProcedure
-  .input(z.object({ copy_ids: z.array(z.string()) }))
-  .mutation(async ({ input }) => {
-    if (input.copy_ids.length === 0) return { success: true, count: 0 };
-    const now = new Date().toISOString();
-    await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "pending_label",
-        label_status: LABEL_STATUSES.pending,
-        condition: "good",
-        qc_passed_at: now,
-        updated_at: now,
+    passAll: publicProcedure
+      .input(z.object({ copy_ids: z.array(z.string()) }))
+      .mutation(async ({ input }) => {
+        if (input.copy_ids.length === 0) return { success: true, count: 0 };
+        const now = new Date().toISOString();
+        await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "pending_label",
+            label_status: LABEL_STATUSES.pending,
+            condition: "good",
+            qc_passed_at: now,
+            updated_at: now,
+          }),
+          headers: { Prefer: "return=minimal" },
+        });
+        return { success: true, count: input.copy_ids.length };
       }),
-      headers: { Prefer: "return=minimal" },
-    });
-    return { success: true, count: input.copy_ids.length };
-  }),
   }),
 
   // ─── Stock Queue ─────────────────────────────────────────────────────────────
@@ -1091,146 +1168,146 @@ passAll: publicProcedure
       }),
   }),
 
-// ─── Welcome Form ─────────────────────────────────────────────────────────
-welcome: router({
-  // Load household by token — returns all children needing profiles
-  load: publicProcedure
-    .input(z.object({ token: z.string() }))
-    .query(async ({ input }) => {
-      // Look up household by token
-      const householdRes = await sbFetch(
-        `/households?welcome_token=eq.${input.token}&limit=1`
-      );
-      const households: any[] = await householdRes.json();
-      if (!households[0]) return null;
-      const household = households[0];
+  // ─── Welcome Form ─────────────────────────────────────────────────────────
+  welcome: router({
+    // Load household by token — returns all children needing profiles
+    load: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .query(async ({ input }) => {
+        // Look up household by token
+        const householdRes = await sbFetch(
+          `/households?welcome_token=eq.${input.token}&limit=1`
+        );
+        const households: any[] = await householdRes.json();
+        if (!households[0]) return null;
+        const household = households[0];
 
-      // Check token expiry
-      if (household.welcome_token_expires_at) {
-        const expires = new Date(household.welcome_token_expires_at);
-        if (expires < new Date()) {
-          return { expired: true };
+        // Check token expiry
+        if (household.welcome_token_expires_at) {
+          const expires = new Date(household.welcome_token_expires_at);
+          if (expires < new Date()) {
+            return { expired: true };
+          }
         }
-      }
 
-      // Already completed?
-      if (household.welcome_form_completed) {
-        return { already_completed: true };
-      }
+        // Already completed?
+        if (household.welcome_form_completed) {
+          return { already_completed: true };
+        }
 
-      // Get all members in this household ordered by sibling_order
-      const membersRes = await sbFetch(
-        `/members?household_id=eq.${household.id}&order=sibling_order.asc&limit=10`
-      );
-      const members: any[] = await membersRes.json();
+        // Get all members in this household ordered by sibling_order
+        const membersRes = await sbFetch(
+          `/members?household_id=eq.${household.id}&order=sibling_order.asc&limit=10`
+        );
+        const members: any[] = await membersRes.json();
 
-      return {
-        household_id: household.id,
-        children: members.map(m => ({
-          member_id: m.id,
-          is_primary: m.is_primary,
-          sibling_order: m.sibling_order,
-          books_per_box: m.books_per_box,
-          tier: m.tier,
-          // Pre-fill if already partially filled
-          child_name: m.child_name ?? '',
-          age_group: m.age_group ?? '',
-          interests: m.interests ?? [],
-          topics_to_avoid: m.topics_to_avoid ?? [],
-          birthday: m.birthday ?? '',
-          notes: m.notes ?? '',
-          welcome_form_completed: m.welcome_form_completed,
-        })),
-        // Parent info from primary member
-        parent_name: members.find(m => m.is_primary)?.name ?? '',
-        parent_email: members.find(m => m.is_primary)?.email ?? '',
-      };
-    }),
-
-  // Submit all child profiles at once
-  submit: publicProcedure
-    .input(
-      z.object({
-        token: z.string(),
-        parent_name: z.string(),
-        parent_email: z.string().email(),
-        children: z.array(
-  z.object({
-    member_id: z.string(),
-    child_name: z.string(),
-    birthday: z.string().nullish(),
-    age_group: z.string(),
-    favorite_themes: z.array(z.string()).default([]),
-    interests: z.array(z.string()),
-    topics_to_avoid: z.array(z.string()),
-    notes: z.string().nullish(),
-  })
-),
-      })
-    )
-    .mutation(async ({ input }) => {
-      // Verify token still valid
-      const householdRes = await sbFetch(
-        `/households?welcome_token=eq.${input.token}&limit=1`
-      );
-      const households: any[] = await householdRes.json();
-      if (!households[0]) throw new Error('Invalid or expired token');
-      const household = households[0];
-
-      if (household.welcome_form_completed) {
-        throw new Error('Welcome form already completed');
-      }
-
-      const now = new Date().toISOString();
-
-      // Update each child member row
-await Promise.all(
-  input.children.map(async child =>
-    sbFetch(`/members?id=eq.${child.member_id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        child_name: child.child_name,
-        age_group: getAgeGroupLabel(child.age_group) || child.age_group,
-        favorite_themes: child.favorite_themes,
-        interests: child.interests,
-        topics_to_avoid: child.topics_to_avoid,
-        birthday: child.birthday ?? null,
-        notes: child.notes ?? null,
-        welcome_form_completed: true,
-        updated_at: now,
+        return {
+          household_id: household.id,
+          children: members.map(m => ({
+            member_id: m.id,
+            is_primary: m.is_primary,
+            sibling_order: m.sibling_order,
+            books_per_box: m.books_per_box,
+            tier: m.tier,
+            // Pre-fill if already partially filled
+            child_name: m.child_name ?? "",
+            age_group: m.age_group ?? "",
+            interests: m.interests ?? [],
+            topics_to_avoid: m.topics_to_avoid ?? [],
+            birthday: m.birthday ?? "",
+            notes: m.notes ?? "",
+            welcome_form_completed: m.welcome_form_completed,
+          })),
+          // Parent info from primary member
+          parent_name: members.find(m => m.is_primary)?.name ?? "",
+          parent_email: members.find(m => m.is_primary)?.email ?? "",
+        };
       }),
-      headers: { Prefer: 'return=minimal' },
-    })
-  )
-);
 
-      // Update primary member name + email
-      await sbFetch(
-        `/members?household_id=eq.${household.id}&is_primary=eq.true`,
-        {
-          method: 'PATCH',
+    // Submit all child profiles at once
+    submit: publicProcedure
+      .input(
+        z.object({
+          token: z.string(),
+          parent_name: z.string(),
+          parent_email: z.string().email(),
+          children: z.array(
+            z.object({
+              member_id: z.string(),
+              child_name: z.string(),
+              birthday: z.string().nullish(),
+              age_group: z.string(),
+              favorite_themes: z.array(z.string()).default([]),
+              interests: z.array(z.string()),
+              topics_to_avoid: z.array(z.string()),
+              notes: z.string().nullish(),
+            })
+          ),
+        })
+      )
+      .mutation(async ({ input }) => {
+        // Verify token still valid
+        const householdRes = await sbFetch(
+          `/households?welcome_token=eq.${input.token}&limit=1`
+        );
+        const households: any[] = await householdRes.json();
+        if (!households[0]) throw new Error("Invalid or expired token");
+        const household = households[0];
+
+        if (household.welcome_form_completed) {
+          throw new Error("Welcome form already completed");
+        }
+
+        const now = new Date().toISOString();
+
+        // Update each child member row
+        await Promise.all(
+          input.children.map(async child =>
+            sbFetch(`/members?id=eq.${child.member_id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                child_name: child.child_name,
+                age_group: getAgeGroupLabel(child.age_group) || child.age_group,
+                favorite_themes: child.favorite_themes,
+                interests: child.interests,
+                topics_to_avoid: child.topics_to_avoid,
+                birthday: child.birthday ?? null,
+                notes: child.notes ?? null,
+                welcome_form_completed: true,
+                updated_at: now,
+              }),
+              headers: { Prefer: "return=minimal" },
+            })
+          )
+        );
+
+        // Update primary member name + email
+        await sbFetch(
+          `/members?household_id=eq.${household.id}&is_primary=eq.true`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: input.parent_name,
+              email: input.parent_email,
+              updated_at: now,
+            }),
+            headers: { Prefer: "return=minimal" },
+          }
+        );
+
+        // Mark household complete
+        await sbFetch(`/households?id=eq.${household.id}`, {
+          method: "PATCH",
           body: JSON.stringify({
-            name: input.parent_name,
-            email: input.parent_email,
+            welcome_form_completed: true,
             updated_at: now,
           }),
-          headers: { Prefer: 'return=minimal' },
-        }
-      );
+          headers: { Prefer: "return=minimal" },
+        });
 
-      // Mark household complete
-      await sbFetch(`/households?id=eq.${household.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          welcome_form_completed: true,
-          updated_at: now,
-        }),
-        headers: { Prefer: 'return=minimal' },
-      });
-
-      return { success: true };
-    }),
-}),
+        return { success: true };
+      }),
+  }),
 
   // ─── Returns ────────────────────────────────────────────────────────────────
   returns: router({
@@ -1251,10 +1328,10 @@ await Promise.all(
       if (returns.length === 0) return [];
 
       const memberIds = Array.from(
-        new Set(returns.map((r) => r.member_id).filter(Boolean))
+        new Set(returns.map(r => r.member_id).filter(Boolean))
       );
       const shipmentIds = Array.from(
-        new Set(returns.map((r) => r.original_shipment_id).filter(Boolean))
+        new Set(returns.map(r => r.original_shipment_id).filter(Boolean))
       );
 
       const [members, shipments] = await Promise.all([
@@ -1270,8 +1347,8 @@ await Promise.all(
           : Promise.resolve([]),
       ]);
 
-      const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
-      const shipmentMap = Object.fromEntries(shipments.map((s) => [s.id, s]));
+      const memberMap = Object.fromEntries(members.map(m => [m.id, m]));
+      const shipmentMap = Object.fromEntries(shipments.map(s => [s.id, s]));
       const result = [];
 
       for (const returnRecord of returns) {
@@ -1296,23 +1373,21 @@ await Promise.all(
           `/return_books?return_id=eq.${returnRecord.id}&select=book_copy_id,received&limit=200`
         );
         const receivedIds = new Set(
-          received
-            .filter((book) => book.received)
-            .map((book) => book.book_copy_id)
+          received.filter(book => book.received).map(book => book.book_copy_id)
         );
 
         result.push({
           ...returnRecord,
           member_name: returnRecord.member_id
-            ? memberMap[returnRecord.member_id]?.name ?? "Unknown member"
+            ? (memberMap[returnRecord.member_id]?.name ?? "Unknown member")
             : "Unknown member",
           shipment_number: returnRecord.original_shipment_id
-            ? shipmentMap[returnRecord.original_shipment_id]
-                ?.shipment_number ?? null
+            ? (shipmentMap[returnRecord.original_shipment_id]
+                ?.shipment_number ?? null)
             : null,
           expected_count: expected.length,
           received_count: receivedIds.size,
-          expected_books: expected.map((book) => ({
+          expected_books: expected.map(book => ({
             shipment_book_id: book.id,
             copy_id: book.book_copy_id,
             sku: book.book_copies?.sku ?? null,
