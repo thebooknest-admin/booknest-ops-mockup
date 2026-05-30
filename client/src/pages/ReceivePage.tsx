@@ -19,6 +19,7 @@ import {
   Zap,
   ChevronDown,
   ChevronUp,
+  Keyboard,
   ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -719,6 +720,7 @@ export default function ReceivePage() {
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
   const [isbnCopied, setIsbnCopied] = useState(false);
+  const [useSystemKeyboard, setUseSystemKeyboard] = useState(false);
   const [isTooOld, setIsTooOld] = useState(false);
   const [tooOldReason, setTooOldReason] = useState("");
 
@@ -733,9 +735,22 @@ export default function ReceivePage() {
     setIsbnInput(value.replace(/[^0-9X]/gi, "").toUpperCase());
   };
 
+  const appendIsbnCharacter = (value: string) => {
+    setIsbnInput(current =>
+      `${current}${value}`.replace(/[^0-9X]/gi, "").toUpperCase()
+    );
+  };
+
   const appendIsbnCheckDigit = () => {
-    setIsbnInput(value => `${value.replace(/[^0-9X]/gi, "")}X`);
-    isbnInputRef.current?.focus();
+    appendIsbnCharacter("X");
+  };
+
+  const deleteLastIsbnCharacter = () => {
+    setIsbnInput(value => value.slice(0, -1));
+  };
+
+  const clearIsbnInput = () => {
+    setIsbnInput("");
   };
 
   const currentBin = buildBinName(
@@ -845,10 +860,10 @@ export default function ReceivePage() {
   });
 
   useEffect(() => {
-    if (step === 0 && isbnInputRef.current) {
+    if (step === 0 && useSystemKeyboard && isbnInputRef.current) {
       isbnInputRef.current.focus();
     }
-  }, [step]);
+  }, [step, useSystemKeyboard]);
 
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1074,19 +1089,36 @@ export default function ReceivePage() {
                       enterKeyHint="search"
                       value={isbnInput}
                       onChange={e => updateIsbnInput(e.target.value)}
+                      readOnly={!useSystemKeyboard}
+                      onPointerDown={e => {
+                        if (!useSystemKeyboard) e.preventDefault();
+                      }}
                       placeholder="Enter ISBN..."
-                      autoFocus
                       className="w-full pl-10 pr-4 py-3 rounded-2xl border border-border bg-background text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     />
                   </div>
 
                   <button
                     type="button"
-                    onClick={appendIsbnCheckDigit}
-                    title="Add ISBN-10 X check digit"
-                    className="flex items-center justify-center w-12 h-12 rounded-2xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 text-sm font-bold font-mono"
+                    onClick={() => {
+                      setUseSystemKeyboard(value => !value);
+                      window.setTimeout(() => {
+                        if (!useSystemKeyboard) isbnInputRef.current?.focus();
+                      }, 0);
+                    }}
+                    title={
+                      useSystemKeyboard
+                        ? "Use on-screen keypad"
+                        : "Use Apple keyboard"
+                    }
+                    className={cn(
+                      "flex items-center justify-center w-12 h-12 rounded-2xl border transition-colors shrink-0",
+                      useSystemKeyboard
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
                   >
-                    X
+                    <Keyboard className="w-4 h-4" />
                   </button>
 
                   <button
@@ -1101,6 +1133,72 @@ export default function ReceivePage() {
                     <ScanLine className="w-4 h-4" />
                   </button>
                 </div>
+
+                {!useSystemKeyboard && (
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(
+                        digit => (
+                          <button
+                            key={digit}
+                            type="button"
+                            onClick={() => appendIsbnCharacter(digit)}
+                            className="min-h-12 rounded-xl border border-border bg-background text-lg font-semibold font-mono text-foreground hover:bg-muted active:scale-[0.98] transition"
+                          >
+                            {digit}
+                          </button>
+                        )
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={appendIsbnCheckDigit}
+                        className="min-h-12 rounded-xl border border-border bg-background text-lg font-semibold font-mono text-foreground hover:bg-muted active:scale-[0.98] transition"
+                      >
+                        X
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => appendIsbnCharacter("0")}
+                        className="min-h-12 rounded-xl border border-border bg-background text-lg font-semibold font-mono text-foreground hover:bg-muted active:scale-[0.98] transition"
+                      >
+                        0
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={deleteLastIsbnCharacter}
+                        disabled={!isbnInput}
+                        className="min-h-12 rounded-xl border border-border bg-background text-sm font-semibold text-muted-foreground hover:bg-muted active:scale-[0.98] transition disabled:opacity-40"
+                      >
+                        Del
+                      </button>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={clearIsbnInput}
+                        disabled={!isbnInput}
+                        className="min-h-10 rounded-xl border border-border bg-background text-sm font-medium text-muted-foreground hover:bg-muted transition disabled:opacity-40"
+                      >
+                        Clear
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={classifying || !isbnInput.trim()}
+                        className="min-h-10 rounded-xl text-white text-sm font-medium transition disabled:opacity-50"
+                        style={{
+                          backgroundColor: "oklch(0.42 0.11 155)",
+                        }}
+                      >
+                        Enter
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {classifyError && (
                   <div
