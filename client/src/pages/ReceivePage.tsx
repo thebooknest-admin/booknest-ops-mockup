@@ -19,7 +19,6 @@ import {
   Zap,
   ChevronDown,
   ChevronUp,
-  Keyboard,
   ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -720,7 +719,6 @@ export default function ReceivePage() {
   const [receivedCount, setReceivedCount] = useState(0);
   const [lastSku, setLastSku] = useState<string | null>(null);
   const [isbnCopied, setIsbnCopied] = useState(false);
-  const [numpadMode, setNumpadMode] = useState(true);
   const [isTooOld, setIsTooOld] = useState(false);
   const [tooOldReason, setTooOldReason] = useState("");
 
@@ -733,17 +731,6 @@ export default function ReceivePage() {
 
   const updateIsbnInput = (value: string) => {
     setIsbnInput(value.replace(/[^0-9X]/gi, "").toUpperCase());
-  };
-
-  const toggleNumpadMode = () => {
-    setNumpadMode(value => !value);
-
-    // Safari keeps the existing keyboard until the field is recreated/refocused.
-    isbnInputRef.current?.blur();
-
-    window.setTimeout(() => {
-      isbnInputRef.current?.focus();
-    }, 0);
   };
 
   const appendIsbnCheckDigit = () => {
@@ -1077,16 +1064,17 @@ export default function ReceivePage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 
                     <input
-                      key={numpadMode ? "isbn-numpad" : "isbn-keyboard"}
                       ref={isbnInputRef}
-                      type={numpadMode ? "tel" : "text"}
-                      inputMode={numpadMode ? "numeric" : "text"}
-                      pattern={numpadMode ? "[0-9]*" : undefined}
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9Xx]*"
                       autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                       enterKeyHint="search"
                       value={isbnInput}
                       onChange={e => updateIsbnInput(e.target.value)}
-                      placeholder="Enter ISBN…"
+                      placeholder="Enter ISBN..."
                       autoFocus
                       className="w-full pl-10 pr-4 py-3 rounded-2xl border border-border bg-background text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     />
@@ -1094,31 +1082,12 @@ export default function ReceivePage() {
 
                   <button
                     type="button"
-                    onClick={toggleNumpadMode}
-                    title={
-                      numpadMode
-                        ? "Switch to full keyboard"
-                        : "Switch to numpad"
-                    }
-                    className="flex items-center justify-center w-12 h-12 rounded-2xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                    onClick={appendIsbnCheckDigit}
+                    title="Add ISBN-10 X check digit"
+                    className="flex items-center justify-center w-12 h-12 rounded-2xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 text-sm font-bold font-mono"
                   >
-                    {numpadMode ? (
-                      <Keyboard className="w-4 h-4" />
-                    ) : (
-                      <span className="text-xs font-bold font-mono">123</span>
-                    )}
+                    X
                   </button>
-
-                  {numpadMode && (
-                    <button
-                      type="button"
-                      onClick={appendIsbnCheckDigit}
-                      title="Add ISBN-10 X check digit"
-                      className="flex items-center justify-center w-12 h-12 rounded-2xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 text-sm font-bold font-mono"
-                    >
-                      X
-                    </button>
-                  )}
 
                   <button
                     type="button"
