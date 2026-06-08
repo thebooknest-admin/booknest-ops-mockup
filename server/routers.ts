@@ -37,6 +37,223 @@ import {
 } from "./supabase";
 import { isbnRouter } from "./routers/isbn";
 
+type ReturnBookOutcome = "received" | "missing" | "issue";
+
+async function processReturnedBook(input: {
+  copy_id: string;
+  shipment_id?: string | null;
+  shipment_book_id?: string | null;
+  notes?: string | null;
+  outcome?: ReturnBookOutcome;
+}) {
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const outcome = input.outcome ?? "received";
+  const [copy] = await sbJson<
+    {
+      id: string;
+      book_title_id: string;
+      status: string;
+    }[]
+  >(
+    `/book_copies?id=eq.${input.copy_id}&select=id,book_title_id,status&limit=1`
+  );
+
+  if (!copy) {
+    throw new Error("Book copy not found");
+  }
+
+  let shipmentBookId = input.shipment_book_id ?? null;
+  let shipmentId = input.shipment_id ?? null;
+  let memberId: string | null = null;
+
+  if (shipmentBookId || shipmentId) {
+    const shipmentBookFilters = shipmentBookId
+      ? `id=eq.${shipmentBookId}`
+      : `shipment_id=eq.${shipmentId}&book_copy_id=eq.${input.copy_id}`;
+    const shipmentBooks = await sbJson<
+      {
+        id: string;
+        shipment_id: string;
+        shipments: { member_id: string | null } | null;
+      }[]
+    >(
+      `/shipment_books?${shipmentBookFilters}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
+    );
+    const shipmentBook = shipmentBooks[0];
+    shipmentBookId = shipmentBook?.id ?? shipmentBookId;
+    shipmentId = shipmentBook?.shipment_id ?? shipmentId;
+    memberId = shipmentBook?.shipments?.member_id ?? null;
+  }
+
+  if (!shipmentId || !shipmentBookId || !memberId) {
+    const shipmentBooks = await sbJson<
+      {
+        id: string;
+        shipment_id: string;
+        shipments: { member_id: string | null } | null;
+      }[]
+    >(
+      `/shipment_books?book_copy_id=eq.${input.copy_id}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
+    );
+    const shipmentBook = shipmentBooks[0];
+    shipmentBookId = shipmentBook?.id ?? shipmentBookId;
+    shipmentId = shipmentBook?.shipment_id ?? shipmentId;
+    memberId = shipmentBook?.shipments?.member_id ?? memberId;
+  }
+
+  const keptHistory =
+    outcome === "missing" && memberId && shipmentId && copy.book_title_id
+      ? await sbJson<{ id: string }[]>(
+          `/member_book_history?member_id=eq.${memberId}&shipment_id=eq.${shipmentId}&book_title_id=eq.${copy.book_title_id}&kept=eq.true&select=id&limit=1`
+        )
+      : [];
+  const missingWasKept = outcome === "missing" && keptHistory.length > 0;
+
+  await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: missingWasKept
+        ? "withdrawn"
+        : outcome === "missing"
+          ? "lost"
+          : "in_house",
+      updated_at: now,
+    }),
+    headers: { Prefer: "return=minimal" },
+  });
+
+  const datePart = now.slice(0, 10).replace(/-/g, "");
+  const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
+  const returnNumber = `RET-${datePart}-${randPart}`;
+
+  let returnRows: any[] = [];
+  if (shipmentId) {
+    returnRows = await sbJson<any[]>(
+      `/returns?original_shipment_id=eq.${shipmentId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
+    );
+  }
+  if (!returnRows[0] && memberId) {
+    returnRows = await sbJson<any[]>(
+      `/returns?member_id=eq.${memberId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
+    );
+  }
+
+  let returnRecord = returnRows[0] ?? null;
+  if (!returnRecord) {
+    const created = await sbJson<any[]>("/returns", {
+      method: "POST",
+      body: JSON.stringify({
+        member_id: memberId,
+        return_number: returnNumber,
+        original_shipment_id: shipmentId,
+        status: shipmentId ? "receiving" : "received",
+        return_type: "swap",
+        actual_return_date: today,
+        processed_at: now,
+        notes: input.notes ?? null,
+        created_at: now,
+        updated_at: now,
+      }),
+    });
+    returnRecord = created[0] ?? null;
+  }
+
+  if (!returnRecord?.id) {
+    throw new Error("Failed to create or locate return record");
+  }
+
+  const returnId = returnRecord.id as string;
+  const notePrefix =
+    outcome === "missing"
+      ? missingWasKept
+        ? "Kept/paid before return"
+        : "Missing on return"
+      : outcome === "issue"
+        ? "Issue on return"
+        : null;
+  const conditionNotes = [notePrefix, input.notes].filter(Boolean).join(": ");
+  const existingReturnBooks = await sbJson<{ id: string }[]>(
+    `/return_books?return_id=eq.${returnId}&book_copy_id=eq.${input.copy_id}&select=id&limit=1`
+  );
+
+  const returnBookBody = {
+    shipment_book_id: shipmentBookId,
+    received: outcome !== "missing",
+    condition_on_return: "good",
+    condition_notes: conditionNotes || null,
+    action: "restock",
+    processed_at: now,
+  };
+
+  if (existingReturnBooks[0]) {
+    await sbVoid(`/return_books?id=eq.${existingReturnBooks[0].id}`, {
+      method: "PATCH",
+      body: JSON.stringify(returnBookBody),
+      headers: { Prefer: "return=minimal" },
+    });
+  } else {
+    await sbVoid("/return_books", {
+      method: "POST",
+      body: JSON.stringify({
+        return_id: returnId,
+        book_copy_id: input.copy_id,
+        ...returnBookBody,
+        created_at: now,
+      }),
+      headers: { Prefer: "return=minimal" },
+    });
+  }
+
+  if (memberId && shipmentId && copy.book_title_id && outcome !== "missing") {
+    await sbVoid(
+      `/member_book_history?member_id=eq.${memberId}&shipment_id=eq.${shipmentId}&book_title_id=eq.${copy.book_title_id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          returned_date: today,
+          kept: false,
+          notes: input.notes ?? null,
+        }),
+        headers: { Prefer: "return=minimal" },
+      }
+    );
+  }
+
+  let nextReturnStatus = "received";
+  if (shipmentId) {
+    const [shipmentBooks, handledBooks] = await Promise.all([
+      sbJson<{ id: string }[]>(
+        `/shipment_books?shipment_id=eq.${shipmentId}&book_copy_id=not.is.null&select=id&limit=200`
+      ),
+      sbJson<{ id: string }[]>(
+        `/return_books?return_id=eq.${returnId}&processed_at=not.is.null&select=id&limit=200`
+      ),
+    ]);
+    nextReturnStatus =
+      handledBooks.length >= shipmentBooks.length ? "received" : "receiving";
+  }
+
+  await sbVoid(`/returns?id=eq.${returnId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: nextReturnStatus,
+      actual_return_date: today,
+      processed_at: now,
+      notes: input.notes ?? returnRecord.notes ?? null,
+      updated_at: now,
+    }),
+    headers: { Prefer: "return=minimal" },
+  });
+
+  return {
+    success: true,
+    return_number: returnRecord.return_number ?? returnNumber,
+    return_id: returnId,
+    status: nextReturnStatus,
+  };
+}
+
 export const appRouter = router({
   system: systemRouter,
   picking: pickingRouter,
@@ -1345,6 +1562,234 @@ export const appRouter = router({
 
   // ─── Returns ────────────────────────────────────────────────────────────────
   returns: router({
+    bundles: publicProcedure
+      .input(z.object({ search: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const inTransitCopies = await sbJson<{ id: string }[]>(
+          "/book_copies?status=eq.in_transit&select=id&limit=1000"
+        );
+        if (!inTransitCopies.length) return [];
+
+        const inTransitCopyIds = inTransitCopies.map(copy => copy.id).join(",");
+        const activeShipmentBooks = await sbJson<
+          {
+            id: string;
+            shipment_id: string;
+            book_copy_id: string | null;
+            created_at: string | null;
+          }[]
+        >(
+          `/shipment_books?book_copy_id=in.(${inTransitCopyIds})&select=id,shipment_id,book_copy_id,created_at&order=created_at.desc&limit=1000`
+        );
+
+        const copyToShipmentBook: Record<
+          string,
+          { id: string; shipment_id: string }
+        > = {};
+        for (const row of activeShipmentBooks) {
+          if (row.book_copy_id && !copyToShipmentBook[row.book_copy_id]) {
+            copyToShipmentBook[row.book_copy_id] = {
+              id: row.id,
+              shipment_id: row.shipment_id,
+            };
+          }
+        }
+
+        const shipmentIds = Array.from(
+          new Set(Object.values(copyToShipmentBook).map(row => row.shipment_id))
+        );
+        if (!shipmentIds.length) return [];
+
+        const [shipments, shipmentBooks] = await Promise.all([
+          sbJson<
+            {
+              id: string;
+              member_id: string;
+              order_number: string | null;
+              shipment_number: string | null;
+              status: string;
+              scheduled_ship_date: string | null;
+              actual_ship_date: string | null;
+              tracking_number: string | null;
+              carrier: string | null;
+            }[]
+          >(
+            `/shipments?id=in.(${shipmentIds.join(",")})&shipment_type=eq.outbound&select=id,member_id,order_number,shipment_number,status,scheduled_ship_date,actual_ship_date,tracking_number,carrier&limit=500`
+          ),
+          sbJson<
+            {
+              id: string;
+              shipment_id: string;
+              book_copy_id: string | null;
+              book_copies: {
+                id: string;
+                sku: string | null;
+                bin_id: string | null;
+                status: string | null;
+                book_titles: {
+                  title: string | null;
+                  author: string | null;
+                } | null;
+              } | null;
+            }[]
+          >(
+            `/shipment_books?shipment_id=in.(${shipmentIds.join(",")})&book_copy_id=not.is.null&select=id,shipment_id,book_copy_id,book_copies(id,sku,bin_id,status,book_titles(title,author))&limit=1000`
+          ),
+        ]);
+
+        const memberIds = Array.from(new Set(shipments.map(s => s.member_id)));
+        const members = memberIds.length
+          ? await sbJson<{ id: string; name: string | null; email: string | null }[]>(
+              `/members?id=in.(${memberIds.join(",")})&select=id,name,email&limit=500`
+            )
+          : [];
+        const memberMap = Object.fromEntries(members.map(m => [m.id, m]));
+
+        const returns = await sbJson<
+          {
+            id: string;
+            original_shipment_id: string | null;
+            return_number: string | null;
+            status: string;
+          }[]
+        >(
+          `/returns?original_shipment_id=in.(${shipmentIds.join(",")})&select=id,original_shipment_id,return_number,status&limit=500`
+        );
+        const latestReturnByShipment: Record<string, any> = {};
+        for (const returnRecord of returns) {
+          if (
+            returnRecord.original_shipment_id &&
+            !latestReturnByShipment[returnRecord.original_shipment_id]
+          ) {
+            latestReturnByShipment[returnRecord.original_shipment_id] =
+              returnRecord;
+          }
+        }
+
+        const returnIds = returns.map(returnRecord => returnRecord.id);
+        const returnBooks = returnIds.length
+          ? await sbJson<
+              {
+                return_id: string;
+                book_copy_id: string | null;
+                received: boolean | null;
+                condition_notes: string | null;
+                processed_at: string | null;
+              }[]
+            >(
+              `/return_books?return_id=in.(${returnIds.join(",")})&select=return_id,book_copy_id,received,condition_notes,processed_at&limit=1000`
+            )
+          : [];
+        const returnBookByReturnAndCopy: Record<string, any> = {};
+        for (const book of returnBooks) {
+          if (book.book_copy_id) {
+            returnBookByReturnAndCopy[`${book.return_id}:${book.book_copy_id}`] =
+              book;
+          }
+        }
+
+        const booksByShipment: Record<string, any[]> = {};
+        for (const book of shipmentBooks) {
+          if (!booksByShipment[book.shipment_id]) {
+            booksByShipment[book.shipment_id] = [];
+          }
+          const returnRecord = latestReturnByShipment[book.shipment_id];
+          const returnBook =
+            returnRecord && book.book_copy_id
+              ? returnBookByReturnAndCopy[
+                  `${returnRecord.id}:${book.book_copy_id}`
+                ]
+              : null;
+          const notes = returnBook?.condition_notes ?? "";
+          const normalizedNotes = notes.toLowerCase();
+          booksByShipment[book.shipment_id].push({
+            shipment_book_id: book.id,
+            copy_id: book.book_copy_id,
+            sku: book.book_copies?.sku ?? null,
+            title: book.book_copies?.book_titles?.title ?? "Unknown title",
+            author: book.book_copies?.book_titles?.author ?? null,
+            bin_id: book.book_copies?.bin_id ?? null,
+            copy_status: book.book_copies?.status ?? null,
+            return_state: returnBook
+              ? returnBook.received
+                ? normalizedNotes.includes("issue")
+                  ? "issue"
+                  : "received"
+                : normalizedNotes.includes("kept/paid")
+                  ? "kept"
+                  : "missing"
+              : book.book_copies?.status === "in_house"
+                ? "received"
+                : "out",
+            return_notes: returnBook?.condition_notes ?? null,
+            processed_at: returnBook?.processed_at ?? null,
+          });
+        }
+
+        const search = input?.search?.trim().toLowerCase() ?? "";
+        return shipments
+          .map(shipment => {
+            const member = memberMap[shipment.member_id];
+            const books = booksByShipment[shipment.id] ?? [];
+            const receivedCount = books.filter(
+              book => book.return_state === "received" || book.return_state === "issue"
+            ).length;
+            const missingCount = books.filter(
+              book => book.return_state === "missing"
+            ).length;
+            const keptCount = books.filter(
+              book => book.return_state === "kept"
+            ).length;
+            const issueCount = books.filter(
+              book => book.return_state === "issue"
+            ).length;
+            const outCount = books.filter(book => book.return_state === "out")
+              .length;
+
+            return {
+              id: shipment.id,
+              shipment_number: shipment.shipment_number,
+              order_number: shipment.order_number,
+              status: shipment.status,
+              member_id: shipment.member_id,
+              member_name: member?.name ?? member?.email ?? "Unknown member",
+              actual_ship_date: shipment.actual_ship_date,
+              scheduled_ship_date: shipment.scheduled_ship_date,
+              tracking_number: shipment.tracking_number,
+              carrier: shipment.carrier,
+              return_id: latestReturnByShipment[shipment.id]?.id ?? null,
+              return_number:
+                latestReturnByShipment[shipment.id]?.return_number ?? null,
+              return_status:
+                latestReturnByShipment[shipment.id]?.status ?? "not_started",
+              total_count: books.length,
+              received_count: receivedCount,
+              missing_count: missingCount,
+              kept_count: keptCount,
+              issue_count: issueCount,
+              out_count: outCount,
+              books,
+            };
+          })
+          .filter(bundle => {
+            if (!search) return true;
+            const haystack = [
+              bundle.id,
+              bundle.shipment_number,
+              bundle.order_number,
+              bundle.member_name,
+              bundle.tracking_number,
+              ...bundle.books.map(book => book.sku),
+              ...bundle.books.map(book => book.title),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+            return haystack.includes(search);
+          })
+          .sort((a, b) => a.member_name.localeCompare(b.member_name));
+      }),
+
     openRequests: publicProcedure.query(async () => {
       const returns = await sbJson<
         {
@@ -1467,7 +1912,6 @@ export const appRouter = router({
       .input(
         z.object({
           copy_id: z.string(),
-          condition: z.string().optional(),
           notes: z.string().optional(),
           last_shipment_id: z.string().nullable().optional(),
           last_shipment_book_id: z.string().nullable().optional(),
@@ -1476,196 +1920,75 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const now = new Date().toISOString();
-        const today = now.slice(0, 10);
-        const [copy] = await sbJson<
+        return processReturnedBook({
+          copy_id: input.copy_id,
+          shipment_id: input.last_shipment_id,
+          shipment_book_id: input.last_shipment_book_id,
+          notes: input.notes,
+          outcome: "received",
+        });
+      }),
+
+    processBundleBook: publicProcedure
+      .input(
+        z.object({
+          shipment_id: z.string(),
+          shipment_book_id: z.string(),
+          copy_id: z.string(),
+          outcome: z.enum(["received", "missing", "issue"]),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return processReturnedBook({
+          copy_id: input.copy_id,
+          shipment_id: input.shipment_id,
+          shipment_book_id: input.shipment_book_id,
+          notes: input.notes,
+          outcome: input.outcome,
+        });
+      }),
+
+    processBundle: publicProcedure
+      .input(
+        z.object({
+          shipment_id: z.string(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const books = await sbJson<
           {
             id: string;
-            book_title_id: string;
-            status: string;
+            book_copy_id: string | null;
+            book_copies: { status: string | null } | null;
           }[]
         >(
-          `/book_copies?id=eq.${input.copy_id}&select=id,book_title_id,status&limit=1`
+          `/shipment_books?shipment_id=eq.${input.shipment_id}&book_copy_id=not.is.null&select=id,book_copy_id,book_copies(status)&limit=200`
         );
 
-        if (!copy) {
-          throw new Error("Book copy not found");
-        }
-
-        let shipmentBookId = input.last_shipment_book_id ?? null;
-        let shipmentId = input.last_shipment_id ?? null;
-        let memberId: string | null = null;
-
-        if (shipmentBookId || shipmentId) {
-          const shipmentBookFilters = shipmentBookId
-            ? `id=eq.${shipmentBookId}`
-            : `shipment_id=eq.${shipmentId}&book_copy_id=eq.${input.copy_id}`;
-          const shipmentBooks = await sbJson<
-            {
-              id: string;
-              shipment_id: string;
-              shipments: { member_id: string | null } | null;
-            }[]
-          >(
-            `/shipment_books?${shipmentBookFilters}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
-          );
-          const shipmentBook = shipmentBooks[0];
-          shipmentBookId = shipmentBook?.id ?? shipmentBookId;
-          shipmentId = shipmentBook?.shipment_id ?? shipmentId;
-          memberId = shipmentBook?.shipments?.member_id ?? null;
-        }
-
-        if (!shipmentId || !shipmentBookId || !memberId) {
-          const shipmentBooks = await sbJson<
-            {
-              id: string;
-              shipment_id: string;
-              shipments: { member_id: string | null } | null;
-            }[]
-          >(
-            `/shipment_books?book_copy_id=eq.${input.copy_id}&order=created_at.desc&limit=1&select=id,shipment_id,shipments(member_id)`
-          );
-          const shipmentBook = shipmentBooks[0];
-          shipmentBookId = shipmentBook?.id ?? shipmentBookId;
-          shipmentId = shipmentBook?.shipment_id ?? shipmentId;
-          memberId = shipmentBook?.shipments?.member_id ?? memberId;
-        }
-
-        const patch: Record<string, any> = {
-          status: "in_house",
-          updated_at: now,
-        };
-        if (input.condition) patch.condition = input.condition;
-        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
-          method: "PATCH",
-          body: JSON.stringify(patch),
-          headers: { Prefer: "return=minimal" },
-        });
-
-        const datePart = now.slice(0, 10).replace(/-/g, "");
-        const randPart = Math.random().toString(36).slice(2, 7).toUpperCase();
-        const returnNumber = `RET-${datePart}-${randPart}`;
-
-        let returnRows: any[] = [];
-        if (shipmentId) {
-          returnRows = await sbJson<any[]>(
-            `/returns?original_shipment_id=eq.${shipmentId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
-          );
-        }
-        if (!returnRows[0] && memberId) {
-          returnRows = await sbJson<any[]>(
-            `/returns?member_id=eq.${memberId}&status=in.(requested,in_transit,receiving)&order=created_at.desc&limit=1`
-          );
-        }
-
-        let returnRecord = returnRows[0] ?? null;
-        if (!returnRecord) {
-          const created = await sbJson<any[]>("/returns", {
-            method: "POST",
-            body: JSON.stringify({
-              member_id: memberId,
-              return_number: returnNumber,
-              original_shipment_id: shipmentId,
-              status: shipmentId ? "receiving" : "received",
-              return_type: "standard",
-              actual_return_date: today,
-              processed_at: now,
-              notes: input.notes ?? null,
-              created_at: now,
-              updated_at: now,
-            }),
-          });
-          returnRecord = created[0] ?? null;
-        }
-
-        if (!returnRecord?.id) {
-          throw new Error("Failed to create or locate return record");
-        }
-
-        const returnId = returnRecord.id as string;
-        const existingReturnBooks = await sbJson<{ id: string }[]>(
-          `/return_books?return_id=eq.${returnId}&book_copy_id=eq.${input.copy_id}&select=id&limit=1`
+        const outBooks = books.filter(
+          book => book.book_copy_id && book.book_copies?.status === "in_transit"
         );
 
-        if (existingReturnBooks[0]) {
-          await sbVoid(`/return_books?id=eq.${existingReturnBooks[0].id}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              shipment_book_id: shipmentBookId,
-              received: true,
-              condition_on_return: input.condition ?? "good",
-              condition_notes: input.notes ?? null,
-              action: "restock",
-              processed_at: now,
-            }),
-            headers: { Prefer: "return=minimal" },
-          });
-        } else {
-          await sbVoid("/return_books", {
-            method: "POST",
-            body: JSON.stringify({
-              return_id: returnId,
-              book_copy_id: input.copy_id,
-              shipment_book_id: shipmentBookId,
-              received: true,
-              condition_on_return: input.condition ?? "good",
-              condition_notes: input.notes ?? null,
-              action: "restock",
-              processed_at: now,
-              created_at: now,
-            }),
-            headers: { Prefer: "return=minimal" },
+        let lastResult: Awaited<ReturnType<typeof processReturnedBook>> | null =
+          null;
+        for (const book of outBooks) {
+          lastResult = await processReturnedBook({
+            copy_id: book.book_copy_id!,
+            shipment_id: input.shipment_id,
+            shipment_book_id: book.id,
+            notes: input.notes,
+            outcome: "received",
           });
         }
-
-        if (memberId && shipmentId && copy.book_title_id) {
-          await sbVoid(
-            `/member_book_history?member_id=eq.${memberId}&shipment_id=eq.${shipmentId}&book_title_id=eq.${copy.book_title_id}`,
-            {
-              method: "PATCH",
-              body: JSON.stringify({
-                returned_date: today,
-                kept: false,
-                notes: input.notes ?? null,
-              }),
-              headers: { Prefer: "return=minimal" },
-            }
-          );
-        }
-
-        let nextReturnStatus = "received";
-        if (shipmentId) {
-          const [shipmentBooks, receivedBooks] = await Promise.all([
-            sbJson<{ id: string }[]>(
-              `/shipment_books?shipment_id=eq.${shipmentId}&book_copy_id=not.is.null&select=id&limit=200`
-            ),
-            sbJson<{ id: string }[]>(
-              `/return_books?return_id=eq.${returnId}&received=eq.true&select=id&limit=200`
-            ),
-          ]);
-          nextReturnStatus =
-            receivedBooks.length >= shipmentBooks.length
-              ? "received"
-              : "receiving";
-        }
-
-        await sbVoid(`/returns?id=eq.${returnId}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: nextReturnStatus,
-            actual_return_date: today,
-            processed_at: now,
-            notes: input.notes ?? returnRecord.notes ?? null,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
 
         return {
           success: true,
-          return_number: returnRecord.return_number ?? returnNumber,
-          return_id: returnId,
-          status: nextReturnStatus,
+          processed_count: outBooks.length,
+          return_number: lastResult?.return_number ?? null,
+          return_id: lastResult?.return_id ?? null,
+          status: lastResult?.status ?? null,
         };
       }),
 
