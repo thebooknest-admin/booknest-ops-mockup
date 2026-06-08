@@ -95,6 +95,126 @@ function getNextShipDate(): string {
   return next.toISOString().split("T")[0];
 }
 
+function nextUnusedNumber(
+  existingValues: Array<string | null>,
+  prefix: string,
+  start: number,
+  width: number
+): string {
+  const used = new Set(existingValues.filter(Boolean));
+  let next = start;
+  let candidate = "";
+  do {
+    candidate = `${prefix}${String(next).padStart(width, "0")}`;
+    next++;
+  } while (used.has(candidate));
+  return candidate;
+}
+
+type HolidayWindow = {
+  keywords: string[];
+  month: number;
+  day: number;
+  beforeDays: number;
+  afterDays: number;
+};
+
+const HOLIDAY_WINDOWS: HolidayWindow[] = [
+  {
+    keywords: ["christmas", "santa", "reindeer", "nativity", "noel"],
+    month: 12,
+    day: 25,
+    beforeDays: 45,
+    afterDays: 7,
+  },
+  {
+    keywords: ["halloween", "trick", "pumpkin", "ghost", "spooky"],
+    month: 10,
+    day: 31,
+    beforeDays: 45,
+    afterDays: 3,
+  },
+  {
+    keywords: ["thanksgiving", "turkey", "pilgrim"],
+    month: 11,
+    day: 26,
+    beforeDays: 28,
+    afterDays: 3,
+  },
+  {
+    keywords: ["easter", "bunny", "egg hunt"],
+    month: 4,
+    day: 5,
+    beforeDays: 35,
+    afterDays: 7,
+  },
+  {
+    keywords: ["valentine", "valentine's day"],
+    month: 2,
+    day: 14,
+    beforeDays: 28,
+    afterDays: 3,
+  },
+];
+
+function daysBetweenDates(a: Date, b: Date): number {
+  const aUtc = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const bUtc = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((aUtc - bUtc) / 86_400_000);
+}
+
+function isDateInHolidayWindow(date: Date, window: HolidayWindow): boolean {
+  for (const year of [date.getFullYear() - 1, date.getFullYear(), date.getFullYear() + 1]) {
+    const holiday = new Date(year, window.month - 1, window.day);
+    const delta = daysBetweenDates(date, holiday);
+    if (delta >= -window.beforeDays && delta <= window.afterDays) return true;
+  }
+  return false;
+}
+
+function isSeasonalBookAllowed(input: {
+  title?: string | null;
+  tags?: string[] | null;
+  referenceDate?: Date;
+}): boolean {
+  const haystack = [input.title ?? "", ...(input.tags ?? [])]
+    .join(" ")
+    .toLowerCase();
+  const matchedWindow = HOLIDAY_WINDOWS.find(window =>
+    window.keywords.some(keyword => haystack.includes(keyword))
+  );
+  if (!matchedWindow) return true;
+  return isDateInHolidayWindow(input.referenceDate ?? new Date(), matchedWindow);
+}
+
+function selectWithThemeVariety<T>(
+  scoredItems: Array<{ item: T; theme: string; score: number }>,
+  count: number
+): T[] {
+  const maxPerTheme = Math.max(1, Math.ceil(count / 3));
+  const selected: Array<{ item: T; theme: string; score: number }> = [];
+  const selectedItems = new Set<T>();
+  const themeCounts = new Map<string, number>();
+
+  for (const row of scoredItems) {
+    const themeCount = themeCounts.get(row.theme) ?? 0;
+    if (themeCount >= maxPerTheme) continue;
+    selected.push(row);
+    selectedItems.add(row.item);
+    themeCounts.set(row.theme, themeCount + 1);
+    if (selected.length >= count) return selected.map(selectedRow => selectedRow.item);
+  }
+
+  for (const row of scoredItems) {
+    if (selectedItems.has(row.item)) continue;
+    selected.push(row);
+    selectedItems.add(row.item);
+    if (selected.length >= count) break;
+  }
+
+  return selected.map(row => row.item);
+}
+
 async function createPickingOrderForMember(input: {
   member_id: string;
   source?: "manual" | "return";
@@ -154,6 +274,22 @@ async function createPickingOrderForMember(input: {
     ),
   ]);
 
+  const activeShipments = await sbJson<{ id: string }[]>(
+    "/shipments?shipment_type=eq.outbound&status=in.(picking,packing,packed)&select=id&limit=1000"
+  );
+  const activeAssignedCopyIds = new Set<string>();
+  if (activeShipments.length > 0) {
+    for (let i = 0; i < activeShipments.length; i += 50) {
+      const batch = activeShipments.slice(i, i + 50);
+      const rows = await sbJson<{ book_copy_id: string | null }[]>(
+        `/shipment_books?shipment_id=in.(${batch.map(s => s.id).join(",")})&book_copy_id=not.is.null&select=book_copy_id&limit=1000`
+      );
+      for (const row of rows) {
+        if (row.book_copy_id) activeAssignedCopyIds.add(row.book_copy_id);
+      }
+    }
+  }
+
   const priorTitleIds = new Set(
     priorHistory.map(row => row.book_title_id).filter(Boolean)
   );
@@ -198,36 +334,67 @@ async function createPickingOrderForMember(input: {
         title: string | null;
         author: string | null;
         bin_theme: string | null;
+        tag_ids: string[] | null;
       } | null;
     }[]
   >(
-    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,book_titles(id,title,author,bin_theme)&limit=1000&order=received_at.asc`
+    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,book_titles(id,title,author,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
   );
+
+  const tagIds = Array.from(
+    new Set(
+      availableCopies.flatMap(copy => copy.book_titles?.tag_ids ?? [])
+    )
+  );
+  const tagMap: Record<string, string> = {};
+  if (tagIds.length > 0) {
+    for (let i = 0; i < tagIds.length; i += 50) {
+      const batch = tagIds.slice(i, i + 50);
+      const tags = await sbJson<{ id: string; tag: string }[]>(
+        `/book_sorting_tags?id=in.(${batch.join(",")})&select=id,tag&limit=1000`
+      );
+      for (const tag of tags) tagMap[tag.id] = tag.tag;
+    }
+  }
 
   const bestCopyByTitle = new Map<string, (typeof availableCopies)[number]>();
   for (const copy of availableCopies) {
+    if (activeAssignedCopyIds.has(copy.id)) continue;
     if (!copy.book_title_id || priorTitleIds.has(copy.book_title_id)) continue;
     const theme = copy.book_titles?.bin_theme ?? "";
     if (avoidThemes.has(theme)) continue;
+    const tags = (copy.book_titles?.tag_ids ?? [])
+      .map(tagId => tagMap[tagId])
+      .filter(Boolean);
+    if (
+      !isSeasonalBookAllowed({
+        title: copy.book_titles?.title,
+        tags,
+        referenceDate: new Date(),
+      })
+    ) {
+      continue;
+    }
     if (!bestCopyByTitle.has(copy.book_title_id)) {
       bestCopyByTitle.set(copy.book_title_id, copy);
     }
   }
 
-  const selectedCopies = Array.from(bestCopyByTitle.values())
+  const scoredCopies = Array.from(bestCopyByTitle.values())
     .map(copy => {
       const theme = copy.book_titles?.bin_theme ?? "";
       return {
-        copy,
+        item: copy,
+        theme: theme || "Uncategorized",
         score:
           40 +
           (matchThemes.has(theme) ? 30 : 0) +
           (copy.bin_id ? 5 : 0),
       };
     })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, booksNeeded)
-    .map(row => row.copy);
+    .sort((a, b) => b.score - a.score);
+
+  const selectedCopies = selectWithThemeVariety(scoredCopies, booksNeeded);
 
   if (selectedCopies.length < booksNeeded) {
     throw new Error(
@@ -242,8 +409,21 @@ async function createPickingOrderForMember(input: {
     countRes.headers.get("content-range")?.split("/")[1] ?? "0",
     10
   );
-  const shipmentNumber = `SHP-${String(total + 1).padStart(6, "0")}`;
-  const orderNumber = `BN-${String(total + 1001).padStart(4, "0")}`;
+  const existingNumbers = await sbJson<
+    { shipment_number: string | null; order_number: string | null }[]
+  >("/shipments?select=shipment_number,order_number&limit=10000");
+  const shipmentNumber = nextUnusedNumber(
+    existingNumbers.map(row => row.shipment_number),
+    "SHP-",
+    total + 1,
+    6
+  );
+  const orderNumber = nextUnusedNumber(
+    existingNumbers.map(row => row.order_number),
+    "BN-",
+    total + 1001,
+    4
+  );
 
   const shipmentRows = await sbJson<{ id: string }[]>("/shipments", {
     method: "POST",
@@ -278,17 +458,6 @@ async function createPickingOrderForMember(input: {
       headers: { Prefer: "return=minimal" },
     });
 
-    for (const copy of selectedCopies) {
-      await sbVoid(`/book_copies?id=eq.${copy.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "reserved",
-          shipment_id: shipment.id,
-          updated_at: now,
-        }),
-        headers: { Prefer: "return=minimal" },
-      });
-    }
   } catch (error) {
     await sbVoid(`/shipments?id=eq.${shipment.id}`, {
       method: "PATCH",

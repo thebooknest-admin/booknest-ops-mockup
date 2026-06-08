@@ -54,6 +54,46 @@ const AVOID_TO_THEMES: Record<string, string[]> = {
 
 // ✅ FIXED: normalize tier string (handles "Cozy Nest", "cozy-nest", etc.)
 // Also accepts books_per_box from DB as the source of truth when available
+type HolidayWindow = {
+  keywords: string[];
+  month: number;
+  day: number;
+  beforeDays: number;
+  afterDays: number;
+};
+
+const HOLIDAY_WINDOWS: HolidayWindow[] = [
+  { keywords: ["christmas", "santa", "reindeer", "nativity", "noel"], month: 12, day: 25, beforeDays: 45, afterDays: 7 },
+  { keywords: ["halloween", "trick", "pumpkin", "ghost", "spooky"], month: 10, day: 31, beforeDays: 45, afterDays: 3 },
+  { keywords: ["thanksgiving", "turkey", "pilgrim"], month: 11, day: 26, beforeDays: 28, afterDays: 3 },
+  { keywords: ["easter", "bunny", "egg hunt"], month: 4, day: 5, beforeDays: 35, afterDays: 7 },
+  { keywords: ["valentine", "valentine's day"], month: 2, day: 14, beforeDays: 28, afterDays: 3 },
+];
+
+function daysBetweenDates(a: Date, b: Date): number {
+  const aUtc = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const bUtc = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((aUtc - bUtc) / 86_400_000);
+}
+
+function isDateInHolidayWindow(date: Date, window: HolidayWindow): boolean {
+  for (const year of [date.getFullYear() - 1, date.getFullYear(), date.getFullYear() + 1]) {
+    const holiday = new Date(year, window.month - 1, window.day);
+    const delta = daysBetweenDates(date, holiday);
+    if (delta >= -window.beforeDays && delta <= window.afterDays) return true;
+  }
+  return false;
+}
+
+function isSeasonalBookAllowed(title: string | null | undefined): boolean {
+  const normalizedTitle = String(title ?? "").toLowerCase();
+  const matchedWindow = HOLIDAY_WINDOWS.find(window =>
+    window.keywords.some(keyword => normalizedTitle.includes(keyword))
+  );
+  if (!matchedWindow) return true;
+  return isDateInHolidayWindow(new Date(), matchedWindow);
+}
+
 function getBookCount(tier: string | null, booksPerBox?: number | null): number {
   if (booksPerBox) return booksPerBox;
   if (!tier) return DEFAULT_BOOK_COUNT;
@@ -400,22 +440,10 @@ export const pickingRouter = router({
       const candidates: any[] = await candidateRes.json();
 
       const replacement = candidates.find((book) => {
-        const title = String(book.title ?? "").toLowerCase();
-
-        const seasonal =
-          title.includes("halloween") ||
-          title.includes("trick") ||
-          title.includes("pumpkin") ||
-          title.includes("ghost") ||
-          title.includes("spooky") ||
-          title.includes("christmas") ||
-          title.includes("thanksgiving") ||
-          title.includes("easter");
-
         return (
           book.book_copy_id &&
           !assignedCopyIds.has(book.book_copy_id) &&
-          !seasonal
+          isSeasonalBookAllowed(book.title)
         );
       });
 
@@ -454,7 +482,6 @@ await sbVoid(
     method: "PATCH",
     body: JSON.stringify({
       status: "in_house",
-      shipment_id: null,
       updated_at: new Date().toISOString(),
     }),
     headers: { Prefer: "return=minimal" },
@@ -469,8 +496,6 @@ await sbVoid(
   {
     method: "PATCH",
     body: JSON.stringify({
-      status: "reserved",
-      shipment_id: input.shipment_id,
       updated_at: new Date().toISOString(),
     }),
     headers: { Prefer: "return=minimal" },
@@ -605,16 +630,6 @@ return updated;
           }
 
           usedShipmentBookIds.add(shipmentBook.id);
-
-          await sbVoid(`/book_copies?id=eq.${copyId}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              status: "reserved",
-              shipment_id,
-              updated_at: now,
-            }),
-            headers: { Prefer: "return=minimal" },
-          });
 
           await sbVoid(`/shipment_books?id=eq.${shipmentBook.id}`, {
             method: "PATCH",

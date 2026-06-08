@@ -22,6 +22,22 @@ async function sbFetch(path: string, options: RequestInit = {}) {
   });
 }
 
+function nextUnusedNumber(
+  existingValues: Array<string | null>,
+  prefix: string,
+  start: number,
+  width: number
+): string {
+  const used = new Set(existingValues.filter(Boolean));
+  let next = start;
+  let candidate = '';
+  do {
+    candidate = `${prefix}${String(next).padStart(width, '0')}`;
+    next++;
+  } while (used.has(candidate));
+  return candidate;
+}
+
 function getNextShipDate(): string {
   const today = new Date();
   const dow = today.getDay();
@@ -82,8 +98,21 @@ export async function easypostTrackingWebhook(req: Request, res: Response) {
       headers: { Prefer: 'count=exact', Range: '0-0' },
     });
     const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] ?? '0', 10);
-    const shipmentNumber = `SHP-${String(total + 1).padStart(6, '0')}`;
-    const orderNumber = `BN-${String(total + 1001).padStart(4, '0')}`;
+    const numbersRes = await sbFetch('/shipments?select=shipment_number,order_number&limit=10000');
+    const existingNumbers: { shipment_number: string | null; order_number: string | null }[] =
+      numbersRes.ok ? await numbersRes.json() : [];
+    const shipmentNumber = nextUnusedNumber(
+      existingNumbers.map(row => row.shipment_number),
+      'SHP-',
+      total + 1,
+      6
+    );
+    const orderNumber = nextUnusedNumber(
+      existingNumbers.map(row => row.order_number),
+      'BN-',
+      total + 1001,
+      4
+    );
     const nextShipDate = getNextShipDate();
 
     await sbFetch('/shipments', {
