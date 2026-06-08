@@ -4,9 +4,10 @@ import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft, Mail, Phone, MapPin, Star, Package, Truck,
   BookOpen, CheckCircle2, Clock, AlertTriangle, RefreshCw,
-  ExternalLink, BookmarkCheck, Sparkles, ChevronRight,
+  ExternalLink, BookmarkCheck, Sparkles, ChevronRight, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const TIER_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   "Little Nest": { bg: "oklch(0.95 0.03 155)", text: "oklch(0.35 0.10 155)", border: "oklch(0.85 0.06 155)" },
@@ -24,10 +25,24 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function MemberProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const utils = trpc.useUtils();
   const { data: member, isLoading, refetch, isRefetching } = trpc.members.byId.useQuery(
     { id: id! },
     { enabled: !!id }
   );
+  const requestBundle = trpc.members.requestBundle.useMutation({
+    onSuccess: result => {
+      if (result.created) {
+        toast.success(`New order ${result.order_number} added to Picking`);
+      } else {
+        toast.info("This member already has an active order.");
+      }
+      refetch();
+      utils.picking.dailyOrders.invalidate();
+      utils.shipments.listAll.invalidate();
+    },
+    onError: (err: any) => toast.error(`Could not request bundle: ${err.message}`),
+  });
 
   if (isLoading) {
     return (
@@ -108,6 +123,20 @@ export default function MemberProfilePage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
+              onClick={() => requestBundle.mutate({ member_id: member.id })}
+              disabled={requestBundle.isPending || !!activeShipment}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
+              title={activeShipment ? "Active order already exists" : "Request a new bundle"}
+            >
+              {requestBundle.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Package className="w-3.5 h-3.5" />
+              )}
+              Request New Bundle
+            </button>
             {member.tier && (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border"
                 style={{ backgroundColor: tierStyle.bg, color: tierStyle.text, borderColor: tierStyle.border }}>

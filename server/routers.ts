@@ -39,6 +39,277 @@ import { isbnRouter } from "./routers/isbn";
 
 type ReturnBookOutcome = "received" | "missing" | "issue";
 
+const TIER_BOOK_COUNT: Record<string, number> = {
+  "little-nest": 4,
+  "cozy-nest": 6,
+  "story-nest": 8,
+};
+const DEFAULT_BOOK_COUNT = 4;
+
+const INTEREST_TO_THEMES: Record<string, string[]> = {
+  "Brave & Bold": ["adventure"],
+  "Heart & Home": ["life"],
+  "Curious Minds": ["learn"],
+  "Wild Things": ["nature"],
+  "All About Me": ["identity"],
+  "Old Favorites": ["classics"],
+  "Celebrate!": ["seasonal"],
+  "Giggle Worthy": ["humor"],
+};
+
+const AVOID_TO_THEMES: Record<string, string[]> = {
+  "Scary / Horror": ["horror", "scary"],
+  Violence: ["violence", "war", "conflict"],
+  "Death & Grief": ["death", "grief"],
+  Divorce: ["divorce"],
+  "Bathroom Humor": ["bathroom-humor"],
+  War: ["war", "conflict"],
+  Bullying: ["bullying"],
+  "Religious Content": ["religious"],
+  "LGBTQ+ themes": ["lgbtq"],
+  Romance: ["romance"],
+  "Scary Animals": ["scary-animals"],
+  Clowns: ["clowns"],
+  "Spiders / Bugs": ["bugs", "spiders"],
+  "Ghosts / Supernatural": ["supernatural", "ghosts"],
+  "Peer Pressure": ["peer-pressure"],
+  Illness: ["illness"],
+  "Political Topics": ["political"],
+};
+
+function getBookCount(tier: string | null, booksPerBox?: number | null): number {
+  if (booksPerBox) return booksPerBox;
+  if (!tier) return DEFAULT_BOOK_COUNT;
+  const normalized = tier.toLowerCase().replace(/\s+/g, "-");
+  return TIER_BOOK_COUNT[normalized] ?? DEFAULT_BOOK_COUNT;
+}
+
+function getNextShipDate(): string {
+  const today = new Date();
+  const dow = today.getDay();
+  const daysUntilTue = (2 - dow + 7) % 7;
+  const daysUntilFri = (5 - dow + 7) % 7;
+  const daysUntilNext = Math.min(daysUntilTue, daysUntilFri);
+  const next = new Date(today);
+  next.setDate(today.getDate() + daysUntilNext);
+  return next.toISOString().split("T")[0];
+}
+
+async function createPickingOrderForMember(input: {
+  member_id: string;
+  source?: "manual" | "return";
+}) {
+  const now = new Date().toISOString();
+
+  const existingOpen = await sbJson<{ id: string; status: string }[]>(
+    `/shipments?member_id=eq.${input.member_id}&shipment_type=eq.outbound&status=in.(picking,packing,packed)&select=id,status&limit=1`
+  );
+  if (existingOpen[0]) {
+    return {
+      created: false,
+      shipment_id: existingOpen[0].id,
+      status: existingOpen[0].status,
+      reason: "open_shipment_exists",
+    };
+  }
+
+  const [member] = await sbJson<
+    {
+      id: string;
+      name: string | null;
+      tier: string | null;
+      age_group: string | null;
+      books_per_box: number | null;
+      topics_to_avoid: string[] | null;
+      subscription_status: string | null;
+      welcome_form_completed: boolean | null;
+    }[]
+  >(
+    `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,books_per_box,topics_to_avoid,subscription_status,welcome_form_completed&limit=1`
+  );
+
+  if (!member) throw new Error("Member not found.");
+  if (member.subscription_status !== "active") {
+    throw new Error("Member must have an active subscription before creating a new bundle.");
+  }
+  if (!member.welcome_form_completed) {
+    throw new Error("Member must complete the welcome form before creating a new bundle.");
+  }
+
+  const booksNeeded = getBookCount(member.tier, member.books_per_box);
+  const memberAgeGroup = normalizeAgeGroup(member.age_group) ?? member.age_group;
+  if (!memberAgeGroup) {
+    throw new Error("Member needs an age group before creating a new bundle.");
+  }
+
+  const [interests, priorHistory, priorShipments] = await Promise.all([
+    sbJson<{ interest_category: string | null }[]>(
+      `/member_interests?member_id=eq.${member.id}&select=interest_category&limit=100`
+    ),
+    sbJson<{ book_title_id: string | null }[]>(
+      `/member_book_history?member_id=eq.${member.id}&select=book_title_id&limit=1000`
+    ),
+    sbJson<{ id: string }[]>(
+      `/shipments?member_id=eq.${member.id}&select=id&limit=500`
+    ),
+  ]);
+
+  const priorTitleIds = new Set(
+    priorHistory.map(row => row.book_title_id).filter(Boolean)
+  );
+
+  if (priorShipments.length > 0) {
+    for (let i = 0; i < priorShipments.length; i += 50) {
+      const batch = priorShipments.slice(i, i + 50);
+      const rows = await sbJson<{ book_title_id: string | null }[]>(
+        `/shipment_books?shipment_id=in.(${batch.map(s => s.id).join(",")})&select=book_title_id&limit=1000`
+      );
+      for (const row of rows) {
+        if (row.book_title_id) priorTitleIds.add(row.book_title_id);
+      }
+    }
+  }
+
+  const memberInterests = interests
+    .map(row => row.interest_category)
+    .filter(Boolean) as string[];
+  const matchThemes = new Set<string>();
+  for (const category of memberInterests) {
+    for (const theme of INTEREST_TO_THEMES[category] ?? []) {
+      matchThemes.add(theme);
+    }
+  }
+
+  const avoidThemes = new Set<string>();
+  for (const topic of member.topics_to_avoid ?? []) {
+    for (const theme of AVOID_TO_THEMES[topic] ?? []) {
+      avoidThemes.add(theme);
+    }
+  }
+
+  const availableCopies = await sbJson<
+    {
+      id: string;
+      sku: string | null;
+      bin_id: string | null;
+      book_title_id: string;
+      book_titles: {
+        id: string;
+        title: string | null;
+        author: string | null;
+        bin_theme: string | null;
+      } | null;
+    }[]
+  >(
+    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,book_titles(id,title,author,bin_theme)&limit=1000&order=received_at.asc`
+  );
+
+  const bestCopyByTitle = new Map<string, (typeof availableCopies)[number]>();
+  for (const copy of availableCopies) {
+    if (!copy.book_title_id || priorTitleIds.has(copy.book_title_id)) continue;
+    const theme = copy.book_titles?.bin_theme ?? "";
+    if (avoidThemes.has(theme)) continue;
+    if (!bestCopyByTitle.has(copy.book_title_id)) {
+      bestCopyByTitle.set(copy.book_title_id, copy);
+    }
+  }
+
+  const selectedCopies = Array.from(bestCopyByTitle.values())
+    .map(copy => {
+      const theme = copy.book_titles?.bin_theme ?? "";
+      return {
+        copy,
+        score:
+          40 +
+          (matchThemes.has(theme) ? 30 : 0) +
+          (copy.bin_id ? 5 : 0),
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, booksNeeded)
+    .map(row => row.copy);
+
+  if (selectedCopies.length < booksNeeded) {
+    throw new Error(
+      `Not enough never-before-sent in-house books for ${member.name ?? "this member"} (${selectedCopies.length}/${booksNeeded}).`
+    );
+  }
+
+  const countRes = await sbFetch("/shipments?select=id", {
+    headers: { Prefer: "count=exact", Range: "0-0" },
+  });
+  const total = parseInt(
+    countRes.headers.get("content-range")?.split("/")[1] ?? "0",
+    10
+  );
+  const shipmentNumber = `SHP-${String(total + 1).padStart(6, "0")}`;
+  const orderNumber = `BN-${String(total + 1001).padStart(4, "0")}`;
+
+  const shipmentRows = await sbJson<{ id: string }[]>("/shipments", {
+    method: "POST",
+    body: JSON.stringify({
+      member_id: member.id,
+      status: "picking",
+      shipment_type: "outbound",
+      shipment_number: shipmentNumber,
+      order_number: orderNumber,
+      scheduled_ship_date: getNextShipDate(),
+      created_at: now,
+      updated_at: now,
+    }),
+  });
+  const shipment = shipmentRows[0];
+  if (!shipment?.id) throw new Error("Failed to create shipment.");
+
+  try {
+    await sbVoid("/shipment_books", {
+      method: "POST",
+      body: JSON.stringify(
+        selectedCopies.map((copy, index) => ({
+          shipment_id: shipment.id,
+          book_title_id: copy.book_title_id,
+          book_copy_id: copy.id,
+          status: "ready_for_picking",
+          selection_reason: index === 0 ? input.source ?? "manual" : "matched",
+          match_score: null,
+          created_at: now,
+        }))
+      ),
+      headers: { Prefer: "return=minimal" },
+    });
+
+    for (const copy of selectedCopies) {
+      await sbVoid(`/book_copies?id=eq.${copy.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "reserved",
+          shipment_id: shipment.id,
+          updated_at: now,
+        }),
+        headers: { Prefer: "return=minimal" },
+      });
+    }
+  } catch (error) {
+    await sbVoid(`/shipments?id=eq.${shipment.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "cancelled",
+        updated_at: now,
+      }),
+      headers: { Prefer: "return=minimal" },
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    created: true,
+    shipment_id: shipment.id,
+    shipment_number: shipmentNumber,
+    order_number: orderNumber,
+    books_assigned: selectedCopies.length,
+  };
+}
+
 async function processReturnedBook(input: {
   copy_id: string;
   shipment_id?: string | null;
@@ -246,11 +517,28 @@ async function processReturnedBook(input: {
     headers: { Prefer: "return=minimal" },
   });
 
+  let nextShipment: Awaited<ReturnType<typeof createPickingOrderForMember>> | null =
+    null;
+  let nextShipmentError: string | null = null;
+  if (memberId && nextReturnStatus === "received") {
+    try {
+      nextShipment = await createPickingOrderForMember({
+        member_id: memberId,
+        source: "return",
+      });
+    } catch (error) {
+      nextShipmentError =
+        error instanceof Error ? error.message : "Could not create next order.";
+    }
+  }
+
   return {
     success: true,
     return_number: returnRecord.return_number ?? returnNumber,
     return_id: returnId,
     status: nextReturnStatus,
+    next_shipment: nextShipment,
+    next_shipment_error: nextShipmentError,
   };
 }
 
@@ -331,6 +619,16 @@ export const appRouter = router({
           nextCreditAt: credits[0]?.next_issue_at ?? null,
         };
       }),
+
+    requestBundle: publicProcedure
+      .input(z.object({ member_id: z.string() }))
+      .mutation(async ({ input }) => {
+        return createPickingOrderForMember({
+          member_id: input.member_id,
+          source: "manual",
+        });
+      }),
+
     create: publicProcedure
       .input(
         z.object({
@@ -1989,6 +2287,8 @@ export const appRouter = router({
           return_number: lastResult?.return_number ?? null,
           return_id: lastResult?.return_id ?? null,
           status: lastResult?.status ?? null,
+          next_shipment: lastResult?.next_shipment ?? null,
+          next_shipment_error: lastResult?.next_shipment_error ?? null,
         };
       }),
 

@@ -64,15 +64,26 @@ export default function ReturnsPage() {
     utils.returns.history.invalidate();
     utils.inventory.summary.invalidate();
     utils.inventory.bookTitles.invalidate();
+    utils.picking.dailyOrders.invalidate();
   };
 
   const processBundle = trpc.returns.processBundle.useMutation({
     onSuccess: result => {
-      toast.success(
-        result.processed_count
-          ? `${result.processed_count} books checked in`
-          : "No outstanding books in that bundle"
-      );
+      if (result.next_shipment?.created) {
+        toast.success(
+          `${result.processed_count} books checked in; new order ${result.next_shipment.order_number} added to Picking`
+        );
+      } else if (result.next_shipment_error) {
+        toast.warning(
+          `${result.processed_count} books checked in; no new order created: ${result.next_shipment_error}`
+        );
+      } else {
+        toast.success(
+          result.processed_count
+            ? `${result.processed_count} books checked in`
+            : "No outstanding books in that bundle"
+        );
+      }
       invalidateReturns();
     },
     onError: (err: any) => toast.error(`Failed to check in bundle: ${err.message}`),
@@ -80,13 +91,19 @@ export default function ReturnsPage() {
 
   const processBook = trpc.returns.processBundleBook.useMutation({
     onSuccess: (_result, variables) => {
-      toast.success(
-        variables.outcome === "missing"
-          ? "Book marked missing"
-          : variables.outcome === "issue"
-            ? "Book checked in with issue noted"
-            : "Book checked in"
-      );
+      if (_result.next_shipment?.created) {
+        toast.success(`Book checked in; new order ${_result.next_shipment.order_number} added to Picking`);
+      } else if (_result.next_shipment_error) {
+        toast.warning(`Book checked in; no new order created: ${_result.next_shipment_error}`);
+      } else {
+        toast.success(
+          variables.outcome === "missing"
+            ? "Book marked missing"
+            : variables.outcome === "issue"
+              ? "Book checked in with issue noted"
+              : "Book checked in"
+        );
+      }
       invalidateReturns();
     },
     onError: (err: any) => toast.error(`Failed to update book: ${err.message}`),
