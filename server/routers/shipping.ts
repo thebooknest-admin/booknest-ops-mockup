@@ -136,11 +136,11 @@ export const shippingRouter = router({
       const unreadyBook = shipmentBooks.find(
         (book) =>
           book.status !== 'picked' ||
-          !['reserved', 'in_transit'].includes(book.book_copies?.status ?? '')
+          !['in_house', 'in_transit'].includes(book.book_copies?.status ?? '')
       );
 
       if (unreadyBook) {
-        throw new Error('Cannot ship until every picked book is reserved for this shipment');
+        throw new Error('Cannot ship until every picked book is available for this shipment');
       }
 
       const now = new Date().toISOString();

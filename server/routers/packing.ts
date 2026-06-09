@@ -98,9 +98,8 @@ export const packingRouter = router({
         throw new Error("Cannot pack until every assigned book has been scanned in picking.");
       }
 
-      const copyIds = shipmentBooks.map((book) => book.book_copy_id!);
       const unreservableBook = shipmentBooks.find(
-        (book) => !["in_house", "reserved", "in_transit"].includes(book.book_copies?.status ?? "")
+        (book) => !["in_house", "in_transit"].includes(book.book_copies?.status ?? "")
       );
 
       if (unreservableBook) {
@@ -108,15 +107,6 @@ export const packingRouter = router({
       }
 
       const now = new Date().toISOString();
-      await sbVoid(`/book_copies?id=in.(${copyIds.join(",")})&status=in.(in_house,reserved)`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "reserved",
-          updated_at: now,
-        }),
-        headers: { Prefer: "return=minimal" },
-      });
-
       await sbVoid(`/shipments?id=eq.${input.shipment_id}`, {
         method: "PATCH",
         body: JSON.stringify({
