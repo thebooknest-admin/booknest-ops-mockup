@@ -51,8 +51,8 @@ export default function PackingPage() {
       });
       refetch();
     },
-    onError: (_, variables) => {
-      toast.error("Failed to mark as packed. Please try again.");
+    onError: (err: any, variables) => {
+      toast.error(`Failed to mark as packed: ${err.message}`);
       setMarkingIds((prev) => {
         const next = new Set(prev);
         next.delete(variables.shipment_id);

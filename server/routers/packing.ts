@@ -91,21 +91,37 @@ export const packingRouter = router({
       }
 
       const incompleteBook = shipmentBooks.find(
-        (book) =>
-          !book.book_copy_id ||
-          book.status !== "picked" ||
-          !["reserved", "in_transit"].includes(book.book_copies?.status ?? "")
+        (book) => !book.book_copy_id || book.status !== "picked"
       );
 
       if (incompleteBook) {
         throw new Error("Cannot pack until every assigned book has been scanned in picking.");
       }
 
+      const copyIds = shipmentBooks.map((book) => book.book_copy_id!);
+      const unreservableBook = shipmentBooks.find(
+        (book) => !["in_house", "reserved", "in_transit"].includes(book.book_copies?.status ?? "")
+      );
+
+      if (unreservableBook) {
+        throw new Error("Cannot pack because one or more picked books is no longer available.");
+      }
+
+      const now = new Date().toISOString();
+      await sbVoid(`/book_copies?id=in.(${copyIds.join(",")})&status=in.(in_house,reserved)`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "reserved",
+          updated_at: now,
+        }),
+        headers: { Prefer: "return=minimal" },
+      });
+
       await sbVoid(`/shipments?id=eq.${input.shipment_id}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "packed",
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         }),
         headers: { Prefer: "return=minimal" },
       });
