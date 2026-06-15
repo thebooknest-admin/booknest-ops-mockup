@@ -1045,7 +1045,7 @@ export const appRouter = router({
         const now = new Date().toISOString();
 
         const existingTitleRes = await sbFetch(
-          `/book_titles?id=eq.${id}&limit=1&select=id,age_group`
+          `/book_titles?id=eq.${id}&limit=1&select=id,age_group,bin_theme`
         );
 
         if (!existingTitleRes.ok) {
@@ -1054,8 +1054,11 @@ export const appRouter = router({
           );
         }
 
-        const existingTitles: { id: string; age_group: string | null }[] =
-          await existingTitleRes.json();
+        const existingTitles: {
+          id: string;
+          age_group: string | null;
+          bin_theme: string | null;
+        }[] = await existingTitleRes.json();
 
         const existingTitle = existingTitles[0];
 
@@ -1124,6 +1127,11 @@ export const appRouter = router({
             await copiesRes.json();
 
           const newPrefix = getSkuPrefixForAgeGroup(newAgeGroup);
+          const copyBinId =
+            getBinCodeForAgeGroupAndTheme(
+              newAgeGroup,
+              fields.bin_theme ?? existingTitle.bin_theme
+            ) ?? undefined;
 
           const existingSkusRes = await sbFetch(
             `/book_copies?age_group=eq.${newAgeGroup}&select=sku&limit=10000`
@@ -1168,6 +1176,7 @@ export const appRouter = router({
                 body: JSON.stringify({
                   sku: newSku,
                   age_group: newAgeGroup,
+                  ...(copyBinId ? { bin_id: copyBinId } : {}),
                   updated_at: now,
                 }),
                 headers: { Prefer: "return=minimal" },
@@ -1553,8 +1562,6 @@ export const appRouter = router({
             classificationText,
             requestedBinTheme
           ) ?? requestedBinTheme;
-        const canonicalBinId =
-          getBinCodeForAgeGroupAndTheme(ageGroupKey, binTheme) ?? input.bin_id;
         let tagRows =
           sanitizedTags.length > 0
             ? await sbJson<{ id: string; tag: string; bin_theme: string }[]>(
@@ -1605,6 +1612,7 @@ export const appRouter = router({
           );
         }
         let titleId: string;
+        let copyAgeGroup = ageGroupKey;
         if (existing.length > 0) {
           titleId = existing[0].id;
           const existingCopies = await sbJson<{ id: string }[]>(
@@ -1614,6 +1622,7 @@ export const appRouter = router({
             existingCopies.length === 0
               ? ageGroupKey
               : (normalizeAgeGroup(existing[0].age_group) ?? ageGroupKey);
+          copyAgeGroup = titleAgeGroup;
           await sbVoid(`/book_titles?id=eq.${titleId}`, {
             method: "PATCH",
             body: JSON.stringify({
@@ -1640,7 +1649,7 @@ export const appRouter = router({
               title: input.title,
               author: input.author,
               cover_url: input.cover_url ?? null,
-              age_group: ageGroupKey,
+              age_group: copyAgeGroup,
               bin_theme: binTheme,
               tag_ids: tagIds,
               publisher: input.publisher ?? null,
@@ -1655,11 +1664,13 @@ export const appRouter = router({
         }
 
         // ── Build SKU prefix ─────────────────────────────────────────────────
-        const agePrefix = getSkuPrefixForAgeGroup(ageGroupKey);
+        const canonicalBinId =
+          getBinCodeForAgeGroupAndTheme(copyAgeGroup, binTheme) ?? input.bin_id;
+        const agePrefix = getSkuPrefixForAgeGroup(copyAgeGroup);
 
         // ── Find first unused SKU number (fills gaps, handles >9999) ─────────
         const allSkuData = await sbJson<{ sku: string }[]>(
-          `/book_copies?age_group=eq.${ageGroupKey}&select=sku&order=sku.asc&limit=10000`
+          `/book_copies?age_group=eq.${copyAgeGroup}&select=sku&order=sku.asc&limit=10000`
         );
 
         const usedNumbers = new Set(
@@ -1685,7 +1696,7 @@ export const appRouter = router({
               sku,
               book_title_id: titleId,
               isbn: input.isbn,
-              age_group: ageGroupKey,
+              age_group: copyAgeGroup,
               bin_id: canonicalBinId,
               status: BOOK_COPY_STATUSES.pendingQc,
               condition: input.condition,

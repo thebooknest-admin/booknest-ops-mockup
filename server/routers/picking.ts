@@ -271,36 +271,43 @@ export const pickingRouter = router({
         }
       }
 
-      // Get available books for this age group
-      const booksRes = await sbFetch(
-        `/book_titles?age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,title,author,cover_url,bin_theme,age_group&limit=500`
+      // Get available copies for this age group. Copies are the source of truth
+      // because different editions of the same title can belong to different ages.
+      const copiesRes = await sbFetch(
+        `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,age_group,book_titles(id,title,author,cover_url,bin_theme)&limit=1000&order=received_at.asc`
       );
-      const allBooks: any[] = await booksRes.json();
+      const availableCopies: any[] = await copiesRes.json();
 
-      // Get in-house copy counts
-      const titleIds = allBooks.map((b) => b.id);
+      // Get in-house copy counts by title for this age group only.
       const inHouseCounts: Record<string, number> = {};
-      if (titleIds.length > 0) {
-        for (let i = 0; i < titleIds.length; i += 50) {
-          const batch = titleIds.slice(i, i + 50);
-          const copiesRes = await sbFetch(
-            `/book_copies?book_title_id=in.(${batch.join(",")})&status=eq.in_house&select=book_title_id&limit=1000`
-          );
-          const copies: any[] = await copiesRes.json();
-          for (const c of copies) {
-            inHouseCounts[c.book_title_id] = (inHouseCounts[c.book_title_id] ?? 0) + 1;
-          }
+      const copyByTitle = new Map<string, any>();
+      for (const copy of availableCopies) {
+        if (!copy.book_title_id || !copy.book_titles) continue;
+        inHouseCounts[copy.book_title_id] =
+          (inHouseCounts[copy.book_title_id] ?? 0) + 1;
+        if (!copyByTitle.has(copy.book_title_id)) {
+          copyByTitle.set(copy.book_title_id, copy);
         }
       }
+      const allBooks = Array.from(copyByTitle.values()).map(copy => ({
+        book_title_id: copy.book_title_id,
+        title: copy.book_titles.title,
+        author: copy.book_titles.author,
+        cover_url: copy.book_titles.cover_url,
+        bin_theme: copy.book_titles.bin_theme,
+        age_group: copy.age_group,
+        copy_id: copy.id,
+        sku: copy.sku,
+        bin_id: copy.bin_id,
+      }));
 
       // Score and rank books
       const scored = allBooks
-        .filter((b) => (inHouseCounts[b.id] ?? 0) > 0)
         .filter((b) => !avoidThemes.has(b.bin_theme ?? ""))
         .map((b) => {
-          const alreadySent = sentBookTitleIds.has(b.id);
+          const alreadySent = sentBookTitleIds.has(b.book_title_id);
           const themeMatch = matchThemes.has(b.bin_theme ?? "");
-          const inHouseCount = inHouseCounts[b.id] ?? 0;
+          const inHouseCount = inHouseCounts[b.book_title_id] ?? 0;
 
           let score = 40;
           if (themeMatch) score += 30;
@@ -318,12 +325,15 @@ export const pickingRouter = router({
           if (!themeMatch && !alreadySent) reasons.push("Variety pick");
 
           return {
-            book_title_id: b.id,
+            book_title_id: b.book_title_id,
             title: b.title,
             author: b.author,
             cover_url: b.cover_url,
             bin_theme: b.bin_theme,
             age_group: b.age_group,
+            copy_id: b.copy_id,
+            sku: b.sku,
+            bin_id: b.bin_id,
             in_house_count: inHouseCount,
             score,
             already_sent: alreadySent,
@@ -340,21 +350,7 @@ export const pickingRouter = router({
       const allSuggestions = primaryPool;
       const fallbackStartIndex = primaryPool.length;
 
-      // Fetch one specific in-house copy per suggestion book
-      const allSuggestionsWithCopies = await Promise.all(
-        allSuggestions.map(async (book) => {
-          const copyRes = await sbFetch(
-            `/book_copies?book_title_id=eq.${book.book_title_id}&status=eq.in_house&select=id,sku,bin_id&limit=1&order=received_at.asc`
-          );
-          const [copy] = await copyRes.json();
-          return {
-            ...book,
-            copy_id: copy?.id ?? null,
-            sku: copy?.sku ?? null,
-            bin_id: copy?.bin_id ?? null,
-          };
-        })
-      );
+      const allSuggestionsWithCopies = allSuggestions;
 
       return {
         member_id: input.member_id,
