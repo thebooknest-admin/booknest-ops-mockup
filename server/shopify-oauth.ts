@@ -106,7 +106,7 @@ export function registerShopifyOAuthRoutes(app: Express) {
 
     const state = crypto
       .createHmac("sha256", config.clientSecret)
-      .update(`${shopDomain}:${getQueryParam(req, "timestamp") ?? ""}`)
+      .update(shopDomain)
       .digest("hex");
     const redirectUri = `${config.appUrl}/api/shopify/callback`;
     const authUrl = new URL(`https://${shopDomain}/admin/oauth/authorize`);
@@ -128,7 +128,6 @@ export function registerShopifyOAuthRoutes(app: Express) {
 
       const code = getQueryParam(req, "code");
       const state = getQueryParam(req, "state");
-      const timestamp = getQueryParam(req, "timestamp") ?? "";
       const shopDomain = normalizeShopDomain(getQueryParam(req, "shop"));
 
       if (!code || !state || !shopDomain) {
@@ -137,7 +136,7 @@ export function registerShopifyOAuthRoutes(app: Express) {
       }
       const expectedState = crypto
         .createHmac("sha256", config.clientSecret)
-        .update(`${shopDomain}:${timestamp}`)
+        .update(shopDomain)
         .digest("hex");
       if (state !== expectedState) {
         res.status(401).send("Invalid Shopify OAuth state.");
