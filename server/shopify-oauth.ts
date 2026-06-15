@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
-import { sbJson } from "./supabase";
+import { sbVoid } from "./supabase";
 
 const SHOPIFY_SCOPES = "read_customers";
 
@@ -70,7 +70,7 @@ async function storeShopifyAccessToken(input: {
   scope: string | null;
 }) {
   const now = new Date().toISOString();
-  await sbJson("/shopify_installations", {
+  await sbVoid("/shopify_installations", {
     method: "POST",
     body: JSON.stringify({
       shop_domain: input.shopDomain,
