@@ -13,6 +13,7 @@ import { z } from "zod";
 import { normalizeAgeGroup } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
 import { sbFetch, sbJson, sbVoid } from "../supabase";
+import { ensureMemberDefaultAddressFromShopify } from "../shopify-address";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
@@ -597,11 +598,15 @@ return updated;
           throw new Error("One or more scanned copies no longer exists.");
         }
 
-        // Get member's default address
-        const addrRes = await sbFetch(
-          `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&select=id&limit=1`
-        );
-        const [address] = await addrRes.json();
+        let address: { id: string } | null = null;
+        try {
+          address = await ensureMemberDefaultAddressFromShopify(member_id);
+        } catch (error) {
+          console.warn(
+            `[picking.confirmPicks] Could not sync Shopify address for member ${member_id}:`,
+            error
+          );
+        }
 
         const usedShipmentBookIds = new Set<string>();
         for (let i = 0; i < book_title_ids.length; i++) {

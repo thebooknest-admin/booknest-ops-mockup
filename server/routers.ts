@@ -19,6 +19,10 @@ import { pickingRouter } from "./routers/picking";
 import { shippingRouter } from "./routers/shipping";
 import { packingRouter } from "./routers/packing";
 import {
+  ensureMemberDefaultAddressFromShopify,
+  type MemberAddressRow,
+} from "./shopify-address";
+import {
   getBinConfigs,
   getBookCopies,
   getBookTitlesWithCopies,
@@ -215,6 +219,33 @@ function selectWithThemeVariety<T>(
   return selected.map(row => row.item);
 }
 
+async function syncMemberInterests(
+  memberId: string,
+  interests: string[]
+): Promise<void> {
+  const uniqueInterests = Array.from(
+    new Set(interests.map(interest => interest.trim()).filter(Boolean))
+  );
+
+  await sbVoid(`/member_interests?member_id=eq.${memberId}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" },
+  });
+
+  if (!uniqueInterests.length) return;
+
+  await sbVoid("/member_interests", {
+    method: "POST",
+    body: JSON.stringify(
+      uniqueInterests.map(interest => ({
+        member_id: memberId,
+        interest_category: interest,
+      }))
+    ),
+    headers: { Prefer: "return=minimal" },
+  });
+}
+
 async function createPickingOrderForMember(input: {
   member_id: string;
   source?: "manual" | "return";
@@ -402,6 +433,16 @@ async function createPickingOrderForMember(input: {
     );
   }
 
+  let defaultAddress: MemberAddressRow | null = null;
+  try {
+    defaultAddress = await ensureMemberDefaultAddressFromShopify(member.id);
+  } catch (error) {
+    console.warn(
+      `[createPickingOrderForMember] Could not sync Shopify address for member ${member.id}:`,
+      error
+    );
+  }
+
   const countRes = await sbFetch("/shipments?select=id", {
     headers: { Prefer: "count=exact", Range: "0-0" },
   });
@@ -433,6 +474,7 @@ async function createPickingOrderForMember(input: {
       shipment_type: "outbound",
       shipment_number: shipmentNumber,
       order_number: orderNumber,
+      address_id: defaultAddress?.id ?? null,
       scheduled_ship_date: getNextShipDate(),
       created_at: now,
       updated_at: now,
@@ -1978,10 +2020,10 @@ export const appRouter = router({
 
         const now = new Date().toISOString();
 
-        // Update each child member row
+        // Update each child member row and sync the queue-facing interest table.
         await Promise.all(
-          input.children.map(async child =>
-            sbFetch(`/members?id=eq.${child.member_id}`, {
+          input.children.map(async child => {
+            const res = await sbFetch(`/members?id=eq.${child.member_id}`, {
               method: "PATCH",
               body: JSON.stringify({
                 child_name: child.child_name,
@@ -1995,8 +2037,16 @@ export const appRouter = router({
                 updated_at: now,
               }),
               headers: { Prefer: "return=minimal" },
-            })
-          )
+            });
+            if (!res.ok) {
+              throw new Error(`Failed to update child profile: ${await res.text()}`);
+            }
+
+            await syncMemberInterests(child.member_id, [
+              ...child.favorite_themes,
+              ...child.interests,
+            ]);
+          })
         );
 
         // Update primary member name + email
@@ -2014,7 +2064,7 @@ export const appRouter = router({
         );
 
         // Mark household complete
-        await sbFetch(`/households?id=eq.${household.id}`, {
+        const householdUpdateRes = await sbFetch(`/households?id=eq.${household.id}`, {
           method: "PATCH",
           body: JSON.stringify({
             welcome_form_completed: true,
@@ -2022,8 +2072,34 @@ export const appRouter = router({
           }),
           headers: { Prefer: "return=minimal" },
         });
+        if (!householdUpdateRes.ok) {
+          throw new Error(
+            `Failed to mark welcome form complete: ${await householdUpdateRes.text()}`
+          );
+        }
 
-        return { success: true };
+        const firstShipments = await Promise.all(
+          input.children.map(async child => {
+            try {
+              const shipment = await createPickingOrderForMember({
+                member_id: child.member_id,
+                source: "manual",
+              });
+              return { member_id: child.member_id, shipment, error: null };
+            } catch (error) {
+              return {
+                member_id: child.member_id,
+                shipment: null,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not create first order.",
+              };
+            }
+          })
+        );
+
+        return { success: true, first_shipments: firstShipments };
       }),
   }),
 
