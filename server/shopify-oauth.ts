@@ -1,10 +1,8 @@
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
-import { parse as parseCookie } from "cookie";
 import { sbJson } from "./supabase";
 
 const SHOPIFY_SCOPES = "read_customers";
-const SHOPIFY_STATE_COOKIE = "booknest_shopify_oauth_state";
 
 function getShopifyClientConfig() {
   const clientId = process.env.SHOPIFY_CLIENT_ID;
@@ -66,11 +64,6 @@ function verifyShopifyHmac(req: Request, clientSecret: string): boolean {
   );
 }
 
-function getCookie(req: Request, name: string): string | undefined {
-  const cookies = parseCookie(req.headers.cookie ?? "");
-  return cookies[name];
-}
-
 async function storeShopifyAccessToken(input: {
   shopDomain: string;
   accessToken: string;
@@ -111,7 +104,10 @@ export function registerShopifyOAuthRoutes(app: Express) {
       return;
     }
 
-    const state = crypto.randomBytes(16).toString("hex");
+    const state = crypto
+      .createHmac("sha256", config.clientSecret)
+      .update(`${shopDomain}:${getQueryParam(req, "timestamp") ?? ""}`)
+      .digest("hex");
     const redirectUri = `${config.appUrl}/api/shopify/callback`;
     const authUrl = new URL(`https://${shopDomain}/admin/oauth/authorize`);
     authUrl.searchParams.set("client_id", config.clientId);
@@ -119,74 +115,82 @@ export function registerShopifyOAuthRoutes(app: Express) {
     authUrl.searchParams.set("redirect_uri", redirectUri);
     authUrl.searchParams.set("state", state);
 
-    res.cookie(SHOPIFY_STATE_COOKIE, state, {
-      httpOnly: true,
-      sameSite: "none",
-      secure: true,
-      maxAge: 10 * 60 * 1000,
-    });
     res.redirect(302, authUrl.toString());
   });
 
   app.get("/api/shopify/callback", async (req: Request, res: Response) => {
-    const config = getShopifyClientConfig();
-    if (!config) {
-      res.status(500).send("Missing Shopify OAuth env vars.");
-      return;
-    }
-
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-    const shopDomain = normalizeShopDomain(getQueryParam(req, "shop"));
-    const cookieState = getCookie(req, SHOPIFY_STATE_COOKIE);
-
-    if (!code || !state || !shopDomain) {
-      res.status(400).send("Missing Shopify callback parameters.");
-      return;
-    }
-    if (!cookieState || cookieState !== state) {
-      res.status(401).send("Invalid Shopify OAuth state.");
-      return;
-    }
-    if (!verifyShopifyHmac(req, config.clientSecret)) {
-      res.status(401).send("Invalid Shopify callback signature.");
-      return;
-    }
-
-    const tokenRes = await fetch(
-      `https://${shopDomain}/admin/oauth/access_token`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
-          code,
-        }),
+    try {
+      const config = getShopifyClientConfig();
+      if (!config) {
+        res.status(500).send("Missing Shopify OAuth env vars.");
+        return;
       }
-    );
 
-    if (!tokenRes.ok) {
+      const code = getQueryParam(req, "code");
+      const state = getQueryParam(req, "state");
+      const timestamp = getQueryParam(req, "timestamp") ?? "";
+      const shopDomain = normalizeShopDomain(getQueryParam(req, "shop"));
+
+      if (!code || !state || !shopDomain) {
+        res.status(400).send("Missing Shopify callback parameters.");
+        return;
+      }
+      const expectedState = crypto
+        .createHmac("sha256", config.clientSecret)
+        .update(`${shopDomain}:${timestamp}`)
+        .digest("hex");
+      if (state !== expectedState) {
+        res.status(401).send("Invalid Shopify OAuth state.");
+        return;
+      }
+      if (!verifyShopifyHmac(req, config.clientSecret)) {
+        res.status(401).send("Invalid Shopify callback signature.");
+        return;
+      }
+
+      const tokenRes = await fetch(
+        `https://${shopDomain}/admin/oauth/access_token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            code,
+          }),
+        }
+      );
+
+      if (!tokenRes.ok) {
+        res
+          .status(502)
+          .send(`Shopify token exchange failed: ${await tokenRes.text()}`);
+        return;
+      }
+
+      const tokenData: { access_token: string; scope?: string } =
+        await tokenRes.json();
+      await storeShopifyAccessToken({
+        shopDomain,
+        accessToken: tokenData.access_token,
+        scope: tokenData.scope ?? null,
+      });
+
       res
-        .status(502)
-        .send(`Shopify token exchange failed: ${await tokenRes.text()}`);
-      return;
+        .status(200)
+        .send("BookNest Shopify address sync is installed. You can close this tab.");
+    } catch (error) {
+      console.error("[Shopify OAuth] Callback failed", error);
+      res
+        .status(500)
+        .send(
+          `Shopify OAuth callback failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
     }
-
-    const tokenData: { access_token: string; scope?: string } =
-      await tokenRes.json();
-    await storeShopifyAccessToken({
-      shopDomain,
-      accessToken: tokenData.access_token,
-      scope: tokenData.scope ?? null,
-    });
-
-    res.clearCookie(SHOPIFY_STATE_COOKIE);
-    res
-      .status(200)
-      .send("BookNest Shopify address sync is installed. You can close this tab.");
   });
 }
