@@ -121,6 +121,27 @@ async function getStoredShopifyAccessToken(
   }
 }
 
+async function getLatestStoredShopifyConfig():
+  Promise<{ shopDomain: string; accessToken: string } | null> {
+  try {
+    const rows = await sbJson<
+      { shop_domain: string; access_token: string }[]
+    >(
+      "/shopify_installations?select=shop_domain,access_token&order=updated_at.desc&limit=1"
+    );
+    const installation = rows[0];
+    return installation
+      ? {
+          shopDomain: installation.shop_domain,
+          accessToken: installation.access_token,
+        }
+      : null;
+  } catch (error) {
+    console.warn("[Shopify] Could not read latest Shopify token:", error);
+    return null;
+  }
+}
+
 async function getShopifyAdminConfig():
   Promise<{ shopDomain: string; accessToken: string } | null> {
   const envConfig = getShopifyGraphqlConfig();
@@ -128,27 +149,13 @@ async function getShopifyAdminConfig():
 
   const shopDomain = getConfiguredShopDomain();
   if (!shopDomain) {
-    try {
-      const rows = await sbJson<
-        { shop_domain: string; access_token: string }[]
-      >(
-        "/shopify_installations?select=shop_domain,access_token&order=updated_at.desc&limit=1"
-      );
-      const installation = rows[0];
-      return installation
-        ? {
-            shopDomain: installation.shop_domain,
-            accessToken: installation.access_token,
-          }
-        : null;
-    } catch (error) {
-      console.warn("[Shopify] Could not read latest Shopify token:", error);
-      return null;
-    }
+    return getLatestStoredShopifyConfig();
   }
 
   const accessToken = await getStoredShopifyAccessToken(shopDomain);
-  return accessToken ? { shopDomain, accessToken } : null;
+  return accessToken
+    ? { shopDomain, accessToken }
+    : getLatestStoredShopifyConfig();
 }
 
 export async function getExistingDefaultAddress(
