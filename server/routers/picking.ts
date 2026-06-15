@@ -14,6 +14,13 @@ import { normalizeAgeGroup } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
 import { sbFetch, sbJson, sbVoid } from "../supabase";
 import { ensureMemberDefaultAddressFromShopify } from "../shopify-address";
+import {
+  AVOID_TO_THEMES,
+  INTEREST_TO_THEMES,
+  buildNoteProfile,
+  getAvoidMatches,
+  scoreNoteMatch,
+} from "../book-matching";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
@@ -21,37 +28,6 @@ const TIER_BOOK_COUNT: Record<string, number> = {
   "story-nest": 8,
 };
 const DEFAULT_BOOK_COUNT = 4;
-
-const INTEREST_TO_THEMES: Record<string, string[]> = {
-  "Brave & Bold": ["adventure"],
-  "Heart & Home": ["life"],
-  "Curious Minds": ["learn"],
-  "Wild Things": ["nature"],
-  "All About Me": ["identity"],
-  "Old Favorites": ["classics"],
-  "Celebrate!": ["seasonal"],
-  "Giggle Worthy": ["humor"],
-};
-
-const AVOID_TO_THEMES: Record<string, string[]> = {
-  "Scary / Horror": ["horror", "scary"],
-  "Violence": ["violence", "war", "conflict"],
-  "Death & Grief": ["death", "grief"],
-  "Divorce": ["divorce"],
-  "Bathroom Humor": ["bathroom-humor"],
-  "War": ["war", "conflict"],
-  "Bullying": ["bullying"],
-  "Religious Content": ["religious"],
-  "LGBTQ+ themes": ["lgbtq"],
-  "Romance": ["romance"],
-  "Scary Animals": ["scary-animals"],
-  "Clowns": ["clowns"],
-  "Spiders / Bugs": ["bugs", "spiders"],
-  "Ghosts / Supernatural": ["supernatural", "ghosts"],
-  "Peer Pressure": ["peer-pressure"],
-  "Illness": ["illness"],
-  "Political Topics": ["political"],
-};
 
 // ✅ FIXED: normalize tier string (handles "Cozy Nest", "cozy-nest", etc.)
 // Also accepts books_per_box from DB as the source of truth when available
@@ -223,7 +199,7 @@ export const pickingRouter = router({
     .query(async ({ input }) => {
       // ✅ FIXED: added books_per_box to select
       const memberRes = await sbFetch(
-        `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid,books_per_box&limit=1`
+        `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid,notes,books_per_box&limit=1`
       );
       const [member] = await memberRes.json();
       if (!member) throw new Error("Member not found");
@@ -252,6 +228,7 @@ export const pickingRouter = router({
           avoidThemes.add(theme);
         }
       }
+      const noteProfile = buildNoteProfile(member.notes);
 
       // Get books already sent to this member
       const sentRes = await sbFetch(
@@ -274,9 +251,22 @@ export const pickingRouter = router({
       // Get available copies for this age group. Copies are the source of truth
       // because different editions of the same title can belong to different ages.
       const copiesRes = await sbFetch(
-        `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,age_group,book_titles(id,title,author,cover_url,bin_theme)&limit=1000&order=received_at.asc`
+        `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,age_group,book_titles(id,title,author,cover_url,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
       );
       const availableCopies: any[] = await copiesRes.json();
+      const tagIds = Array.from(
+        new Set(availableCopies.flatMap(copy => copy.book_titles?.tag_ids ?? []))
+      );
+      const tagMap: Record<string, string> = {};
+      if (tagIds.length > 0) {
+        for (let i = 0; i < tagIds.length; i += 50) {
+          const batch = tagIds.slice(i, i + 50);
+          const tags = await sbJson<{ id: string; tag: string }[]>(
+            `/book_sorting_tags?id=in.(${batch.join(",")})&select=id,tag&limit=1000`
+          );
+          for (const tag of tags) tagMap[tag.id] = tag.tag;
+        }
+      }
 
       // Get in-house copy counts by title for this age group only.
       const inHouseCounts: Record<string, number> = {};
@@ -295,6 +285,9 @@ export const pickingRouter = router({
         author: copy.book_titles.author,
         cover_url: copy.book_titles.cover_url,
         bin_theme: copy.book_titles.bin_theme,
+        tags: (copy.book_titles.tag_ids ?? [])
+          .map((tagId: string) => tagMap[tagId])
+          .filter(Boolean),
         age_group: copy.age_group,
         copy_id: copy.id,
         sku: copy.sku,
@@ -304,15 +297,42 @@ export const pickingRouter = router({
       // Score and rank books
       const scored = allBooks
         .filter((b) => !avoidThemes.has(b.bin_theme ?? ""))
+        .filter((b) => {
+          const avoidMatches = getAvoidMatches(member.topics_to_avoid, {
+            title: b.title,
+            author: b.author,
+            theme: b.bin_theme,
+            tags: b.tags,
+          });
+          return avoidMatches.length === 0;
+        })
+        .filter((b) => {
+          const noteMatch = scoreNoteMatch({
+            profile: noteProfile,
+            title: b.title,
+            author: b.author,
+            theme: b.bin_theme,
+            tags: b.tags,
+          });
+          return !noteMatch.excluded;
+        })
         .map((b) => {
           const alreadySent = sentBookTitleIds.has(b.book_title_id);
           const themeMatch = matchThemes.has(b.bin_theme ?? "");
           const inHouseCount = inHouseCounts[b.book_title_id] ?? 0;
+          const noteMatch = scoreNoteMatch({
+            profile: noteProfile,
+            title: b.title,
+            author: b.author,
+            theme: b.bin_theme,
+            tags: b.tags,
+          });
 
           let score = 40;
           if (themeMatch) score += 30;
           if (alreadySent) score -= 50;
           if (inHouseCount > 2) score += 10;
+          score += noteMatch.score;
 
           const reasons: string[] = [];
           if (themeMatch) {
@@ -321,6 +341,7 @@ export const pickingRouter = router({
             );
             if (matchedCats.length > 0) reasons.push(`Matches: ${matchedCats.join(", ")}`);
           }
+          reasons.push(...noteMatch.reasons);
           if (alreadySent) reasons.push("Already sent");
           if (!themeMatch && !alreadySent) reasons.push("Variety pick");
 

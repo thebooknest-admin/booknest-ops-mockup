@@ -23,6 +23,13 @@ import {
   type MemberAddressRow,
 } from "./shopify-address";
 import {
+  AVOID_TO_THEMES,
+  INTEREST_TO_THEMES,
+  buildNoteProfile,
+  getAvoidMatches,
+  scoreNoteMatch,
+} from "./book-matching";
+import {
   getBinConfigs,
   getBookCopies,
   getBookTitlesWithCopies,
@@ -49,37 +56,6 @@ const TIER_BOOK_COUNT: Record<string, number> = {
   "story-nest": 8,
 };
 const DEFAULT_BOOK_COUNT = 4;
-
-const INTEREST_TO_THEMES: Record<string, string[]> = {
-  "Brave & Bold": ["adventure"],
-  "Heart & Home": ["life"],
-  "Curious Minds": ["learn"],
-  "Wild Things": ["nature"],
-  "All About Me": ["identity"],
-  "Old Favorites": ["classics"],
-  "Celebrate!": ["seasonal"],
-  "Giggle Worthy": ["humor"],
-};
-
-const AVOID_TO_THEMES: Record<string, string[]> = {
-  "Scary / Horror": ["horror", "scary"],
-  Violence: ["violence", "war", "conflict"],
-  "Death & Grief": ["death", "grief"],
-  Divorce: ["divorce"],
-  "Bathroom Humor": ["bathroom-humor"],
-  War: ["war", "conflict"],
-  Bullying: ["bullying"],
-  "Religious Content": ["religious"],
-  "LGBTQ+ themes": ["lgbtq"],
-  Romance: ["romance"],
-  "Scary Animals": ["scary-animals"],
-  Clowns: ["clowns"],
-  "Spiders / Bugs": ["bugs", "spiders"],
-  "Ghosts / Supernatural": ["supernatural", "ghosts"],
-  "Peer Pressure": ["peer-pressure"],
-  Illness: ["illness"],
-  "Political Topics": ["political"],
-};
 
 function getBookCount(tier: string | null, booksPerBox?: number | null): number {
   if (booksPerBox) return booksPerBox;
@@ -272,11 +248,12 @@ async function createPickingOrderForMember(input: {
       age_group: string | null;
       books_per_box: number | null;
       topics_to_avoid: string[] | null;
+      notes: string | null;
       subscription_status: string | null;
       welcome_form_completed: boolean | null;
     }[]
   >(
-    `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,books_per_box,topics_to_avoid,subscription_status,welcome_form_completed&limit=1`
+    `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,books_per_box,topics_to_avoid,notes,subscription_status,welcome_form_completed&limit=1`
   );
 
   if (!member) throw new Error("Member not found.");
@@ -353,6 +330,7 @@ async function createPickingOrderForMember(input: {
       avoidThemes.add(theme);
     }
   }
+  const noteProfile = buildNoteProfile(member.notes);
 
   const availableCopies = await sbJson<
     {
@@ -397,6 +375,21 @@ async function createPickingOrderForMember(input: {
     const tags = (copy.book_titles?.tag_ids ?? [])
       .map(tagId => tagMap[tagId])
       .filter(Boolean);
+    const avoidMatches = getAvoidMatches(member.topics_to_avoid, {
+      title: copy.book_titles?.title,
+      author: copy.book_titles?.author,
+      theme,
+      tags,
+    });
+    if (avoidMatches.length > 0) continue;
+    const noteMatch = scoreNoteMatch({
+      profile: noteProfile,
+      title: copy.book_titles?.title,
+      author: copy.book_titles?.author,
+      theme,
+      tags,
+    });
+    if (noteMatch.excluded) continue;
     if (
       !isSeasonalBookAllowed({
         title: copy.book_titles?.title,
@@ -411,16 +404,32 @@ async function createPickingOrderForMember(input: {
     }
   }
 
+  const noteMatchByCopyId = new Map<string, { score: number; reasons: string[] }>();
   const scoredCopies = Array.from(bestCopyByTitle.values())
     .map(copy => {
       const theme = copy.book_titles?.bin_theme ?? "";
+      const tags = (copy.book_titles?.tag_ids ?? [])
+        .map(tagId => tagMap[tagId])
+        .filter(Boolean);
+      const noteMatch = scoreNoteMatch({
+        profile: noteProfile,
+        title: copy.book_titles?.title,
+        author: copy.book_titles?.author,
+        theme,
+        tags,
+      });
+      noteMatchByCopyId.set(copy.id, {
+        score: noteMatch.score,
+        reasons: noteMatch.reasons,
+      });
       return {
         item: copy,
         theme: theme || "Uncategorized",
         score:
           40 +
           (matchThemes.has(theme) ? 30 : 0) +
-          (copy.bin_id ? 5 : 0),
+          (copy.bin_id ? 5 : 0) +
+          noteMatch.score,
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -492,8 +501,10 @@ async function createPickingOrderForMember(input: {
           book_title_id: copy.book_title_id,
           book_copy_id: copy.id,
           status: "ready_for_picking",
-          selection_reason: index === 0 ? input.source ?? "manual" : "matched",
-          match_score: null,
+          selection_reason:
+            noteMatchByCopyId.get(copy.id)?.reasons.join("; ") ||
+            (index === 0 ? input.source ?? "manual" : "matched"),
+          match_score: noteMatchByCopyId.get(copy.id)?.score ?? null,
           created_at: now,
         }))
       ),
