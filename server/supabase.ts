@@ -177,6 +177,7 @@ export interface BookCopy {
   age_group: string;
   bin: string | null;
   bin_id: string | null;
+  section: string | null;
   status: string;
   condition: string | null;
   label_status: string;
@@ -225,7 +226,7 @@ export async function getInventorySummary(): Promise<{
   low_bins: string[];
 }> {
   const res = await sbFetch(
-    "/book_copies?select=status,age_group,bin_id&limit=2000",
+    "/book_copies?select=status,age_group,bin_id,section&limit=2000",
     {
       headers: { Prefer: "count=exact" },
     }
@@ -235,6 +236,7 @@ export async function getInventorySummary(): Promise<{
     status: string;
     age_group: string;
     bin_id: string | null;
+    section: string | null;
   }[] = await res.json();
 
   const nonInventoryStatuses = new Set([
@@ -428,6 +430,7 @@ export interface BookTitleWithCopies extends BookTitle {
   returned_count: number;
   restricted_count: number;
   bin_id: string | null;
+  section: string | null;
   sku_min: string | null;
   sku_max: string | null;
 }
@@ -459,6 +462,7 @@ export async function getBookTitlesWithCopies(params?: {
     status: string;
     label_status: string | null;
     bin_id: string | null;
+    section: string | null;
     sku: string | null;
   }[] = [];
 
@@ -468,7 +472,7 @@ export async function getBookTitlesWithCopies(params?: {
     const copiesRes = await sbFetch(
       `/book_copies?book_title_id=in.(${batch.join(
         ","
-      )})&select=book_title_id,status,label_status,bin_id,sku&limit=2000`
+      )})&select=book_title_id,status,label_status,bin_id,section,sku&limit=2000`
     );
 
     if (copiesRes.ok) {
@@ -477,6 +481,7 @@ export async function getBookTitlesWithCopies(params?: {
         status: string;
         label_status: string | null;
         bin_id: string | null;
+        section: string | null;
         sku: string | null;
       }[] = await copiesRes.json();
 
@@ -503,6 +508,7 @@ export async function getBookTitlesWithCopies(params?: {
       returned: number;
       restricted: number;
       bin_id: string | null;
+      section: string | null;
       skus: string[];
     }
   > = {};
@@ -519,6 +525,7 @@ export async function getBookTitlesWithCopies(params?: {
         returned: 0,
         restricted: 0,
         bin_id: null,
+        section: null,
         skus: [],
       };
     }
@@ -545,6 +552,9 @@ export async function getBookTitlesWithCopies(params?: {
 
     if (copy.bin_id && !entry.bin_id) {
       entry.bin_id = copy.bin_id;
+    }
+    if (copy.section && !entry.section) {
+      entry.section = copy.section;
     }
 
     if (copy.sku) {
@@ -594,6 +604,7 @@ export async function getBookTitlesWithCopies(params?: {
       returned_count: entry?.returned ?? 0,
       restricted_count: entry?.restricted ?? 0,
       bin_id: entry?.bin_id ?? null,
+      section: entry?.section ?? null,
       sku_min: skus.length > 0 ? skus[0] : null,
       sku_max: skus.length > 1 ? skus[skus.length - 1] : null,
     };

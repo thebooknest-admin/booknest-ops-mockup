@@ -317,7 +317,10 @@ export default function ReturnsPage() {
                                 )}
                               </div>
                               <span className="text-xs text-muted-foreground shrink-0">
-                                {book.bin_id ?? book.copy_status?.replace(/_/g, " ") ?? "No bin"}
+                                {book.location ??
+                                  book.bin_id ??
+                                  book.copy_status?.replace(/_/g, " ") ??
+                                  "No bin"}
                               </span>
                             </div>
 

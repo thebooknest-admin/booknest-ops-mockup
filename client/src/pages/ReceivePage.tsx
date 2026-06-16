@@ -27,6 +27,11 @@ import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { useBarcodeScanner } from "@/components/useBarcodeScanner";
 import {
+  formatInventoryLocation,
+  normalizeShelvingSection,
+  requiresShelvingSection,
+} from "@shared/booknest";
+import {
   TAG_TAXONOMY,
   getCategoryForTag,
   buildBinName,
@@ -59,6 +64,10 @@ const AGE_GROUPS = [
   "Soarers (6-8)",
   "Sky Readers (9-12)",
 ];
+
+const SECTION_OPTIONS = Array.from({ length: 8 }, (_, index) =>
+  String.fromCharCode(65 + index)
+);
 
 const AGE_EMOJIS: Record<string, string> = {
   "Hatchlings (0-2)": "🐣",
@@ -840,6 +849,8 @@ export default function ReceivePage() {
   const [useSystemKeyboard, setUseSystemKeyboard] = useState(false);
   const [isTooOld, setIsTooOld] = useState(false);
   const [tooOldReason, setTooOldReason] = useState("");
+  const [sectionMode, setSectionMode] = useState<"auto" | "manual">("auto");
+  const [manualSection, setManualSection] = useState("A");
 
   const [lookupId, setLookupId] = useState(0);
 
@@ -874,6 +885,11 @@ export default function ReceivePage() {
     ageGroup || "Fledglings (3-5)",
     selectedCategory
   );
+  const needsSection = requiresShelvingSection(ageGroup);
+  const currentLocation =
+    needsSection && sectionMode === "manual"
+      ? formatInventoryLocation(currentBin, manualSection) ?? currentBin
+      : currentBin;
 
   const { open: openScanner, ScannerModal } = useBarcodeScanner({
     onScan: async isbn => {
@@ -948,9 +964,21 @@ export default function ReceivePage() {
 
     setAutoTags(suggestedTags);
     setSelectedTags(suggestedTags.slice(0, 7));
+    setSectionMode(requiresShelvingSection(mappedAge) ? "auto" : "manual");
+    setManualSection("A");
 
     setStep(1);
   }, [classifyQuery.data]);
+
+  useEffect(() => {
+    if (requiresShelvingSection(ageGroup)) {
+      setSectionMode("auto");
+      setManualSection(section => section || "A");
+    } else {
+      setSectionMode("manual");
+      setManualSection("");
+    }
+  }, [ageGroup]);
 
   useEffect(() => {
     if (classifyError) {
@@ -1057,6 +1085,8 @@ export default function ReceivePage() {
       bin_id: buildBinName(ageGroup, selectedCategory),
 
       bin_theme: getCategoryMeta(selectedCategory).label,
+      section: needsSection && sectionMode === "manual" ? manualSection : null,
+      auto_pick_section: needsSection && sectionMode === "auto",
 
       condition: "good",
 
@@ -1076,6 +1106,8 @@ export default function ReceivePage() {
     setIsManualCategoryOverride(false);
     setIsTooOld(false);
     setTooOldReason("");
+    setSectionMode("auto");
+    setManualSection("A");
   };
 
   const handleManualEntry = () => {
@@ -1967,6 +1999,90 @@ export default function ReceivePage() {
                 }}
               />
 
+              {needsSection && (
+                <div className="rounded-3xl border border-border/70 bg-card p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-sm text-foreground">
+                        Shelving section
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Soarers and Sky Readers are shelved by section within
+                        the theme location.
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs font-bold bg-muted border border-border rounded-md px-2 py-1">
+                      {sectionMode === "auto"
+                        ? `${currentBin.replace(/-01$/, "")}-auto`
+                        : currentLocation}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSectionMode("auto")}
+                      className={cn(
+                        "px-3 py-2 rounded-lg border text-xs font-semibold transition-colors",
+                        sectionMode === "auto"
+                          ? "border-primary text-primary bg-primary/5"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      Auto-pick section
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSectionMode("manual")}
+                      className={cn(
+                        "px-3 py-2 rounded-lg border text-xs font-semibold transition-colors",
+                        sectionMode === "manual"
+                          ? "border-primary text-primary bg-primary/5"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      Manual
+                    </button>
+                  </div>
+
+                  {sectionMode === "manual" && (
+                    <div className="flex flex-wrap gap-2">
+                      {SECTION_OPTIONS.map(section => (
+                        <button
+                          key={section}
+                          type="button"
+                          onClick={() => setManualSection(section)}
+                          className={cn(
+                            "min-w-10 px-3 py-2 rounded-lg border text-sm font-mono font-bold transition-colors",
+                            normalizeShelvingSection(manualSection) === section
+                              ? "border-primary text-white"
+                              : "border-border text-muted-foreground hover:bg-muted"
+                          )}
+                          style={
+                            normalizeShelvingSection(manualSection) === section
+                              ? { backgroundColor: "oklch(0.42 0.11 155)" }
+                              : undefined
+                          }
+                        >
+                          {section}
+                        </button>
+                      ))}
+                      <input
+                        value={manualSection}
+                        onChange={event =>
+                          setManualSection(
+                            normalizeShelvingSection(event.target.value) ?? ""
+                          )
+                        }
+                        maxLength={3}
+                        placeholder="Other"
+                        className="w-20 px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="border-t border-border/60 pt-5">
                 <h3 className="font-semibold text-sm text-foreground mb-3">
                   Tags
@@ -2089,7 +2205,7 @@ export default function ReceivePage() {
                   className="text-xl font-bold font-mono mt-1"
                   style={{ color: "oklch(0.32 0.10 155)" }}
                 >
-                  {currentBin}
+                  {currentLocation}
                 </p>
 
                 {(() => {
@@ -2121,7 +2237,12 @@ export default function ReceivePage() {
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={addBookMutation.isPending}
+                  disabled={
+                    addBookMutation.isPending ||
+                    (needsSection &&
+                      sectionMode === "manual" &&
+                      !normalizeShelvingSection(manualSection))
+                  }
                   className="flex-1 py-2.5 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
                   style={{
                     backgroundColor: "oklch(0.42 0.11 155)",
@@ -2150,7 +2271,7 @@ export default function ReceivePage() {
           ageGroup={ageGroup}
           selectedCategory={selectedCategory}
           selectedTags={selectedTags}
-          currentBin={currentBin}
+          currentBin={currentLocation}
           isTooOld={isTooOld}
         />
       </div>

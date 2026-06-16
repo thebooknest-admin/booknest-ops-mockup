@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BookDetailDrawer } from "@/components/BookDetailDrawer";
+import { formatInventoryLocation } from "@shared/booknest";
 
 const AGE_FILTER_OPTIONS = [
   { label: "Hatchlings", value: "hatchlings" },
@@ -121,6 +122,14 @@ export default function InventoryPage() {
     });
 
   const { data: summary } = trpc.inventory.summary.useQuery();
+  const { data: backfillPreview, refetch: refetchBackfillPreview } =
+    trpc.inventory.sectionBackfillPreview.useQuery({ force: false });
+  const backfillSections = trpc.inventory.backfillSections.useMutation({
+    onSuccess: () => {
+      refetch();
+      refetchBackfillPreview();
+    },
+  });
 
   const { data: inTransitGroups } = trpc.inventory.inTransit.useQuery(
     undefined,
@@ -163,7 +172,9 @@ export default function InventoryPage() {
       book.title?.toLowerCase().includes(q) ||
       book.author?.toLowerCase().includes(q) ||
       book.isbn?.includes(search) ||
-      book.bin_id?.toLowerCase().includes(q) ||
+      formatInventoryLocation(book.bin_id, book.section)
+        ?.toLowerCase()
+        .includes(q) ||
       book.sku_min?.toLowerCase().includes(q) ||
       book.sku_max?.toLowerCase().includes(q) ||
       book.bin_theme?.toLowerCase().includes(q) ||
@@ -222,7 +233,7 @@ export default function InventoryPage() {
       formatAgeTier(book.age_group),
       book.bin_theme ?? "",
       book.tags?.map(tag => tag.tag).join(", ") ?? "",
-      book.bin_id ?? "",
+      formatInventoryLocation(book.bin_id, book.section) ?? "",
       book.copy_count ?? 0,
       book.in_house_count ?? 0,
       book.in_transit_count ?? 0,
@@ -315,6 +326,28 @@ export default function InventoryPage() {
             </Link>
           </div>
         </div>
+
+        {(backfillPreview?.total ?? 0) > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                {backfillPreview?.total ?? 0} Soarers/Sky copies need sections
+              </p>
+              <p className="text-xs text-amber-800/80">
+                Assign sections by age tier and theme without overwriting
+                existing sections.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => backfillSections.mutate({ force: false })}
+              disabled={backfillSections.isPending}
+              className="shrink-0 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {backfillSections.isPending ? "Assigning..." : "Backfill sections"}
+            </button>
+          </div>
+        )}
 
         {/* Status Filters */}
         <div className="rounded-xl border border-border bg-card p-3">
@@ -534,7 +567,8 @@ export default function InventoryPage() {
                       {/* Bin */}
                       <div className="col-span-1 min-w-0">
                         <span className="text-xs font-mono text-foreground bg-muted border border-border rounded-md px-2 py-1 whitespace-nowrap">
-                          {book.bin_id ?? "—"}
+                          {formatInventoryLocation(book.bin_id, book.section) ??
+                            "—"}
                         </span>
                       </div>
 

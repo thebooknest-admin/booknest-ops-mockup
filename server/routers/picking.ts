@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { normalizeAgeGroup } from "@shared/booknest";
+import { formatInventoryLocation, normalizeAgeGroup } from "@shared/booknest";
 import { publicProcedure, router } from "../_core/trpc";
 import { sbFetch, sbJson, sbVoid } from "../supabase";
 import { ensureMemberDefaultAddressFromShopify } from "../shopify-address";
@@ -251,7 +251,7 @@ export const pickingRouter = router({
       // Get available copies for this age group. Copies are the source of truth
       // because different editions of the same title can belong to different ages.
       const copiesRes = await sbFetch(
-        `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,age_group,book_titles(id,title,author,cover_url,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
+        `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,section,book_title_id,age_group,book_titles(id,title,author,cover_url,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
       );
       const availableCopies: any[] = await copiesRes.json();
       const tagIds = Array.from(
@@ -292,6 +292,8 @@ export const pickingRouter = router({
         copy_id: copy.id,
         sku: copy.sku,
         bin_id: copy.bin_id,
+        section: copy.section,
+        location: formatInventoryLocation(copy.bin_id, copy.section),
       }));
 
       // Score and rank books
@@ -409,7 +411,32 @@ export const pickingRouter = router({
         throw new Error(`Failed to get shipment pick list: ${await res.text()}`);
       }
 
-      return await res.json();
+      const rows: any[] = await res.json();
+      const copyIds = Array.from(
+        new Set(rows.map(row => row.book_copy_id).filter(Boolean))
+      );
+      if (copyIds.length === 0) return rows;
+
+      const copyRows = await sbJson<
+        { id: string; bin_id: string | null; section: string | null }[]
+      >(
+        `/book_copies?id=in.(${copyIds.join(",")})&select=id,bin_id,section&limit=200`
+      );
+      const copyMap = new Map(copyRows.map(copy => [copy.id, copy]));
+
+      return rows.map(row => {
+        const copy = copyMap.get(row.book_copy_id);
+        const location = formatInventoryLocation(
+          copy?.bin_id ?? row.bin_id,
+          copy?.section
+        );
+        return {
+          ...row,
+          bin_id: location ?? row.bin_id,
+          section: copy?.section ?? null,
+          location,
+        };
+      });
     }),
 
 
@@ -730,7 +757,7 @@ return updated;
         for (let i = 0; i < copyIds.length; i += 50) {
           const batch = copyIds.slice(i, i + 50);
           const cr = await sbFetch(
-            `/book_copies?id=in.(${batch.join(",")})&select=id,sku,bin_id&limit=200`
+            `/book_copies?id=in.(${batch.join(",")})&select=id,sku,bin_id,section&limit=200`
           );
           const copies: any[] = await cr.json();
           for (const c of copies) copyMap[c.id] = c;
@@ -759,7 +786,11 @@ return updated;
       for (const sb of sbBooks) {
         const title = titleMap[sb.book_title_id];
         if (!title) continue;
-        const binId = copyMap[sb.book_copy_id]?.bin_id ?? "UNKNOWN";
+        const binId =
+          formatInventoryLocation(
+            copyMap[sb.book_copy_id]?.bin_id,
+            copyMap[sb.book_copy_id]?.section
+          ) ?? "UNKNOWN";
         if (!binMap[binId]) binMap[binId] = { bin_id: binId, items: [] };
         binMap[binId].items.push({
           book_title_id: sb.book_title_id,

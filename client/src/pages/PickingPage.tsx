@@ -98,6 +98,7 @@ const swapMutation = trpc.picking.swapShipmentBook.useMutation({
   sku: book.book_sku,
   title: book.book_to_find?.replace(/^"|"$/g, "") ?? "Unknown Book",
 author: "",
+  cover_url: book.cover_url ?? null,
   bin_id: book.bin_id,
   match_reason: book.instruction,
 })) ?? [];

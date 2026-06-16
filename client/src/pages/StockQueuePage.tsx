@@ -20,6 +20,8 @@ type StockItem = {
   isbn: string | null;
   age_group: string;
   bin_id: string;
+  section: string | null;
+  location: string | null;
   condition: string | null;
   received_at: string;
   book_title: { id: string; title: string; author: string; cover_url: string | null } | null;
@@ -76,22 +78,29 @@ function StockCard({
   allBinIds: string[];
   selected: boolean;
   onToggle: () => void;
-  onConfirmSingle: (binId: string) => void;
+  onConfirmSingle: (binId: string, section?: string | null) => void;
   busy: boolean;
 }) {
-  const [selectedBinId, setSelectedBinId] = useState(item.bin_id);
+  const displayLocation = item.location ?? item.bin_id;
+  const [selectedBinId, setSelectedBinId] = useState(displayLocation);
   const { options: binOptions, nextBinId } = useMemo(
-    () => getBinOptions(item.bin_id, allBinIds),
-    [allBinIds, item.bin_id]
+    () => getBinOptions(displayLocation, allBinIds),
+    [allBinIds, displayLocation]
   );
 
   useEffect(() => {
-    setSelectedBinId(item.bin_id);
-  }, [item.bin_id]);
+    setSelectedBinId(displayLocation);
+  }, [displayLocation]);
 
   const handlePlacedClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onConfirmSingle(selectedBinId);
+    const baseSectionBin = item.bin_id.replace(/-01$/, "");
+    const sectionMatch = selectedBinId.match(/^(.+)-([A-Z]+)$/);
+    if (sectionMatch && sectionMatch[1] === baseSectionBin) {
+      onConfirmSingle(item.bin_id, sectionMatch[2]);
+      return;
+    }
+    onConfirmSingle(selectedBinId, null);
   };
 
   return (
@@ -194,7 +203,7 @@ export default function StockQueuePage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const allBinIds = useMemo(
-    () => Array.from(new Set([...knownBins, ...items.map((item) => item.bin_id)])).sort((a, b) =>
+    () => Array.from(new Set([...knownBins, ...items.map((item) => item.location ?? item.bin_id)])).sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true })
     ),
     [items, knownBins]
@@ -207,7 +216,7 @@ export default function StockQueuePage() {
           item.book_title?.title?.toLowerCase().includes(q) ||
           item.book_title?.author?.toLowerCase().includes(q) ||
           item.sku?.toLowerCase().includes(q) ||
-          item.bin_id?.toLowerCase().includes(q)
+          (item.location ?? item.bin_id)?.toLowerCase().includes(q)
         );
       })
     : items;
@@ -253,8 +262,9 @@ export default function StockQueuePage() {
   // Group by bin for easier shelving
   const byBin: Record<string, StockItem[]> = {};
   for (const item of filteredItems) {
-    if (!byBin[item.bin_id]) byBin[item.bin_id] = [];
-    byBin[item.bin_id].push(item);
+    const location = item.location ?? item.bin_id;
+    if (!byBin[location]) byBin[location] = [];
+    byBin[location].push(item);
   }
   const sortedBins = Object.keys(byBin).sort();
 
@@ -368,9 +378,15 @@ export default function StockQueuePage() {
               allBinIds={allBinIds}
               selected={selected.has(item.id)}
               onToggle={() => toggleSelect(item.id)}
-              onConfirmSingle={(binId) => {
-                confirmOneMutation.mutate({ copy_id: item.id, bin_id: binId });
-                toast.success(`${item.sku} shelved in ${binId}`);
+              onConfirmSingle={(binId, section) => {
+                confirmOneMutation.mutate({
+                  copy_id: item.id,
+                  bin_id: binId,
+                  section,
+                });
+                toast.success(
+                  `${item.sku} shelved in ${section ? `${binId.replace(/-01$/, "")}-${section}` : binId}`
+                );
               }}
               busy={confirmOneMutation.isPending || confirmAllMutation.isPending}
             />

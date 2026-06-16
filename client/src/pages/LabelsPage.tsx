@@ -12,6 +12,8 @@ type LabelCopy = {
   isbn: string | null;
   age_group: string | null;
   bin_id: string | null;
+  section: string | null;
+  location: string | null;
   label_status: string | null;
   received_at: string | null;
   book_title: {
@@ -26,7 +28,7 @@ function LabelCard({ copy }: { copy: LabelCopy }) {
   const title = copy.book_title?.title ?? "—";
   const isbn = copy.isbn ?? copy.book_title?.isbn ?? "";
   const sku = copy.sku ?? "";
-  const bin = copy.bin_id ?? "";
+  const bin = copy.location ?? copy.bin_id ?? "";
 
   return (
     <div className="label-card">
@@ -105,11 +107,12 @@ export default function LabelsPage() {
 
   const exportCSV = () => {
     const rows = [
-      ["Title", "Theme", "SKU"],
+      ["Title", "Theme", "SKU", "Location"],
       ...filteredCopies.map((c) => [
         c.book_title?.title ?? "",
         c.book_title?.bin_theme ?? "",
         c.sku ?? "",
+        c.location ?? c.bin_id ?? "",
       ]),
     ];
 
@@ -338,7 +341,7 @@ export default function LabelsPage() {
                       </div>
 
                       <div className="col-span-1 text-xs font-mono text-muted-foreground">
-                        {copy.bin_id ?? "—"}
+                        {copy.location ?? copy.bin_id ?? "—"}
                       </div>
                     </div>
                   );

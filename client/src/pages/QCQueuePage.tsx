@@ -14,6 +14,8 @@ type QCItem = {
   isbn: string | null;
   age_group: string;
   bin_id: string;
+  section: string | null;
+  location: string | null;
   condition: string | null;
   received_at: string;
   book_title: { id: string; title: string; author: string; cover_url: string | null } | null;
@@ -64,7 +66,9 @@ function QCCard({ item, onDone }: { item: QCItem; onDone: () => void }) {
             <div className="flex items-center gap-2 mt-1">
               <span className="font-mono text-xs text-muted-foreground">{item.sku}</span>
               <span className="text-muted-foreground">·</span>
-              <span className="text-xs text-muted-foreground">{item.bin_id}</span>
+              <span className="text-xs text-muted-foreground">
+                {item.location ?? item.bin_id}
+              </span>
             </div>
           </div>
 

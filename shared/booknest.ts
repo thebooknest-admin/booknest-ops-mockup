@@ -28,6 +28,16 @@ export const SKU_PREFIX_BY_AGE_GROUP: Record<AgeGroupKey, string> = {
   sky_readers: "SKY",
 };
 
+export const SECTIONED_AGE_GROUPS = new Set<AgeGroupKey>([
+  "soarers",
+  "sky_readers",
+]);
+
+export const SECTION_CAPACITY_BY_AGE_GROUP: Partial<Record<AgeGroupKey, number>> = {
+  soarers: 25,
+  sky_readers: 20,
+};
+
 export const BIN_CODE_BY_THEME: Record<string, string> = {
   Adventure: "ADV",
   "Laughs & Chaos": "LCH",
@@ -437,4 +447,62 @@ export function getBinCodeForAgeGroupAndTheme(
   if (!key || !themeCode) return null;
 
   return `${SKU_PREFIX_BY_AGE_GROUP[key]}-${themeCode}-01`;
+}
+
+export function requiresShelvingSection(
+  ageGroup: string | null | undefined
+): boolean {
+  const key = normalizeAgeGroup(ageGroup);
+  return key ? SECTIONED_AGE_GROUPS.has(key) : false;
+}
+
+export function getSectionCapacity(
+  ageGroup: string | null | undefined
+): number | null {
+  const key = normalizeAgeGroup(ageGroup);
+  return key ? (SECTION_CAPACITY_BY_AGE_GROUP[key] ?? null) : null;
+}
+
+export function normalizeShelvingSection(
+  section: string | null | undefined
+): string | null {
+  const normalized = (section ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .trim();
+
+  return normalized || null;
+}
+
+export function sectionIndexToLabel(index: number): string {
+  let n = Math.max(0, index);
+  let label = "";
+
+  do {
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+
+  return label;
+}
+
+export function sectionLabelToIndex(section: string | null | undefined): number {
+  const normalized = normalizeShelvingSection(section);
+  if (!normalized) return Number.POSITIVE_INFINITY;
+
+  return normalized.split("").reduce((sum, char) => {
+    return sum * 26 + (char.charCodeAt(0) - 64);
+  }, 0) - 1;
+}
+
+export function formatInventoryLocation(
+  binId: string | null | undefined,
+  section?: string | null
+): string | null {
+  if (!binId) return null;
+
+  const normalizedSection = normalizeShelvingSection(section);
+  if (!normalizedSection) return binId;
+
+  return `${binId.replace(/-01$/, "")}-${normalizedSection}`;
 }

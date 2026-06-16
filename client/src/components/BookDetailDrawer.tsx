@@ -18,6 +18,11 @@ import {
   Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  formatInventoryLocation,
+  normalizeShelvingSection,
+  requiresShelvingSection,
+} from "@shared/booknest";
 
 type BookCopy = {
   id: string;
@@ -25,6 +30,8 @@ type BookCopy = {
   isbn: string | null;
   age_group: string;
   bin_id: string;
+  section: string | null;
+  location: string | null;
   status: string;
   condition: string | null;
   label_status: string | null;
@@ -241,6 +248,7 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [sku, setSku] = useState(copy.sku);
   const [bin, setBin] = useState(copy.bin_id);
+  const [section, setSection] = useState(copy.section ?? "");
   const [status, setStatus] = useState(copy.status);
   const [condition, setCondition] = useState(copy.condition ?? "");
   const [notes, setNotes] = useState(copy.notes ?? "");
@@ -250,6 +258,7 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
 
     setSku(copy.sku);
     setBin(copy.bin_id);
+    setSection(copy.section ?? "");
     setStatus(copy.status);
     setCondition(copy.condition ?? "");
     setNotes(copy.notes ?? "");
@@ -273,10 +282,16 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
   });
 
   const save = () => {
+    if (requiresShelvingSection(copy.age_group) && !normalizeShelvingSection(section)) {
+      toast.error("Section is required for Soarers and Sky Readers.");
+      return;
+    }
+
     updateCopy.mutate({
       id: copy.id,
       sku: sku !== copy.sku ? sku : undefined,
       bin_id: bin !== copy.bin_id ? bin : undefined,
+      section: section !== (copy.section ?? "") ? section : undefined,
       status: status !== copy.status ? status : undefined,
       condition: condition !== (copy.condition ?? "") ? condition : undefined,
       notes: notes !== (copy.notes ?? "") ? notes : undefined,
@@ -286,6 +301,7 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
   const cancel = () => {
     setSku(copy.sku);
     setBin(copy.bin_id);
+    setSection(copy.section ?? "");
     setStatus(copy.status);
     setCondition(copy.condition ?? "");
     setNotes(copy.notes ?? "");
@@ -317,7 +333,7 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
               </span>
 
               <span className="text-xs font-mono text-foreground bg-muted border border-border rounded-md px-2 py-0.5">
-                {copy.bin_id || "No bin"}
+                {copy.location ?? copy.bin_id ?? "No bin"}
               </span>
             </div>
 
@@ -370,6 +386,18 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
 
             <FieldInput label="Bin" value={bin} onChange={setBin} mono />
 
+            {requiresShelvingSection(copy.age_group) && (
+              <FieldInput
+                label="Section"
+                value={section}
+                onChange={value =>
+                  setSection(normalizeShelvingSection(value) ?? "")
+                }
+                placeholder="A"
+                mono
+              />
+            )}
+
             <FieldSelect
               label="Status"
               value={status}
@@ -396,6 +424,15 @@ function CopyRow({ copy, onSaved }: { copy: BookCopy; onSaved: () => void }) {
             onChange={setNotes}
             placeholder="QC notes, damage description…"
           />
+
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Location preview
+            </p>
+            <p className="text-sm font-mono font-bold text-foreground mt-0.5">
+              {formatInventoryLocation(bin, section) ?? "No bin"}
+            </p>
+          </div>
 
           <div className="flex gap-2 justify-end">
             <button

@@ -4,12 +4,17 @@ import {
   BOOK_COPY_STATUSES,
   LABEL_STATUSES,
   TERMINAL_BOOK_COPY_STATUSES,
+  formatInventoryLocation,
   getAgeGroupLabel,
   getBinCodeForAgeGroupAndTheme,
+  getSectionCapacity,
   getThemeFromBookSignals,
   getSkuPrefixForAgeGroup,
   normalizeAgeGroup,
   sanitizeBookTags,
+  normalizeShelvingSection,
+  requiresShelvingSection,
+  sectionIndexToLabel,
 } from "@shared/booknest";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -89,6 +94,61 @@ function nextUnusedNumber(
     next++;
   } while (used.has(candidate));
   return candidate;
+}
+
+function addLocation<T extends { bin_id?: string | null; section?: string | null }>(
+  row: T
+): T & { location: string | null } {
+  return {
+    ...row,
+    location: formatInventoryLocation(row.bin_id, row.section),
+  };
+}
+
+async function pickNextShelvingSection(input: {
+  ageGroup: string | null | undefined;
+  theme: string | null | undefined;
+  binId?: string | null;
+}): Promise<string | null> {
+  if (!requiresShelvingSection(input.ageGroup)) return null;
+  if (!input.theme) return null;
+
+  const capacity = getSectionCapacity(input.ageGroup);
+  const ageKey = normalizeAgeGroup(input.ageGroup);
+  if (!capacity || !ageKey) return null;
+
+  const binId = input.binId ?? getBinCodeForAgeGroupAndTheme(ageKey, input.theme);
+  if (!binId) return null;
+
+  const rows = await sbJson<{ section: string | null }[]>(
+    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(ageKey)}&bin_id=eq.${encodeURIComponent(binId)}&section=not.is.null&select=section&limit=10000`
+  );
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const section = normalizeShelvingSection(row.section);
+    if (!section) continue;
+    counts.set(section, (counts.get(section) ?? 0) + 1);
+  }
+
+  for (let index = 0; ; index++) {
+    const candidate = sectionIndexToLabel(index);
+    if ((counts.get(candidate) ?? 0) < capacity) return candidate;
+  }
+}
+
+function sortSectionableBooks<T extends {
+  title?: string | null;
+  created_at?: string | null;
+  id: string;
+}>(books: T[]): T[] {
+  return [...books].sort((a, b) => {
+    const titleCompare = (a.title ?? "").localeCompare(b.title ?? "");
+    if (titleCompare !== 0) return titleCompare;
+    const createdCompare = (a.created_at ?? "").localeCompare(b.created_at ?? "");
+    if (createdCompare !== 0) return createdCompare;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 type HolidayWindow = {
@@ -337,6 +397,7 @@ async function createPickingOrderForMember(input: {
       id: string;
       sku: string | null;
       bin_id: string | null;
+      section: string | null;
       book_title_id: string;
       book_titles: {
         id: string;
@@ -347,7 +408,7 @@ async function createPickingOrderForMember(input: {
       } | null;
     }[]
   >(
-    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,book_title_id,book_titles(id,title,author,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
+    `/book_copies?status=eq.in_house&age_group=eq.${encodeURIComponent(memberAgeGroup)}&select=id,sku,bin_id,section,book_title_id,book_titles(id,title,author,bin_theme,tag_ids)&limit=1000&order=received_at.asc`
   );
 
   const tagIds = Array.from(
@@ -981,6 +1042,120 @@ export const appRouter = router({
       return getBinConfigs();
     }),
 
+    sectionBackfillPreview: publicProcedure
+      .input(z.object({ force: z.boolean().optional() }).optional())
+      .query(async ({ input }) => {
+        const force = input?.force ?? false;
+        const sectionFilter = force ? "" : "&section=is.null";
+        const rows = await sbJson<
+          {
+            id: string;
+            age_group: string | null;
+            bin_id: string | null;
+            section: string | null;
+            book_titles: { title: string | null; bin_theme: string | null } | null;
+          }[]
+        >(
+          `/book_copies?or=(age_group.ilike.*soar*,age_group.ilike.*sky*)&bin_id=not.is.null${sectionFilter}&status=in.(in_house,pending_stock,pending_label,pending_qc,returned,restricted)&select=id,age_group,bin_id,section,book_titles(title,bin_theme)&limit=10000`
+        );
+
+        const groups = new Map<string, { age_group: string; theme: string | null; bin_id: string; count: number }>();
+        for (const row of rows) {
+          if (!requiresShelvingSection(row.age_group) || !row.bin_id) continue;
+          const key = `${normalizeAgeGroup(row.age_group)}:${row.book_titles?.bin_theme ?? ""}:${row.bin_id}`;
+          const existing = groups.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            groups.set(key, {
+              age_group: normalizeAgeGroup(row.age_group) ?? row.age_group ?? "",
+              theme: row.book_titles?.bin_theme ?? null,
+              bin_id: row.bin_id,
+              count: 1,
+            });
+          }
+        }
+
+        return {
+          force,
+          total: rows.length,
+          groups: Array.from(groups.values()).sort((a, b) =>
+            `${a.age_group}-${a.bin_id}`.localeCompare(`${b.age_group}-${b.bin_id}`)
+          ),
+        };
+      }),
+
+    backfillSections: publicProcedure
+      .input(z.object({ force: z.boolean().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const force = input?.force ?? false;
+        const sectionFilter = force ? "" : "&section=is.null";
+        const rows = await sbJson<
+          {
+            id: string;
+            age_group: string | null;
+            bin_id: string | null;
+            section: string | null;
+            created_at: string | null;
+            book_titles: { title: string | null; bin_theme: string | null } | null;
+          }[]
+        >(
+          `/book_copies?or=(age_group.ilike.*soar*,age_group.ilike.*sky*)&bin_id=not.is.null${sectionFilter}&status=in.(in_house,pending_stock,pending_label,pending_qc,returned,restricted)&select=id,age_group,bin_id,section,created_at,book_titles(title,bin_theme)&limit=10000`
+        );
+
+        const grouped = new Map<string, typeof rows>();
+        for (const row of rows) {
+          if (!requiresShelvingSection(row.age_group) || !row.bin_id) continue;
+          const key = `${normalizeAgeGroup(row.age_group)}:${row.book_titles?.bin_theme ?? ""}:${row.bin_id}`;
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key)!.push(row);
+        }
+
+        let updated = 0;
+        const now = new Date().toISOString();
+        for (const groupRows of grouped.values()) {
+          const first = groupRows[0];
+          const capacity = getSectionCapacity(first.age_group) ?? 25;
+          const counts = new Map<string, number>();
+
+          if (!force) {
+            const existing = await sbJson<{ section: string | null }[]>(
+              `/book_copies?age_group=eq.${encodeURIComponent(normalizeAgeGroup(first.age_group) ?? first.age_group ?? "")}&bin_id=eq.${encodeURIComponent(first.bin_id ?? "")}&section=not.is.null&status=in.(in_house,pending_stock,pending_label,pending_qc,returned,restricted)&select=section&limit=10000`
+            );
+            for (const row of existing) {
+              const section = normalizeShelvingSection(row.section);
+              if (section) counts.set(section, (counts.get(section) ?? 0) + 1);
+            }
+          }
+
+          for (const row of sortSectionableBooks(
+            groupRows.map(groupRow => ({
+              ...groupRow,
+              title: groupRow.book_titles?.title ?? null,
+            }))
+          )) {
+            let section = "A";
+            for (let index = 0; ; index++) {
+              const candidate = sectionIndexToLabel(index);
+              if ((counts.get(candidate) ?? 0) < capacity) {
+                section = candidate;
+                break;
+              }
+            }
+
+            await sbVoid(`/book_copies?id=eq.${row.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ section, updated_at: now }),
+              headers: { Prefer: "return=minimal" },
+            });
+            counts.set(section, (counts.get(section) ?? 0) + 1);
+            updated++;
+          }
+        }
+
+        return { success: true, updated, force };
+      }),
+
     getBookDetail: publicProcedure
       .input(z.object({ id: z.string() }))
       .query(async ({ input }) => {
@@ -997,7 +1172,7 @@ export const appRouter = router({
         const title = titles[0];
 
         const copiesRes = await sbFetch(
-          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,status,condition,label_status,received_at,created_at,updated_at`
+          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,section,status,condition,label_status,received_at,created_at,updated_at`
         );
         const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
 
@@ -1011,7 +1186,7 @@ export const appRouter = router({
           tags = tagRes.ok ? await tagRes.json() : [];
         }
 
-        return { ...title, tags, copies };
+        return { ...title, tags, copies: copies.map(addLocation) };
       }),
 
     updateCopy: publicProcedure
@@ -1020,6 +1195,7 @@ export const appRouter = router({
           id: z.string(),
           sku: z.string().optional(),
           bin_id: z.string().optional(),
+          section: z.string().nullable().optional(),
           status: z.string().optional(),
           condition: z.string().optional(),
           notes: z.string().optional(),
@@ -1033,6 +1209,17 @@ export const appRouter = router({
         };
         if (fields.sku !== undefined) patch.sku = fields.sku;
         if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
+        if (fields.section !== undefined) {
+          const [copy] = await sbJson<{ id: string; age_group: string | null }[]>(
+            `/book_copies?id=eq.${id}&select=id,age_group&limit=1`
+          );
+          if (!copy) throw new Error("Book copy not found");
+          const section = normalizeShelvingSection(fields.section);
+          if (requiresShelvingSection(copy.age_group) && !section) {
+            throw new Error("Section is required for Soarers and Sky Readers.");
+          }
+          patch.section = section;
+        }
         if (fields.status !== undefined) {
           patch.status = fields.status;
           if (TERMINAL_BOOK_COPY_STATUSES.has(fields.status)) {
@@ -1206,6 +1393,7 @@ export const appRouter = router({
                   sku: newSku,
                   age_group: newAgeGroup,
                   ...(copyBinId ? { bin_id: copyBinId } : {}),
+                  section: null,
                   updated_at: now,
                 }),
                 headers: { Prefer: "return=minimal" },
@@ -1217,6 +1405,21 @@ export const appRouter = router({
                 `Failed to sync copy age/SKU: ${await copyUpdateRes.text()}`
               );
             }
+          }
+        } else if (fields.bin_theme !== undefined) {
+          const copyBinId =
+            getBinCodeForAgeGroupAndTheme(newAgeGroup, fields.bin_theme) ??
+            undefined;
+          if (copyBinId) {
+            await sbVoid(`/book_copies?book_title_id=eq.${id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                bin_id: copyBinId,
+                section: null,
+                updated_at: now,
+              }),
+              headers: { Prefer: "return=minimal" },
+            });
           }
         }
 
@@ -1231,7 +1434,7 @@ export const appRouter = router({
     inTransit: publicProcedure.query(async () => {
       // 1. Get all in_transit copies with book title
       const res = await sbFetch(
-        `/book_copies?status=eq.in_transit&select=id,sku,bin_id,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
+        `/book_copies?status=eq.in_transit&select=id,sku,bin_id,section,book_title_id,book_titles(id,title,author)&limit=500&order=sku.asc`
       );
       if (!res.ok) return [];
       const copies: any[] = await res.json();
@@ -1305,6 +1508,8 @@ export const appRouter = router({
           id: c.id,
           sku: c.sku,
           bin_id: c.bin_id,
+          section: c.section,
+          location: formatInventoryLocation(c.bin_id, c.section),
           book_title_id: c.book_title_id,
           title: c.book_titles?.title ?? "Unknown",
           author: c.book_titles?.author ?? "",
@@ -1465,7 +1670,7 @@ export const appRouter = router({
   labels: router({
     pending: publicProcedure.query(async () => {
       const copies = await sbJson<any[]>(
-        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,label_status,received_at&limit=1000&order=received_at.asc"
+        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,section,label_status,received_at&limit=1000&order=received_at.asc"
       );
       const titleIds = Array.from(
         new Set(copies.map(c => c.book_title_id).filter(Boolean))
@@ -1495,6 +1700,7 @@ export const appRouter = router({
       }
       return copies.map(c => ({
         ...c,
+        location: formatInventoryLocation(c.bin_id, c.section),
         isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as
           | string
           | null,
@@ -1547,6 +1753,8 @@ export const appRouter = router({
           age_group: z.string(),
           bin_id: z.string(),
           bin_theme: z.string().optional(),
+          section: z.string().nullable().optional(),
+          auto_pick_section: z.boolean().optional(),
           condition: z.string().default("good"),
           tags: z.array(z.string()).optional(),
         })
@@ -1695,6 +1903,26 @@ export const appRouter = router({
         // ── Build SKU prefix ─────────────────────────────────────────────────
         const canonicalBinId =
           getBinCodeForAgeGroupAndTheme(copyAgeGroup, binTheme) ?? input.bin_id;
+        let section = normalizeShelvingSection(input.section);
+        if (requiresShelvingSection(copyAgeGroup)) {
+          if (!binTheme) {
+            throw new Error(
+              "Choose a theme before assigning a section for Soarers or Sky Readers."
+            );
+          }
+          if (input.auto_pick_section) {
+            section = await pickNextShelvingSection({
+              ageGroup: copyAgeGroup,
+              theme: binTheme,
+              binId: canonicalBinId,
+            });
+          }
+          if (!section) {
+            throw new Error("Section is required for Soarers and Sky Readers.");
+          }
+        } else {
+          section = null;
+        }
         const agePrefix = getSkuPrefixForAgeGroup(copyAgeGroup);
 
         // ── Find first unused SKU number (fills gaps, handles >9999) ─────────
@@ -1727,6 +1955,7 @@ export const appRouter = router({
               isbn: input.isbn,
               age_group: copyAgeGroup,
               bin_id: canonicalBinId,
+              section,
               status: BOOK_COPY_STATUSES.pendingQc,
               condition: input.condition,
               label_status: LABEL_STATUSES.pending,
@@ -1755,7 +1984,13 @@ export const appRouter = router({
           );
         }
 
-        return { success: true, sku, copy_id: copy[0].id, title_id: titleId };
+        return {
+          success: true,
+          sku,
+          copy_id: copy[0].id,
+          title_id: titleId,
+          location: formatInventoryLocation(canonicalBinId, section),
+        };
       }),
   }),
 
@@ -1763,7 +1998,7 @@ export const appRouter = router({
   qc: router({
     queue: publicProcedure.query(async () => {
       const data = await sbJson<any[]>(
-        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
+        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,section,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
       );
       return data.map(c => ({
         id: c.id as string,
@@ -1771,6 +2006,8 @@ export const appRouter = router({
         isbn: c.isbn as string | null,
         age_group: c.age_group as string,
         bin_id: c.bin_id as string,
+        section: c.section as string | null,
+        location: formatInventoryLocation(c.bin_id, c.section),
         status: c.status as string,
         condition: c.condition as string | null,
         received_at: c.received_at as string,
@@ -1860,7 +2097,7 @@ export const appRouter = router({
   stock: router({
     queue: publicProcedure.query(async () => {
       const data = await sbJson<any[]>(
-        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
+        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,section,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
       );
       return data.map(c => ({
         id: c.id as string,
@@ -1868,6 +2105,8 @@ export const appRouter = router({
         isbn: c.isbn as string | null,
         age_group: c.age_group as string,
         bin_id: c.bin_id as string,
+        section: c.section as string | null,
+        location: formatInventoryLocation(c.bin_id, c.section),
         status: c.status as string,
         condition: c.condition as string | null,
         received_at: c.received_at as string,
@@ -1894,19 +2133,25 @@ export const appRouter = router({
       return { count: total };
     }),
     bins: publicProcedure.query(async () => {
-      const copies = await sbJson<{ bin_id: string | null }[]>(
-        "/book_copies?bin_id=not.is.null&status=in.(in_house,pending_stock,pending_label,pending_qc)&select=bin_id&limit=5000"
+      const copies = await sbJson<{ bin_id: string | null; section: string | null }[]>(
+        "/book_copies?bin_id=not.is.null&status=in.(in_house,pending_stock,pending_label,pending_qc)&select=bin_id,section&limit=5000"
       );
       return Array.from(
         new Set(
           copies
-            .map((copy) => copy.bin_id)
+            .map((copy) => formatInventoryLocation(copy.bin_id, copy.section))
             .filter((binId): binId is string => Boolean(binId))
         )
       ).sort((a, b) => a.localeCompare(b));
     }),
     confirmPlaced: publicProcedure
-      .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
+      .input(
+        z.object({
+          copy_id: z.string(),
+          bin_id: z.string().optional(),
+          section: z.string().nullable().optional(),
+        })
+      )
       .mutation(async ({ input }) => {
         await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
           method: "PATCH",
@@ -1914,6 +2159,9 @@ export const appRouter = router({
             status: "in_house",
             stocked_at: new Date().toISOString(),
             ...(input.bin_id ? { bin_id: input.bin_id } : {}),
+            ...(input.section !== undefined
+              ? { section: normalizeShelvingSection(input.section) }
+              : {}),
           }),
           headers: { Prefer: "return=minimal" },
         });
@@ -2220,6 +2468,7 @@ export const appRouter = router({
                 id: string;
                 sku: string | null;
                 bin_id: string | null;
+                section: string | null;
                 status: string | null;
                 book_titles: {
                   title: string | null;
@@ -2228,7 +2477,7 @@ export const appRouter = router({
               } | null;
             }[]
           >(
-            `/shipment_books?shipment_id=in.(${shipmentIds.join(",")})&book_copy_id=not.is.null&select=id,shipment_id,book_copy_id,book_copies(id,sku,bin_id,status,book_titles(title,author))&limit=1000`
+            `/shipment_books?shipment_id=in.(${shipmentIds.join(",")})&book_copy_id=not.is.null&select=id,shipment_id,book_copy_id,book_copies(id,sku,bin_id,section,status,book_titles(title,author))&limit=1000`
           ),
         ]);
 
@@ -2304,6 +2553,11 @@ export const appRouter = router({
             title: book.book_copies?.book_titles?.title ?? "Unknown title",
             author: book.book_copies?.book_titles?.author ?? null,
             bin_id: book.book_copies?.bin_id ?? null,
+            section: book.book_copies?.section ?? null,
+            location: formatInventoryLocation(
+              book.book_copies?.bin_id,
+              book.book_copies?.section
+            ),
             copy_status: book.book_copies?.status ?? null,
             return_state: returnBook
               ? returnBook.received
@@ -2491,7 +2745,7 @@ export const appRouter = router({
       .input(z.object({ sku: z.string() }))
       .query(async ({ input }) => {
         const res = await sbFetch(
-          `/book_copies?sku=ilike.${encodeURIComponent(input.sku)}&limit=1&select=id,sku,isbn,age_group,bin_id,status,condition,book_title_id`
+          `/book_copies?sku=ilike.${encodeURIComponent(input.sku)}&limit=1&select=id,sku,isbn,age_group,bin_id,section,status,condition,book_title_id`
         );
         if (!res.ok) return null;
         const copies: any[] = await res.json();
@@ -2507,6 +2761,7 @@ export const appRouter = router({
         const sbRows: any[] = sbRes.ok ? await sbRes.json() : [];
         return {
           ...copy,
+          location: formatInventoryLocation(copy.bin_id, copy.section),
           book_title: titles[0] ?? null,
           last_shipment_id: sbRows[0]?.shipment_id ?? null,
           last_shipment_book_id: sbRows[0]?.id ?? null,
@@ -2622,7 +2877,7 @@ export const appRouter = router({
         let copies: any[] = [];
         if (copyIds) {
           const copyRes = await sbFetch(
-            `/book_copies?id=in.(${copyIds})&select=id,sku,bin_id,book_title_id`
+            `/book_copies?id=in.(${copyIds})&select=id,sku,bin_id,section,book_title_id`
           );
           copies = copyRes.ok ? await copyRes.json() : [];
         }
@@ -2641,7 +2896,11 @@ export const appRouter = router({
         const copyMap = Object.fromEntries(
           copies.map((c: any) => [
             c.id,
-            { ...c, book_title: titleMap[c.book_title_id] ?? null },
+            {
+              ...c,
+              location: formatInventoryLocation(c.bin_id, c.section),
+              book_title: titleMap[c.book_title_id] ?? null,
+            },
           ])
         );
         const rbByReturn: Record<string, any[]> = {};
