@@ -713,19 +713,9 @@ async function processReturnedBook(input: {
     );
   }
 
-  let nextReturnStatus = "received";
-  if (shipmentId) {
-    const [shipmentBooks, handledBooks] = await Promise.all([
-      sbJson<{ id: string }[]>(
-        `/shipment_books?shipment_id=eq.${shipmentId}&book_copy_id=not.is.null&select=id&limit=200`
-      ),
-      sbJson<{ id: string }[]>(
-        `/return_books?return_id=eq.${returnId}&processed_at=not.is.null&select=id&limit=200`
-      ),
-    ]);
-    nextReturnStatus =
-      handledBooks.length >= shipmentBooks.length ? "received" : "receiving";
-  }
+  const nextReturnStatus = shipmentId
+    ? await getNextReturnStatus(returnId, shipmentId)
+    : "received";
 
   await sbVoid(`/returns?id=eq.${returnId}`, {
     method: "PATCH",
@@ -762,6 +752,34 @@ async function processReturnedBook(input: {
     next_shipment: nextShipment,
     next_shipment_error: nextShipmentError,
   };
+}
+
+async function getNextReturnStatus(returnId: string, shipmentId: string) {
+  const [shipmentBooks, handledBooks] = await Promise.all([
+    sbJson<
+      {
+        id: string;
+        book_copy_id: string | null;
+        book_copies: { status: string | null } | null;
+      }[]
+    >(
+      `/shipment_books?shipment_id=eq.${shipmentId}&book_copy_id=not.is.null&select=id,book_copy_id,book_copies(status)&limit=200`
+    ),
+    sbJson<{ book_copy_id: string | null }[]>(
+      `/return_books?return_id=eq.${returnId}&processed_at=not.is.null&select=book_copy_id&limit=200`
+    ),
+  ]);
+
+  const handledCopyIds = new Set(
+    handledBooks.map(book => book.book_copy_id).filter(Boolean)
+  );
+  const hasOutstandingBooks = shipmentBooks.some(book => {
+    if (!book.book_copy_id) return false;
+    if (handledCopyIds.has(book.book_copy_id)) return false;
+    return book.book_copies?.status === "in_transit";
+  });
+
+  return hasOutstandingBooks ? "receiving" : "received";
 }
 
 export const appRouter = router({
@@ -2419,6 +2437,16 @@ export const appRouter = router({
         const receivedIds = new Set(
           received.filter(book => book.received).map(book => book.book_copy_id)
         );
+        const hasOutstandingBooks = expected.some(
+          book =>
+            book.book_copy_id &&
+            !receivedIds.has(book.book_copy_id) &&
+            book.book_copies?.status === "in_transit"
+        );
+
+        if (returnRecord.original_shipment_id && !hasOutstandingBooks) {
+          continue;
+        }
 
         result.push({
           ...returnRecord,

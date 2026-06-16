@@ -61,6 +61,7 @@ export default function ReturnsPage() {
 
   const invalidateReturns = () => {
     utils.returns.bundles.invalidate();
+    utils.returns.openRequests.invalidate();
     utils.returns.history.invalidate();
     utils.inventory.summary.invalidate();
     utils.inventory.bookTitles.invalidate();
