@@ -1893,6 +1893,18 @@ export const appRouter = router({
       );
       return { count: total };
     }),
+    bins: publicProcedure.query(async () => {
+      const copies = await sbJson<{ bin_id: string | null }[]>(
+        "/book_copies?bin_id=not.is.null&status=in.(in_house,pending_stock,pending_label,pending_qc)&select=bin_id&limit=5000"
+      );
+      return Array.from(
+        new Set(
+          copies
+            .map((copy) => copy.bin_id)
+            .filter((binId): binId is string => Boolean(binId))
+        )
+      ).sort((a, b) => a.localeCompare(b));
+    }),
     confirmPlaced: publicProcedure
       .input(z.object({ copy_id: z.string(), bin_id: z.string().optional() }))
       .mutation(async ({ input }) => {

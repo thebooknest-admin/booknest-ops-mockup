@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { BookOpen, Package, CheckCheck, Check, Pencil, X, Search } from "lucide-react";
+import { BookOpen, Package, CheckCheck, Check, X, Search, PlusCircle } from "lucide-react";
 
 type StockItem = {
   id: string;
@@ -30,40 +38,60 @@ function splitBinId(binId: string): [string, string] {
   return [binId, ""];
 }
 
+function getBinOptions(binId: string, allBinIds: string[]) {
+  const [prefix, suffix] = splitBinId(binId);
+  const siblings = allBinIds
+    .filter((candidate) => {
+      const [candidatePrefix, candidateSuffix] = splitBinId(candidate);
+      return candidatePrefix === prefix && Boolean(candidateSuffix);
+    })
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const options = siblings.includes(binId) ? siblings : [...siblings, binId].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
+
+  const suffixWidth = Math.max(2, suffix.length, ...options.map((option) => splitBinId(option)[1].length));
+  const maxNumber = options.reduce((max, option) => {
+    const optionNumber = Number.parseInt(splitBinId(option)[1], 10);
+    return Number.isFinite(optionNumber) ? Math.max(max, optionNumber) : max;
+  }, 0);
+  const nextBinId = `${prefix}${String(maxNumber + 1).padStart(suffixWidth, "0")}`;
+
+  return {
+    options,
+    nextBinId: options.includes(nextBinId) ? null : nextBinId,
+  };
+}
+
 function StockCard({
   item,
+  allBinIds,
   selected,
   onToggle,
   onConfirmSingle,
   busy,
 }: {
   item: StockItem;
+  allBinIds: string[];
   selected: boolean;
   onToggle: () => void;
   onConfirmSingle: (binId: string) => void;
   busy: boolean;
 }) {
-  const [editingBin, setEditingBin] = useState(false);
-  const [binPrefix, binSuffix] = splitBinId(item.bin_id);
-  const [binNumber, setBinNumber] = useState(binSuffix || "01");
+  const [selectedBinId, setSelectedBinId] = useState(item.bin_id);
+  const { options: binOptions, nextBinId } = useMemo(
+    () => getBinOptions(item.bin_id, allBinIds),
+    [allBinIds, item.bin_id]
+  );
 
-  const finalBinId = binPrefix + binNumber.padStart(2, "0");
+  useEffect(() => {
+    setSelectedBinId(item.bin_id);
+  }, [item.bin_id]);
 
   const handlePlacedClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (editingBin) {
-      // Already in edit mode — confirm with current bin
-      onConfirmSingle(finalBinId);
-      setEditingBin(false);
-    } else {
-      setEditingBin(true);
-    }
-  };
-
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingBin(false);
-    setBinNumber(binSuffix || "01");
+    onConfirmSingle(selectedBinId);
   };
 
   return (
@@ -71,7 +99,7 @@ function StockCard({
       className={`border overflow-hidden transition-all cursor-pointer ${
         selected ? "border-green-500 bg-green-50/40" : "border-border"
       }`}
-      onClick={!editingBin ? onToggle : undefined}
+      onClick={onToggle}
     >
       <CardContent className="p-3 space-y-2">
         <div className="flex items-center gap-3">
@@ -102,7 +130,7 @@ function StockCard({
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="font-mono text-xs text-muted-foreground">{item.sku}</span>
               <span className="text-muted-foreground">·</span>
-              <span className="text-xs font-medium text-foreground font-mono">{item.bin_id}</span>
+              <span className="text-xs font-medium text-foreground font-mono">{selectedBinId}</span>
               {item.condition && (
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded-full font-medium capitalize ${
@@ -114,57 +142,45 @@ function StockCard({
               )}
             </div>
           </div>
-
-          {/* Placed button */}
-          {!editingBin && (
-            <Button
-              size="sm"
-              className="shrink-0 bg-green-700 hover:bg-green-800 text-white text-xs px-3"
-              disabled={busy}
-              onClick={handlePlacedClick}
-            >
-              <Check className="w-3.5 h-3.5 mr-1" />
-              Placed
-            </Button>
-          )}
         </div>
 
-        {/* Inline bin editor */}
-        {editingBin && (
-          <div
-            className="flex items-center gap-2 pt-1 border-t border-border/60"
-            onClick={(e) => e.stopPropagation()}
+        <div
+          className="flex items-center gap-2 pt-1 border-t border-border/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-xs text-muted-foreground shrink-0">Shelve in</span>
+          <Select value={selectedBinId} onValueChange={setSelectedBinId}>
+            <SelectTrigger size="sm" className="min-w-0 flex-1 font-mono text-xs bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {binOptions.map((binId) => (
+                <SelectItem key={binId} value={binId} className="font-mono">
+                  {binId}
+                </SelectItem>
+              ))}
+              {nextBinId && (
+                <>
+                  <SelectSeparator />
+                  <SelectItem value={nextBinId}>
+                    <PlusCircle className="w-4 h-4" />
+                    <span className="font-mono">{nextBinId}</span>
+                    <span className="text-xs text-muted-foreground">new bin</span>
+                  </SelectItem>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="shrink-0 bg-green-700 hover:bg-green-800 text-white text-xs px-3"
+            disabled={busy || !selectedBinId}
+            onClick={handlePlacedClick}
           >
-            <Pencil className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <span className="text-xs text-muted-foreground">Shelving in:</span>
-            <span className="font-mono text-xs font-semibold text-foreground">{binPrefix}</span>
-            <input
-              type="text"
-              value={binNumber}
-              onChange={(e) => setBinNumber(e.target.value.replace(/\D/g, "").slice(0, 2))}
-              className="w-10 text-center font-mono text-sm font-bold border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500"
-              autoFocus
-              maxLength={2}
-              placeholder="01"
-            />
-            <div className="flex-1" />
-            <button
-              onClick={handleCancel}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors p-1"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-            <Button
-              size="sm"
-              className="bg-green-700 hover:bg-green-800 text-white text-xs px-3"
-              disabled={busy || !binNumber}
-              onClick={handlePlacedClick}
-            >
-              <Check className="w-3.5 h-3.5 mr-1" />
-              Confirm
-            </Button>
-          </div>
-        )}
+            <Check className="w-3.5 h-3.5 mr-1" />
+            Placed
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -172,8 +188,17 @@ function StockCard({
 
 export default function StockQueuePage() {
   const { data: items = [], refetch, isLoading } = trpc.stock.queue.useQuery();
+  const { data: knownBins = [] } = trpc.stock.bins.useQuery(undefined, {
+    enabled: items.length > 0,
+  });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const allBinIds = useMemo(
+    () => Array.from(new Set([...knownBins, ...items.map((item) => item.bin_id)])).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    ),
+    [items, knownBins]
+  );
 
   const filteredItems = search.trim()
     ? items.filter((item) => {
@@ -340,6 +365,7 @@ export default function StockQueuePage() {
             <StockCard
               key={item.id}
               item={item}
+              allBinIds={allBinIds}
               selected={selected.has(item.id)}
               onToggle={() => toggleSelect(item.id)}
               onConfirmSingle={(binId) => {
