@@ -1,0 +1,179 @@
+{
+  "captured_at": "2026-06-23T20:06:02.359Z",
+  "snapshot_kind": "local_read_only_aggregate",
+  "data_api_reachable": false,
+  "table_counts": {
+    "book_titles": {
+      "count": 884,
+      "error": null
+    },
+    "book_copies": {
+      "count": 861,
+      "error": null
+    },
+    "book_sorting_tags": {
+      "count": 237,
+      "error": null
+    },
+    "bin_floor_config": {
+      "count": 32,
+      "error": null
+    },
+    "shipments": {
+      "count": 10,
+      "error": null
+    },
+    "shipment_books": {
+      "count": 49,
+      "error": null
+    },
+    "shipment_book_swaps": {
+      "count": 4,
+      "error": null
+    },
+    "returns": {
+      "count": 4,
+      "error": null
+    },
+    "return_books": {
+      "count": 20,
+      "error": null
+    },
+    "member_book_history": {
+      "count": 30,
+      "error": null
+    },
+    "members": {
+      "count": 6,
+      "error": null
+    },
+    "donations": {
+      "count": 0,
+      "error": null
+    },
+    "damaged_book_reports": {
+      "count": 0,
+      "error": null
+    },
+    "missing_bundle_reports": {
+      "count": 0,
+      "error": null
+    }
+  },
+  "read_errors": {
+    "donations": "Could not find the table 'public.donations' in the schema cache"
+  },
+  "metadata_not_captured": [
+    "columns/types/defaults",
+    "constraints/indexes",
+    "RLS policies/grants",
+    "triggers",
+    "function and RPC definitions",
+    "enum/domain/check definitions"
+  ],
+  "profiles": {
+    "book_copies": {
+      "status": {
+        "damaged": 1,
+        "donated_lfl": 23,
+        "in_house": 805,
+        "in_transit": 26,
+        "lost": 2,
+        "pending_stock": 1,
+        "retired": 1,
+        "withdrawn": 2
+      },
+      "label_status": {
+        "not_required": 23,
+        "printed": 838
+      },
+      "condition": {
+        "good": 860,
+        "poor": 1
+      },
+      "age_group": {
+        "fledglings": 429,
+        "hatchlings": 81,
+        "sky_readers": 111,
+        "soarers": 240
+      },
+      "locations": {
+        "distinct_combinations": 36,
+        "null_bin_count": 0,
+        "null_section_count": 836
+      }
+    },
+    "book_titles": {
+      "age_group": {
+        "fledglings": 424,
+        "hatchlings": 78,
+        "sky_readers": 156,
+        "soarers": 226
+      },
+      "suggested_age_tier": {
+        "__NULL_OR_EMPTY__": 364,
+        "13+": 8,
+        "Fledglings": 122,
+        "Hatchlings": 248,
+        "Soarers": 142
+      }
+    },
+    "members": {
+      "tier": {
+        "Book Nest Gift Subscription - Little Nest / 3 Months": 1,
+        "Cozy Nest": 3,
+        "Little Nest": 1,
+        "Story Nest": 1
+      },
+      "books_per_box": {
+        "4": 2,
+        "6": 3,
+        "8": 1
+      }
+    },
+    "shipments": {
+      "status": {
+        "cancelled": 1,
+        "preparing": 1,
+        "shipped": 8
+      }
+    },
+    "donations": {
+      "status": {},
+      "condition": {}
+    }
+  },
+  "exceptions": {
+    "duplicate_skus": {
+      "null_or_empty_count": 0,
+      "duplicate_value_groups": 0,
+      "duplicate_rows_beyond_first": 0
+    },
+    "title_isbns": {
+      "null_or_empty_count": 6,
+      "duplicate_value_groups": 0,
+      "duplicate_rows_beyond_first": 0
+    },
+    "copy_isbns": {
+      "null_or_empty_count": 23,
+      "duplicate_value_groups": 19,
+      "duplicate_rows_beyond_first": 19
+    },
+    "duplicate_active_copy_assignments": {
+      "duplicate_groups": 0,
+      "duplicate_rows_beyond_first": 0
+    },
+    "duplicate_member_title_history": {
+      "duplicate_groups": 0,
+      "duplicate_rows_beyond_first": 0
+    },
+    "overlapping_member_outbound_shipments": {
+      "duplicate_groups": 2,
+      "duplicate_rows_beyond_first": 3
+    },
+    "unresolved_returns": {
+      "active_return_records": 0,
+      "return_books_without_processed_at": 0
+    }
+  }
+}
