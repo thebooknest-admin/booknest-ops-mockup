@@ -1,0 +1,1429 @@
+{
+  "captured_at": "2026-06-23T20:16:46.350Z",
+  "snapshot_kind": "local_read_only_postgrest_openapi_metadata",
+  "openapi": {
+    "title": "standard public schema",
+    "version": "14.1",
+    "path_count": 87,
+    "relation_count": 63,
+    "rpc_count": 23
+  },
+  "target_relations": {
+    "book_titles": {
+      "name": "book_titles",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "title",
+        "high_value_flag",
+        "premium_flag",
+        "resale_candidate",
+        "stale_value_flag",
+        "value_needs_review"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "isbn": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "title": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "author": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "cover_url": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "age_group": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "gender_lean": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "suggested_age_tier": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "primary_topic": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "topic_confidence": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": null
+        },
+        "needs_topic_review": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "topic_review_reasons": {
+          "type": "array",
+          "format": "text[]",
+          "nullable": null,
+          "default": null
+        },
+        "topic_assigned_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "subtitle": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "description": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "subjects": {
+          "type": "array",
+          "format": "text[]",
+          "nullable": null,
+          "default": null
+        },
+        "publisher": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "published_date": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "page_count": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": null
+        },
+        "metadata_fetched_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "metadata_source": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "theme": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "estimated_market_value": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "value_source": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "value_last_checked_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "high_value_flag": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "premium_flag": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "resale_candidate": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "disposition_recommendation": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "value_band": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "stale_value_flag": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "value_confidence": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "value_needs_review": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "comps_sample_size": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": null
+        },
+        "comps_min": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "comps_max": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "comps_mean": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "comps_median": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "comps_last_source": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "ebay_sold_isbn"
+        },
+        "bin_theme": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "is_restricted": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "restriction_reason": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "age_tier_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "primary_theme_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "tag_ids": {
+          "type": "array",
+          "format": "uuid[]",
+          "nullable": null,
+          "default": null
+        },
+        "classification_version": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "v1"
+        },
+        "needs_reclassification": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        }
+      }
+    },
+    "book_copies": {
+      "name": "book_copies",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "sku",
+        "status",
+        "label_status"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "sku": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "book_title_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "isbn": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "age_group": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "bin": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "in_house"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "bin_id": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "suggested_bin_id": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "label_status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "pending"
+        },
+        "label_printed_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "label_batch_id": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "condition": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "good"
+        },
+        "qc_notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "qc_passed_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "qc_failed_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "stocked_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "section": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        }
+      }
+    },
+    "book_sorting_tags": {
+      "name": "book_sorting_tags",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "bin_theme",
+        "tag"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "bin_theme": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "tag": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "bin_floor_config": {
+      "name": "bin_floor_config",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "bin_code",
+        "min_bin_floor",
+        "active",
+        "created_at",
+        "updated_at"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "bin_code": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "min_bin_floor": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": 1
+        },
+        "active": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": true
+        },
+        "note": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "shipments": {
+      "name": "shipments",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "member_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "shipment_date": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "preparing"
+        },
+        "notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "order_number": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "shipment_number": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "scheduled_ship_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "actual_ship_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "tracking_number": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "carrier": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "expected_delivery_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "shipment_type": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "subscription"
+        },
+        "address_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "label_url": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "returned_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        }
+      }
+    },
+    "shipment_books": {
+      "name": "shipment_books",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "shipment_id",
+        "book_title_id"
+      ],
+      "fields": {
+        "shipment_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "book_title_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "book_copy_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "picked_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "scanned_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "selected"
+        },
+        "selection_reason": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "match_score": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "purchase_price": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "shipment_book_swaps": {
+      "name": "shipment_book_swaps",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "shipment_id",
+        "new_book_copy_id",
+        "new_book_title_id",
+        "created_at"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "shipment_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "old_book_copy_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "old_book_title_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "new_book_copy_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "new_book_title_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "reason": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "returns": {
+      "name": "returns",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "member_id"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "member_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "return_number": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "original_shipment_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "initiated"
+        },
+        "return_type": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "swap"
+        },
+        "return_label_generated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "return_tracking_number": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "expected_return_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "actual_return_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "processed_by": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "return_label_url": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "shipping_cost": {
+          "type": "number",
+          "format": "numeric",
+          "nullable": null,
+          "default": null
+        }
+      }
+    },
+    "return_books": {
+      "name": "return_books",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "return_id",
+        "book_copy_id"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "return_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "book_copy_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "shipment_book_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "expected": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": true
+        },
+        "received": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "condition_on_return": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "condition_notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "action": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "processed_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "member_book_history": {
+      "name": "member_book_history",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "member_id",
+        "book_title_id",
+        "kept"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "member_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "book_title_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "shipment_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "received_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "returned_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "kept": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        }
+      }
+    },
+    "members": {
+      "name": "members",
+      "methods": [
+        "get",
+        "post",
+        "delete",
+        "patch"
+      ],
+      "required_fields": [
+        "id",
+        "name",
+        "is_founding_flock",
+        "is_vip",
+        "welcome_form_completed",
+        "is_primary"
+      ],
+      "fields": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "tier": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "age_group": {
+          "type": "string",
+          "format": "public.age_group",
+          "nullable": null,
+          "default": null
+        },
+        "topics_to_avoid": {
+          "type": "array",
+          "format": "text[]",
+          "nullable": null,
+          "default": null
+        },
+        "created_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": "now()"
+        },
+        "email": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "phone": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "subscription_status": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": "active"
+        },
+        "next_ship_date": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "shopify_customer_id": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "is_founding_flock": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "is_vip": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "welcome_form_completed": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": false
+        },
+        "child_name": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "welcome_token": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "welcome_token_expires_at": {
+          "type": "string",
+          "format": "timestamp with time zone",
+          "nullable": null,
+          "default": null
+        },
+        "interests": {
+          "type": "array",
+          "format": "text[]",
+          "nullable": null,
+          "default": null
+        },
+        "notes": {
+          "type": "string",
+          "format": "text",
+          "nullable": null,
+          "default": null
+        },
+        "household_id": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": null,
+          "default": null
+        },
+        "is_primary": {
+          "type": "boolean",
+          "format": "boolean",
+          "nullable": null,
+          "default": true
+        },
+        "sibling_order": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": 0
+        },
+        "books_per_box": {
+          "type": "integer",
+          "format": "integer",
+          "nullable": null,
+          "default": null
+        },
+        "birthday": {
+          "type": "string",
+          "format": "date",
+          "nullable": null,
+          "default": null
+        },
+        "favorite_themes": {
+          "type": "array",
+          "format": "text[]",
+          "nullable": null,
+          "default": null
+        }
+      }
+    },
+    "donations": null
+  },
+  "target_rpcs": {
+    "get_shipment_pick_list": {
+      "name": "get_shipment_pick_list",
+      "methods": [
+        "post"
+      ],
+      "required_arguments": [
+        "p_shipment_id"
+      ],
+      "arguments": {
+        "p_shipment_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "response_description": "OK"
+    },
+    "select_books_for_shipment": {
+      "name": "select_books_for_shipment",
+      "methods": [
+        "post"
+      ],
+      "required_arguments": [
+        "p_member_id",
+        "p_shipment_id"
+      ],
+      "arguments": {
+        "p_books_needed": {
+          "type": "integer",
+          "format": "integer"
+        },
+        "p_member_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "p_shipment_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "response_description": "OK"
+    }
+  },
+  "relation_names": [
+    "age_tiers",
+    "archive_book_copy_bin_suggestions",
+    "archive_tag_bin_map",
+    "bin_code_migration",
+    "bin_floor_config",
+    "bin_theme_categories",
+    "bins",
+    "book_copies",
+    "book_selection_log",
+    "book_sorting_tags",
+    "book_title_sorting_tags",
+    "book_title_tags",
+    "book_titles",
+    "book_value_comps",
+    "bundle_items",
+    "bundles",
+    "classic_title_overrides",
+    "classification_keywords",
+    "damaged_book_reports",
+    "event_signups",
+    "gift_subscriptions",
+    "households",
+    "intake_batch_items",
+    "intake_batches",
+    "interest_categories",
+    "interest_category_tags",
+    "inventory_counts_by_age",
+    "member_addresses",
+    "member_book_history",
+    "member_credit_usage",
+    "member_credits",
+    "member_exclusions",
+    "member_interests",
+    "member_profiles",
+    "member_theme_preferences",
+    "members",
+    "missing_bundle_reports",
+    "picking_batches",
+    "picking_queue",
+    "readers",
+    "return_books",
+    "returns",
+    "shipment_book_swaps",
+    "shipment_books",
+    "shipments",
+    "shopify_installations",
+    "sku_counters",
+    "status_history",
+    "subscription_tiers",
+    "swap_history",
+    "tag_bin_map",
+    "tags",
+    "themes",
+    "v_at_risk_bins",
+    "v_book_top_comps",
+    "v_books_out_with_members",
+    "v_member_preferences",
+    "v_premium_verify_now",
+    "v_resale_queue",
+    "v_shipments_need_picking",
+    "v_stale_valuations",
+    "valuation_settings",
+    "value_ingest_log"
+  ],
+  "rpc_names": [
+    "can_member_request_swap",
+    "commit_intake_batch",
+    "compute_base_disposition",
+    "compute_value_band",
+    "create_label_batch",
+    "create_shipment_with_books",
+    "create_shipments_for_ship_date",
+    "decrement_credit",
+    "generate_order_number",
+    "generate_sku",
+    "get_active_label_batch",
+    "get_picking_queue",
+    "get_shipment_pick_list",
+    "get_suggested_bin",
+    "mark_book_kept",
+    "mark_label_batch_printed",
+    "next_book_copy_sku",
+    "next_book_sku",
+    "recompute_all_valuations",
+    "recompute_book_valuation",
+    "release_label_batch",
+    "select_books_for_shipment",
+    "suggest_bin_from_tags"
+  ],
+  "donations_path_visible": false,
+  "not_available_from_openapi": [
+    "PostgreSQL constraints and indexes",
+    "RLS policies and grants",
+    "triggers and trigger functions",
+    "function source definitions and security mode",
+    "enum, domain, and check-constraint definitions",
+    "materialized-view metadata",
+    "relation ownership and database roles"
+  ]
+}
