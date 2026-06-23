@@ -16,7 +16,7 @@ import {
   getThemeFromBookSignals,
   sanitizeBookTags,
 } from "@shared/booknest";
-import { publicProcedure, router } from "../_core/trpc";
+import { operatorProcedure, router } from "../../_core/trpc";
 
 type AgeTier = "Hatchlings" | "Fledglings" | "Soarers" | "Sky Readers" | "13+";
 type ThemeBin =
@@ -1343,7 +1343,7 @@ async function classifyBook(book: BookMetadata): Promise<Classification> {
 }
 
 export const isbnRouter = router({
-  classify: publicProcedure
+  classify: operatorProcedure
     .input(
       z.object({
         isbn: z.string(),

@@ -11,16 +11,16 @@
 
 import { z } from "zod";
 import { formatInventoryLocation, normalizeAgeGroup } from "@shared/booknest";
-import { publicProcedure, router } from "../_core/trpc";
-import { sbFetch, sbJson, sbVoid } from "../supabase";
-import { ensureMemberDefaultAddressFromShopify } from "../shopify-address";
+import { operatorProcedure, router } from "../../_core/trpc";
+import { sbFetch, sbJson, sbVoid } from "../../supabase";
+import { ensureMemberDefaultAddressFromShopify } from "../../shopify-address";
 import {
   AVOID_TO_THEMES,
   INTEREST_TO_THEMES,
   buildNoteProfile,
   getAvoidMatches,
   scoreNoteMatch,
-} from "../book-matching";
+} from "../../book-matching";
 
 const TIER_BOOK_COUNT: Record<string, number> = {
   "little-nest": 4,
@@ -111,7 +111,7 @@ export const pickingRouter = router({
   /**
    * Returns all shipments in 'picking' status.
    */
-  dailyOrders: publicProcedure
+  dailyOrders: operatorProcedure
     .input(
       z.object({
         date: z.string().optional(),
@@ -189,7 +189,7 @@ export const pickingRouter = router({
   /**
    * Suggests ranked books for a specific member with SKU + bin location.
    */
-  suggestBooks: publicProcedure
+  suggestBooks: operatorProcedure
     .input(
       z.object({
         member_id: z.string(),
@@ -390,7 +390,7 @@ export const pickingRouter = router({
       /**
    * Returns the existing assigned pick list for a shipment.
    */
-  getShipmentPickList: publicProcedure
+  getShipmentPickList: operatorProcedure
     .input(
       z.object({
         shipment_id: z.string(),
@@ -443,7 +443,7 @@ export const pickingRouter = router({
   /**
    * Swaps one assigned shipment book for a new alternate.
    */
-  swapShipmentBook: publicProcedure
+  swapShipmentBook: operatorProcedure
     .input(
       z.object({
         shipment_id: z.string(),
@@ -569,7 +569,7 @@ return updated;
   /**
    * Confirms scanned picks — moves shipment to 'packing' status.
    */
-  confirmPicks: publicProcedure
+  confirmPicks: operatorProcedure
     .input(
       z.object({
         picks: z.array(
@@ -728,7 +728,7 @@ return updated;
   /**
    * Returns a master pick list for confirmed shipments grouped by bin.
    */
-  batchPickList: publicProcedure
+  batchPickList: operatorProcedure
     .input(z.object({ shipment_ids: z.array(z.string()) }))
     .query(async ({ input }) => {
       if (!input.shipment_ids.length) return { bins: [], total_books: 0 };

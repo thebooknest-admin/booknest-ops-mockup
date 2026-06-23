@@ -9,14 +9,14 @@
  */
 
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
-import { sbFetch, sbJson, sbVoid } from "../supabase";
+import { operatorProcedure, router } from "../../_core/trpc";
+import { sbFetch, sbJson, sbVoid } from "../../supabase";
 
 export const packingRouter = router({
   /**
    * Returns all shipments in 'packing' status, enriched with member + address.
    */
-  list: publicProcedure.query(async () => {
+  list: operatorProcedure.query(async () => {
     const shipmentsRes = await sbFetch(
       `/shipments?status=eq.packing&shipment_type=eq.outbound&select=id,member_id,shipment_number,order_number,scheduled_ship_date&order=scheduled_ship_date.asc&limit=200`
     );
@@ -64,7 +64,7 @@ export const packingRouter = router({
   /**
    * Moves a single shipment from 'packing' → 'packed'.
    */
-  markPacked: publicProcedure
+  markPacked: operatorProcedure
     .input(z.object({ shipment_id: z.string() }))
     .mutation(async ({ input }) => {
       const [shipment] = await sbJson<{ id: string; status: string }[]>(

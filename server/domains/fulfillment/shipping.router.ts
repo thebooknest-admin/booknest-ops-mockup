@@ -10,8 +10,8 @@
 
 import EasyPost from '@easypost/api';
 import { z } from 'zod';
-import { publicProcedure, router } from '../_core/trpc';
-import { sbFetch, sbJson, sbVoid } from '../supabase';
+import { operatorProcedure, router } from '../../_core/trpc';
+import { sbFetch, sbJson, sbVoid } from '../../supabase';
 
 const EASYPOST_API_KEY = process.env.EASYPOST_API_KEY!;
 
@@ -34,7 +34,7 @@ export const shippingRouter = router({
 
   // ─── List packed shipments for the shipping queue ─────────────────────────
 
-  list: publicProcedure
+  list: operatorProcedure
     .input(z.object({ status: z.string().optional() }).optional())
     .query(async ({ input }) => {
       const status = input?.status ?? 'packed';
@@ -86,7 +86,7 @@ export const shippingRouter = router({
 
   // ─── Mark a single shipment as shipped ───────────────────────────────────
 
-  markShipped: publicProcedure
+  markShipped: operatorProcedure
     .input(
       z.object({
         shipment_id: z.string(),
@@ -218,7 +218,7 @@ export const shippingRouter = router({
   // ─── Save return tracking number ─────────────────────────────────────────
   // Called when a return label is scanned on receipt (EasyPost webhook flow)
 
-  saveReturnTracking: publicProcedure
+  saveReturnTracking: operatorProcedure
     .input(
       z.object({
         shipment_id: z.string(),
