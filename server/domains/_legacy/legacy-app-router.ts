@@ -52,6 +52,28 @@ import {
   sbVoid,
 } from "../../supabase";
 import { isbnRouter } from "../inventory/isbn.router";
+import {
+  getBookDetail,
+  getInventoryBins,
+  getInventoryBookCopies,
+  getInventoryBookTitles,
+  getInventorySummaryService,
+  updateInventoryCopy,
+} from "../inventory/services/inventory.service";
+import { getPendingLabels, markLabelsPrinted } from "../inventory/services/labels.service";
+import { receiveBook } from "../inventory/services/receive.service";
+import {
+  confirmAllStockPlaced,
+  confirmStockPlaced,
+  failQc,
+  getQcCount,
+  getQcQueue,
+  getStockBins,
+  getStockCount,
+  getStockQueue,
+  passAllQc,
+  passQc,
+} from "../inventory/services/workflow.service";
 
 type ReturnBookOutcome = "received" | "missing" | "issue";
 
@@ -1008,44 +1030,18 @@ export const legacyAppRouter = router({
 
   // ─── Inventory ──────────────────────────────────────────────────────────────
   inventory: router({
-    summary: operatorProcedure.query(async () => {
-      return getInventorySummary();
-    }),
-
+    summary: operatorProcedure.query(async () => getInventorySummaryService()),
     bookTitles: operatorProcedure
       .input(
-        z
-          .object({
-            limit: z.number().optional(),
-            offset: z.number().optional(),
-            search: z.string().optional(),
-            age_group: z.string().optional(),
-          })
-          .optional()
+        z.object({ limit: z.number().optional(), offset: z.number().optional(), search: z.string().optional(), age_group: z.string().optional() }).optional()
       )
-      .query(async ({ input }) => {
-        return getBookTitlesWithCopies(input ?? {});
-      }),
-
+      .query(async ({ input }) => getInventoryBookTitles(input)),
     bookCopies: operatorProcedure
       .input(
-        z
-          .object({
-            status: z.string().optional(),
-            bin_id: z.string().optional(),
-            age_group: z.string().optional(),
-            limit: z.number().optional(),
-          })
-          .optional()
+        z.object({ status: z.string().optional(), bin_id: z.string().optional(), age_group: z.string().optional(), limit: z.number().optional() }).optional()
       )
-      .query(async ({ input }) => {
-        return getBookCopies(input ?? {});
-      }),
-
-    bins: operatorProcedure.query(async () => {
-      return getBinConfigs();
-    }),
-
+      .query(async ({ input }) => getInventoryBookCopies(input)),
+    bins: operatorProcedure.query(async () => getInventoryBins()),
     sectionBackfillPreview: operatorProcedure
       .input(z.object({ force: z.boolean().optional() }).optional())
       .query(async ({ input }) => {
@@ -1162,89 +1158,16 @@ export const legacyAppRouter = router({
 
     getBookDetail: operatorProcedure
       .input(z.object({ id: z.string() }))
-      .query(async ({ input }) => {
-        const titleRes = await sbFetch(
-          `/book_titles?id=eq.${input.id}&limit=1&select=id,title,author,isbn,age_group,suggested_age_tier,bin_theme,tag_ids,cover_url,publisher,published_date,page_count,description,subjects,metadata_source,classification_version,created_at,updated_at`
-        );
-        if (!titleRes.ok) {
-          throw new Error(
-            "Failed to fetch book title: " + (await titleRes.text())
-          );
-        }
-        const titles: any[] = await titleRes.json();
-        if (!titles[0]) return null;
-        const title = titles[0];
-
-        const copiesRes = await sbFetch(
-          `/book_copies?book_title_id=eq.${input.id}&order=sku.asc&limit=200&select=id,sku,isbn,age_group,bin_id,section,status,condition,label_status,received_at,created_at,updated_at`
-        );
-        const copies: any[] = copiesRes.ok ? await copiesRes.json() : [];
-
-        let tags: any[] = [];
-
-        if (Array.isArray(title.tag_ids) && title.tag_ids.length > 0) {
-          const tagRes = await sbFetch(
-            `/book_sorting_tags?id=in.(${title.tag_ids.join(",")})&select=id,bin_theme,tag`
-          );
-
-          tags = tagRes.ok ? await tagRes.json() : [];
-        }
-
-        return { ...title, tags, copies: copies.map(addLocation) };
-      }),
-
+      .query(async ({ input }) => getBookDetail(input)),
     updateCopy: operatorProcedure
       .input(
         z.object({
-          id: z.string(),
-          sku: z.string().optional(),
-          bin_id: z.string().optional(),
-          section: z.string().nullable().optional(),
-          status: z.string().optional(),
-          condition: z.string().optional(),
-          notes: z.string().optional(),
-          age_group: z.string().optional(),
+          id: z.string(), sku: z.string().optional(), bin_id: z.string().optional(),
+          section: z.string().nullable().optional(), status: z.string().optional(),
+          condition: z.string().optional(), notes: z.string().optional(), age_group: z.string().optional(),
         })
       )
-      .mutation(async ({ input }) => {
-        const { id, ...fields } = input;
-        const patch: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-        };
-        if (fields.sku !== undefined) patch.sku = fields.sku;
-        if (fields.bin_id !== undefined) patch.bin_id = fields.bin_id;
-        if (fields.section !== undefined) {
-          const [copy] = await sbJson<{ id: string; age_group: string | null }[]>(
-            `/book_copies?id=eq.${id}&select=id,age_group&limit=1`
-          );
-          if (!copy) throw new Error("Book copy not found");
-          const section = normalizeShelvingSection(fields.section);
-          if (requiresShelvingSection(copy.age_group) && !section) {
-            throw new Error("Section is required for Soarers and Sky Readers.");
-          }
-          patch.section = section;
-        }
-        if (fields.status !== undefined) {
-          patch.status = fields.status;
-          if (TERMINAL_BOOK_COPY_STATUSES.has(fields.status)) {
-            patch.label_status = LABEL_STATUSES.notRequired;
-          } else if (fields.status === BOOK_COPY_STATUSES.pendingLabel) {
-            patch.label_status = LABEL_STATUSES.pending;
-          }
-        }
-        if (fields.condition !== undefined) patch.condition = fields.condition;
-        if (fields.notes !== undefined) patch.notes = fields.notes;
-        if (fields.age_group !== undefined) patch.age_group = fields.age_group;
-        const res = await sbFetch(`/book_copies?id=eq.${id}`, {
-          method: "PATCH",
-          body: JSON.stringify(patch),
-          headers: { Prefer: "return=minimal" },
-        });
-        if (!res.ok)
-          throw new Error(`Failed to update copy: ${await res.text()}`);
-        return { success: true };
-      }),
-
+      .mutation(async ({ input }) => updateInventoryCopy(input)),
     updateBookTitle: operatorProcedure
       .input(
         z.object({
@@ -1672,520 +1595,50 @@ export const legacyAppRouter = router({
 
   // ─── Labels ─────────────────────────────────────────────────────────────────
   labels: router({
-    pending: operatorProcedure.query(async () => {
-      const copies = await sbJson<any[]>(
-        "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id,sku,isbn,book_title_id,age_group,bin_id,section,label_status,received_at&limit=1000&order=received_at.asc"
-      );
-      const titleIds = Array.from(
-        new Set(copies.map(c => c.book_title_id).filter(Boolean))
-      );
-      let titleMap: Record<
-        string,
-        {
-          title: string;
-          author: string;
-          isbn: string | null;
-          bin_theme: string | null;
-        }
-      > = {};
-      if (titleIds.length > 0) {
-        const titles = await sbJson<
-          {
-            id: string;
-            title: string;
-            author: string;
-            isbn: string | null;
-            bin_theme: string | null;
-          }[]
-        >(
-          `/book_titles?id=in.(${titleIds.join(",")})&select=id,title,author,isbn,bin_theme&limit=1000`
-        );
-        titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
-      }
-      return copies.map(c => ({
-        ...c,
-        location: formatInventoryLocation(c.bin_id, c.section),
-        isbn: (c.isbn ?? titleMap[c.book_title_id]?.isbn ?? null) as
-          | string
-          | null,
-        book_title: titleMap[c.book_title_id] ?? null,
-      }));
-    }),
-
+    pending: operatorProcedure.query(async () => getPendingLabels()),
     markPrinted: operatorProcedure
       .input(z.object({ ids: z.array(z.string()) }))
-      .mutation(async ({ input }) => {
-        const now = new Date().toISOString();
-        await sbVoid(`/book_copies?id=in.(${input.ids.join(",")})`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            label_status: LABEL_STATUSES.printed,
-            label_printed_at: now,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        await sbVoid(
-          `/book_copies?id=in.(${input.ids.join(",")})&status=eq.pending_label`,
-          {
-            method: "PATCH",
-            body: JSON.stringify({
-              status: "pending_stock",
-              updated_at: now,
-            }),
-            headers: { Prefer: "return=minimal" },
-          }
-        );
-        return { success: true };
-      }),
+      .mutation(async ({ input }) => markLabelsPrinted(input)),
   }),
-
-  // ─── Receive Books ──────────────────────────────────────────────────────────
   receive: router({
     addBook: operatorProcedure
       .input(
         z.object({
-          isbn: z.string(),
-          title: z.string(),
-          author: z.string(),
-          cover_url: z.string().nullable().optional(),
-          publisher: z.string().nullable().optional(),
-          published_date: z.string().nullable().optional(),
-          page_count: z.number().nullable().optional(),
-          description: z.string().nullable().optional(),
-          subjects: z.array(z.string()).optional(),
-          age_group: z.string(),
-          bin_id: z.string(),
-          bin_theme: z.string().optional(),
-          section: z.string().nullable().optional(),
-          auto_pick_section: z.boolean().optional(),
-          condition: z.string().default("good"),
-          tags: z.array(z.string()).optional(),
+          isbn: z.string(), title: z.string(), author: z.string(),
+          cover_url: z.string().nullable().optional(), publisher: z.string().nullable().optional(),
+          published_date: z.string().nullable().optional(), page_count: z.number().nullable().optional(),
+          description: z.string().nullable().optional(), subjects: z.array(z.string()).optional(),
+          age_group: z.string(), bin_id: z.string(), bin_theme: z.string().optional(),
+          section: z.string().nullable().optional(), auto_pick_section: z.boolean().optional(),
+          condition: z.string().default("good"), tags: z.array(z.string()).optional(),
         })
       )
-      .mutation(async ({ input }) => {
-        const getThemeFromBinId = (binId: string | null | undefined) => {
-          const value = (binId ?? "").toUpperCase();
-
-          if (value.includes("-ADV-")) return "Adventure";
-          if (value.includes("-HUM-") || value.includes("-LCH-"))
-            return "Laughs & Chaos";
-          if (value.includes("-HRT-") || value.includes("HEARTHOME"))
-            return "Heart & Home";
-          if (value.includes("-WON-") || value.includes("-WND-"))
-            return "Wonder & Imagination";
-          if (value.includes("-WLD-")) return "Wild & Wonderful";
-          if (value.includes("-DSC-")) return "Discovery Den";
-          if (value.includes("-LEG-")) return "Legends & Long Ago";
-          if (value.includes("-SEA-")) return "Seasons & Celebrations";
-
-          return null;
-        };
-
-        const derivedBinTheme = getThemeFromBinId(input.bin_id);
-        const ageGroupKey = normalizeAgeGroup(input.age_group);
-
-        if (!ageGroupKey) {
-          throw new Error(`Unsupported age group: ${input.age_group}`);
-        }
-
-        const sanitizedTags = sanitizeBookTags(input.tags);
-        const requestedBinTheme = input.bin_theme ?? derivedBinTheme;
-        const classificationText = [
-          input.title,
-          input.author,
-          input.description ?? "",
-          ...(input.subjects ?? []),
-        ].join(" ");
-        const binTheme =
-          getThemeFromBookSignals(
-            sanitizedTags,
-            classificationText,
-            requestedBinTheme
-          ) ?? requestedBinTheme;
-        let tagRows =
-          sanitizedTags.length > 0
-            ? await sbJson<{ id: string; tag: string; bin_theme: string }[]>(
-                "/book_sorting_tags?select=id,tag,bin_theme&limit=1000"
-              )
-            : [];
-        const selectedTagSet = new Set(sanitizedTags);
-        const existingTagSet = new Set(tagRows.map(row => row.tag));
-        const missingTags = sanitizedTags.filter(
-          tag => !existingTagSet.has(tag)
-        );
-
-        if (missingTags.length > 0) {
-          const createdTags = await sbJson<
-            { id: string; tag: string; bin_theme: string }[]
-          >("/book_sorting_tags", {
-            method: "POST",
-            body: JSON.stringify(
-              missingTags.map(tag => ({
-                tag,
-                bin_theme: BOOK_TAG_TO_THEME[tag],
-              }))
-            ),
-          });
-
-          tagRows = [...tagRows, ...createdTags];
-        }
-
-        const tagIds = tagRows
-          .filter(row => selectedTagSet.has(row.tag))
-          .map(row => row.id);
-
-        // ── Upsert book title ────────────────────────────────────────────────
-        let existing: any[] = [];
-        let createdTitleForThisCopy = false;
-
-        // First try ISBN match
-        if (input.isbn?.trim()) {
-          existing = await sbJson<any[]>(
-            `/book_titles?isbn=eq.${encodeURIComponent(input.isbn)}&limit=1`
-          );
-        }
-
-        // Fallback to title + author match
-        if (existing.length === 0) {
-          existing = await sbJson<any[]>(
-            `/book_titles?title=ilike.${encodeURIComponent(input.title)}&author=ilike.${encodeURIComponent(input.author)}&limit=1`
-          );
-        }
-        let titleId: string;
-        let copyAgeGroup = ageGroupKey;
-        if (existing.length > 0) {
-          titleId = existing[0].id;
-          const existingCopies = await sbJson<{ id: string }[]>(
-            `/book_copies?book_title_id=eq.${titleId}&select=id&limit=1`
-          );
-          const titleAgeGroup =
-            existingCopies.length === 0
-              ? ageGroupKey
-              : (normalizeAgeGroup(existing[0].age_group) ?? ageGroupKey);
-          copyAgeGroup = titleAgeGroup;
-          await sbVoid(`/book_titles?id=eq.${titleId}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              cover_url: input.cover_url ?? existing[0].cover_url,
-              publisher: input.publisher ?? existing[0].publisher,
-              published_date:
-                input.published_date ?? existing[0].published_date,
-              page_count: input.page_count ?? existing[0].page_count,
-              description: input.description ?? existing[0].description,
-              subjects: input.subjects ?? existing[0].subjects,
-              age_group: titleAgeGroup,
-              bin_theme: binTheme ?? existing[0].bin_theme ?? null,
-              tag_ids:
-                tagIds.length > 0 ? tagIds : (existing[0].tag_ids ?? null),
-              updated_at: new Date().toISOString(),
-            }),
-            headers: { Prefer: "return=minimal" },
-          });
-        } else {
-          const newTitle = await sbJson<any[]>("/book_titles", {
-            method: "POST",
-            body: JSON.stringify({
-              isbn: input.isbn,
-              title: input.title,
-              author: input.author,
-              cover_url: input.cover_url ?? null,
-              age_group: copyAgeGroup,
-              bin_theme: binTheme,
-              tag_ids: tagIds,
-              publisher: input.publisher ?? null,
-              published_date: input.published_date ?? null,
-              page_count: input.page_count ?? null,
-              description: input.description ?? null,
-              subjects: input.subjects ?? null,
-            }),
-          });
-          titleId = newTitle[0].id;
-          createdTitleForThisCopy = true;
-        }
-
-        // ── Build SKU prefix ─────────────────────────────────────────────────
-        const canonicalBinId =
-          getBinCodeForAgeGroupAndTheme(copyAgeGroup, binTheme) ?? input.bin_id;
-        let section = normalizeShelvingSection(input.section);
-        if (requiresShelvingSection(copyAgeGroup)) {
-          if (!binTheme) {
-            throw new Error(
-              "Choose a theme before assigning a section for Soarers or Sky Readers."
-            );
-          }
-          if (input.auto_pick_section) {
-            section = await pickNextShelvingSection({
-              ageGroup: copyAgeGroup,
-              theme: binTheme,
-              binId: canonicalBinId,
-            });
-          }
-          if (!section) {
-            throw new Error("Section is required for Soarers and Sky Readers.");
-          }
-        } else {
-          section = null;
-        }
-        const agePrefix = getSkuPrefixForAgeGroup(copyAgeGroup);
-
-        // ── Find first unused SKU number (fills gaps, handles >9999) ─────────
-        const allSkuData = await sbJson<{ sku: string }[]>(
-          `/book_copies?age_group=eq.${copyAgeGroup}&select=sku&order=sku.asc&limit=10000`
-        );
-
-        const usedNumbers = new Set(
-          allSkuData
-            .map(r => {
-              const m = r.sku.match(/(\d+)$/);
-              return m ? parseInt(m[1], 10) : null;
-            })
-            .filter((n): n is number => n !== null)
-        );
-
-        let nextNum = 1;
-        while (usedNumbers.has(nextNum)) nextNum++;
-
-        const sku = `BN-${agePrefix}-${String(nextNum).padStart(6, "0")}`;
-
-        // ── Create book copy ─────────────────────────────────────────────────
-        let copy: any[] = [];
-        try {
-          copy = await sbJson<any[]>("/book_copies", {
-            method: "POST",
-            body: JSON.stringify({
-              sku,
-              book_title_id: titleId,
-              isbn: input.isbn,
-              age_group: copyAgeGroup,
-              bin_id: canonicalBinId,
-              section,
-              status: BOOK_COPY_STATUSES.pendingQc,
-              condition: input.condition,
-              label_status: LABEL_STATUSES.pending,
-              received_at: new Date().toISOString(),
-            }),
-          });
-        } catch (error) {
-          if (createdTitleForThisCopy) {
-            await sbVoid(`/book_titles?id=eq.${titleId}`, {
-              method: "DELETE",
-              headers: { Prefer: "return=minimal" },
-            }).catch(() => undefined);
-          }
-          throw error;
-        }
-
-        if (!copy[0]?.id) {
-          if (createdTitleForThisCopy) {
-            await sbVoid(`/book_titles?id=eq.${titleId}`, {
-              method: "DELETE",
-              headers: { Prefer: "return=minimal" },
-            }).catch(() => undefined);
-          }
-          throw new Error(
-            "Book title saved, but no physical copy was created."
-          );
-        }
-
-        return {
-          success: true,
-          sku,
-          copy_id: copy[0].id,
-          title_id: titleId,
-          location: formatInventoryLocation(canonicalBinId, section),
-        };
-      }),
+      .mutation(async ({ input }) => receiveBook(input)),
   }),
-
-  // ─── QC Queue ────────────────────────────────────────────────────────────────
   qc: router({
-    queue: operatorProcedure.query(async () => {
-      const data = await sbJson<any[]>(
-        "/book_copies?status=eq.pending_qc&select=id,sku,isbn,age_group,bin_id,section,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
-      );
-      return data.map(c => ({
-        id: c.id as string,
-        sku: c.sku as string,
-        isbn: c.isbn as string | null,
-        age_group: c.age_group as string,
-        bin_id: c.bin_id as string,
-        section: c.section as string | null,
-        location: formatInventoryLocation(c.bin_id, c.section),
-        status: c.status as string,
-        condition: c.condition as string | null,
-        received_at: c.received_at as string,
-        book_title_id: c.book_title_id as string,
-        book_title: c.book_titles as {
-          id: string;
-          title: string;
-          author: string;
-          cover_url: string | null;
-        } | null,
-      }));
-    }),
-    count: operatorProcedure.query(async () => {
-      const res = await sbFetch("/book_copies?status=eq.pending_qc&select=id", {
-        headers: { Prefer: "count=exact", Range: "0-0" },
-      });
-      const total = parseInt(
-        res.headers.get("content-range")?.split("/")[1] ?? "0",
-        10
-      );
-      return { count: total };
-    }),
+    queue: operatorProcedure.query(async () => getQcQueue()),
+    count: operatorProcedure.query(async () => getQcCount()),
     pass: operatorProcedure
-      .input(
-        z.object({
-          copy_id: z.string(),
-          condition: z.string(),
-          notes: z.string().optional(),
-          reprint_label: z.boolean().optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const nextStatus = input.reprint_label
-          ? "pending_label"
-          : "pending_stock";
-        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: nextStatus,
-            condition: input.condition,
-            qc_notes: input.notes ?? null,
-            qc_passed_at: new Date().toISOString(),
-            label_status: input.reprint_label
-              ? LABEL_STATUSES.pending
-              : LABEL_STATUSES.printed,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true, next_status: nextStatus };
-      }),
+      .input(z.object({ copy_id: z.string(), condition: z.string(), notes: z.string().optional(), reprint_label: z.boolean().optional() }))
+      .mutation(async ({ input }) => passQc(input)),
     fail: operatorProcedure
       .input(z.object({ copy_id: z.string(), notes: z.string().optional() }))
-      .mutation(async ({ input }) => {
-        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "donated_lfl",
-            label_status: LABEL_STATUSES.notRequired,
-            qc_notes: input.notes ?? null,
-            qc_failed_at: new Date().toISOString(),
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true };
-      }),
+      .mutation(async ({ input }) => failQc(input)),
     passAll: operatorProcedure
       .input(z.object({ copy_ids: z.array(z.string()) }))
-      .mutation(async ({ input }) => {
-        if (input.copy_ids.length === 0) return { success: true, count: 0 };
-        const now = new Date().toISOString();
-        await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "pending_label",
-            label_status: LABEL_STATUSES.pending,
-            condition: "good",
-            qc_passed_at: now,
-            updated_at: now,
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true, count: input.copy_ids.length };
-      }),
+      .mutation(async ({ input }) => passAllQc(input)),
   }),
-
-  // ─── Stock Queue ─────────────────────────────────────────────────────────────
   stock: router({
-    queue: operatorProcedure.query(async () => {
-      const data = await sbJson<any[]>(
-        "/book_copies?status=eq.pending_stock&select=id,sku,isbn,age_group,bin_id,section,status,condition,received_at,book_title_id,book_titles(id,title,author,cover_url)&order=received_at.asc&limit=1000"
-      );
-      return data.map(c => ({
-        id: c.id as string,
-        sku: c.sku as string,
-        isbn: c.isbn as string | null,
-        age_group: c.age_group as string,
-        bin_id: c.bin_id as string,
-        section: c.section as string | null,
-        location: formatInventoryLocation(c.bin_id, c.section),
-        status: c.status as string,
-        condition: c.condition as string | null,
-        received_at: c.received_at as string,
-        book_title_id: c.book_title_id as string,
-        book_title: c.book_titles as {
-          id: string;
-          title: string;
-          author: string;
-          cover_url: string | null;
-        } | null,
-      }));
-    }),
-    count: operatorProcedure.query(async () => {
-      const res = await sbFetch(
-        "/book_copies?status=eq.pending_stock&select=id",
-        {
-          headers: { Prefer: "count=exact", Range: "0-0" },
-        }
-      );
-      const total = parseInt(
-        res.headers.get("content-range")?.split("/")[1] ?? "0",
-        10
-      );
-      return { count: total };
-    }),
-    bins: operatorProcedure.query(async () => {
-      const copies = await sbJson<{ bin_id: string | null; section: string | null }[]>(
-        "/book_copies?bin_id=not.is.null&status=in.(in_house,pending_stock,pending_label,pending_qc)&select=bin_id,section&limit=5000"
-      );
-      return Array.from(
-        new Set(
-          copies
-            .map((copy) => formatInventoryLocation(copy.bin_id, copy.section))
-            .filter((binId): binId is string => Boolean(binId))
-        )
-      ).sort((a, b) => a.localeCompare(b));
-    }),
+    queue: operatorProcedure.query(async () => getStockQueue()),
+    count: operatorProcedure.query(async () => getStockCount()),
+    bins: operatorProcedure.query(async () => getStockBins()),
     confirmPlaced: operatorProcedure
-      .input(
-        z.object({
-          copy_id: z.string(),
-          bin_id: z.string().optional(),
-          section: z.string().nullable().optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        await sbVoid(`/book_copies?id=eq.${input.copy_id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "in_house",
-            stocked_at: new Date().toISOString(),
-            ...(input.bin_id ? { bin_id: input.bin_id } : {}),
-            ...(input.section !== undefined
-              ? { section: normalizeShelvingSection(input.section) }
-              : {}),
-          }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true };
-      }),
+      .input(z.object({ copy_id: z.string(), bin_id: z.string().optional(), section: z.string().nullable().optional() }))
+      .mutation(async ({ input }) => confirmStockPlaced(input)),
     confirmAll: operatorProcedure
       .input(z.object({ copy_ids: z.array(z.string()) }))
-      .mutation(async ({ input }) => {
-        if (input.copy_ids.length === 0) return { success: true, count: 0 };
-        const now = new Date().toISOString();
-        await sbVoid(`/book_copies?id=in.(${input.copy_ids.join(",")})`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: "in_house", stocked_at: now }),
-          headers: { Prefer: "return=minimal" },
-        });
-        return { success: true, count: input.copy_ids.length };
-      }),
+      .mutation(async ({ input }) => confirmAllStockPlaced(input)),
   }),
-
-  // ─── Donations ──────────────────────────────────────────────────────────────
   donations: router({
     list: operatorProcedure.query(async () => {
       const res = await sbFetch("/donations?order=created_at.desc&limit=200", {
