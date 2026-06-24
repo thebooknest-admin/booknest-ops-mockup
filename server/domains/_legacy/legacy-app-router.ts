@@ -53,6 +53,7 @@ import {
 } from "../../supabase";
 import { isbnRouter } from "../inventory/isbn.router";
 import { createReturnsService } from "../returns/services/returns.service";
+import { getMemberCycleState } from "../returns/services/member-cycle.guard";
 import {
   getShipmentDetail,
   listAllShipments,
@@ -318,14 +319,12 @@ async function createPickingOrderForMember(input: {
 }) {
   const now = new Date().toISOString();
 
-  const existingOpen = await sbJson<{ id: string; status: string }[]>(
-    `/shipments?member_id=eq.${input.member_id}&shipment_type=eq.outbound&status=in.(picking,packing,packed)&select=id,status&limit=1`
-  );
-  if (existingOpen[0]) {
+  const cycle = await getMemberCycleState(input.member_id);
+  if (cycle.open) {
     return {
       created: false,
-      shipment_id: existingOpen[0].id,
-      status: existingOpen[0].status,
+      shipment_id: cycle.shipment?.id ?? null,
+      status: cycle.shipment?.status ?? cycle.returnRecord?.status ?? null,
       reason: "open_shipment_exists",
     };
   }

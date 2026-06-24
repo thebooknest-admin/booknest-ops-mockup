@@ -35,7 +35,7 @@ export default function MemberProfilePage() {
       if (result.created) {
         toast.success(`New order ${result.order_number} added to Picking`);
       } else {
-        toast.info("This member already has an active order.");
+        toast.info("Member already has an open cycle.");
       }
       refetch();
       utils.picking.dailyOrders.invalidate();
@@ -80,7 +80,7 @@ export default function MemberProfilePage() {
   const address = member.address;
 
   const shippedCount = shipments.filter((s: any) => s.status === "shipped").length;
-  const activeShipment = shipments.find((s: any) => ["picking", "packing", "packed"].includes(s.status));
+  const activeShipment = shipments.find((s: any) => ["picking", "packing", "packed", "shipped"].includes(s.status));
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -128,7 +128,7 @@ export default function MemberProfilePage() {
               disabled={requestBundle.isPending || !!activeShipment}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
-              title={activeShipment ? "Active order already exists" : "Request a new bundle"}
+              title={activeShipment ? "Member already has an open cycle" : "Request a new bundle"}
             >
               {requestBundle.isPending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
