@@ -83,54 +83,7 @@ export async function easypostTrackingWebhook(req: Request, res: Response) {
       headers: { Prefer: 'return=minimal' },
     });
 
-    // Check if next shipment already exists
-    const existingRes = await sbFetch(
-      `/shipments?member_id=eq.${returnRecord.member_id}&status=in.(picking,packing,packed)&limit=1&select=id`
-    );
-    const existingData: any[] = await existingRes.json();
-
-    if (existingData[0]) {
-      return res.status(200).json({ ok: true, return_updated: true, shipment_created: false });
-    }
-
-    // Count shipments for number generation
-    const countRes = await sbFetch('/shipments?select=id', {
-      headers: { Prefer: 'count=exact', Range: '0-0' },
-    });
-    const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] ?? '0', 10);
-    const numbersRes = await sbFetch('/shipments?select=shipment_number,order_number&limit=10000');
-    const existingNumbers: { shipment_number: string | null; order_number: string | null }[] =
-      numbersRes.ok ? await numbersRes.json() : [];
-    const shipmentNumber = nextUnusedNumber(
-      existingNumbers.map(row => row.shipment_number),
-      'SHP-',
-      total + 1,
-      6
-    );
-    const orderNumber = nextUnusedNumber(
-      existingNumbers.map(row => row.order_number),
-      'BN-',
-      total + 1001,
-      4
-    );
-    const nextShipDate = getNextShipDate();
-
-    await sbFetch('/shipments', {
-      method: 'POST',
-      body: JSON.stringify({
-        member_id: returnRecord.member_id,
-        status: 'picking',
-        shipment_type: 'outbound',
-        shipment_number: shipmentNumber,
-        order_number: orderNumber,
-        scheduled_ship_date: nextShipDate,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    });
-
-    console.log(`[EasyPost webhook] ✅ Return in_transit, new shipment created for member ${returnRecord.member_id}`);
-    return res.status(200).json({ ok: true, return_updated: true, shipment_created: true, ship_date: nextShipDate });
+    return res.status(200).json({ ok: true, return_updated: true, shipment_created: false });
 
   } catch (e) {
     console.error('[EasyPost webhook] Error:', e);
