@@ -8,6 +8,11 @@ export {
   resolveBookSelectionPolicy,
 } from "./selection.policy";
 export type { BookSelectionPolicy } from "./selection.policy";
+export {
+  DEFAULT_SELECTION_ENGINE_CONFIG,
+  resolveSelectionEngineConfig,
+} from "./selection.config";
+export type { SelectionEngineConfig } from "./selection.config";
 export type {
   AvailableCopyWithTitle,
   BookSelectionMember,

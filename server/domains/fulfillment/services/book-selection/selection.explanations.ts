@@ -12,6 +12,13 @@ const REASON_LABELS: Record<SelectionReasonCode, string> = {
   duplicate_title_excluded: "Duplicate Title Excluded",
   avoided_topic_excluded: "Avoided Topic Excluded",
   fallback_pick: "Fallback Pick",
+  author_diversity: "Author Diversity",
+  theme_diversity: "Theme Diversity",
+  series_continue: "Series Continuation",
+  series_order_blocked: "Series Order Blocked",
+  inventory_health: "Inventory Healthy",
+  reading_progression: "Reading Progression",
+  premium_balance: "Premium Balance",
 };
 
 const REASON_TONES: Record<SelectionReasonCode, SelectionReasonTone> = {
@@ -26,6 +33,13 @@ const REASON_TONES: Record<SelectionReasonCode, SelectionReasonTone> = {
   duplicate_title_excluded: "blocked",
   avoided_topic_excluded: "blocked",
   fallback_pick: "neutral",
+  author_diversity: "positive",
+  theme_diversity: "positive",
+  series_continue: "positive",
+  series_order_blocked: "blocked",
+  inventory_health: "neutral",
+  reading_progression: "positive",
+  premium_balance: "positive",
 };
 
 export function createSelectionReason(

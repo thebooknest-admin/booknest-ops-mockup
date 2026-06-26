@@ -9,7 +9,14 @@ export type SelectionReasonCode =
   | "active_copy_excluded"
   | "duplicate_title_excluded"
   | "avoided_topic_excluded"
-  | "fallback_pick";
+  | "fallback_pick"
+  | "author_diversity"
+  | "theme_diversity"
+  | "series_continue"
+  | "series_order_blocked"
+  | "inventory_health"
+  | "reading_progression"
+  | "premium_balance";
 
 export type SelectionReasonTone = "positive" | "neutral" | "warning" | "blocked";
 
@@ -52,6 +59,10 @@ export type AvailableCopyWithTitle = {
     cover_url?: string | null;
     bin_theme: string | null;
     tag_ids: string[] | null;
+    suggested_age_tier?: string | null;
+    page_count?: number | null;
+    premium_flag?: boolean | null;
+    estimated_market_value?: number | null;
   } | null;
 };
 
