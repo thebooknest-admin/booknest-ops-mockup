@@ -16,6 +16,7 @@ import PickingPage from "./pages/PickingPage";
 import QCQueuePage from "./pages/QCQueuePage";
 import ReceivePage from "./pages/ReceivePage";
 import ReturnsPage from "./pages/ReturnsPage";
+import SelectionSettingsPage from "./pages/SelectionSettingsPage";
 import ShipBundlePage from "./pages/ShipBundlePage";
 import ShippingPage from "./pages/ShippingPage";
 import SignupPage from "./pages/SignupPage";
@@ -52,6 +53,7 @@ function DashboardRouter() {
           <Route path="/support" component={SupportPage} />
           <Route path="/isbn" component={IsbnLookupPage} />
           <Route path="/orders" component={OrdersPage} />
+          <Route path="/settings/selection" component={SelectionSettingsPage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

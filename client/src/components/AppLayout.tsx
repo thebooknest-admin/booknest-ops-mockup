@@ -31,6 +31,7 @@ import {
   Menu,
   Package,
   RotateCcw,
+  Settings,
   Tag,
   ToggleLeft,
   ToggleRight,
@@ -109,6 +110,7 @@ const buildNavItems = (
   { label: "Members", href: "/members", icon: Users },
   { label: "Support", href: "/support", icon: AlertCircle },
   { label: "ISBN Lookup", href: "/isbn", icon: BookOpen },
+  { label: "Selection Settings", href: "/settings/selection", icon: Settings },
   { label: "Event Sign-Up", overlay: true, icon: CalendarCheck },
 ];
 

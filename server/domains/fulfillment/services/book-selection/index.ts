@@ -13,6 +13,16 @@ export {
   resolveSelectionEngineConfig,
 } from "./selection.config";
 export type { SelectionEngineConfig } from "./selection.config";
+export {
+  DEFAULT_SELECTION_ENGINE_SETTINGS,
+  getCurrentSelectionSettings,
+  getSelectionSettingsForEngine,
+  resetSelectionSettings,
+  settingsToSelectionConfig,
+  settingsToSelectionPolicy,
+  updateSelectionSettings,
+} from "./selection.settings";
+export type { SelectionEngineSettings, SelectionStrength } from "./selection.settings";
 export type {
   AvailableCopyWithTitle,
   BookSelectionMember,

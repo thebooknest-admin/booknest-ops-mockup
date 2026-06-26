@@ -14,6 +14,11 @@ export type SelectionEngineConfig = {
     sameSeriesPenalty: number;
     pippasSurpriseMaxScoreGap: number;
   };
+  curation: {
+    discoveryPicksPerShipment: number;
+    interestMatchTargetPercentage: number;
+    maximumSameSeriesPerShipment: number;
+  };
   thresholds: {
     healthyInventoryCount: number;
     veryHealthyInventoryCount: number;
@@ -37,6 +42,11 @@ export const DEFAULT_SELECTION_ENGINE_CONFIG: SelectionEngineConfig = {
     sameSeriesPenalty: 100,
     pippasSurpriseMaxScoreGap: 35,
   },
+  curation: {
+    discoveryPicksPerShipment: 1,
+    interestMatchTargetPercentage: 85,
+    maximumSameSeriesPerShipment: 1,
+  },
   thresholds: {
     healthyInventoryCount: 3,
     veryHealthyInventoryCount: 5,
@@ -50,6 +60,7 @@ export function resolveSelectionEngineConfig(
   return {
     score: { ...DEFAULT_SELECTION_ENGINE_CONFIG.score, ...overrides?.score },
     diversity: { ...DEFAULT_SELECTION_ENGINE_CONFIG.diversity, ...overrides?.diversity },
+    curation: { ...DEFAULT_SELECTION_ENGINE_CONFIG.curation, ...overrides?.curation },
     thresholds: { ...DEFAULT_SELECTION_ENGINE_CONFIG.thresholds, ...overrides?.thresholds },
   };
 }

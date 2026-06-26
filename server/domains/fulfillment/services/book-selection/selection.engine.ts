@@ -19,6 +19,11 @@ import type { BookSelectionPolicy } from "./selection.policy";
 import type { SelectionEngineConfig } from "./selection.config";
 import { resolveBookSelectionPolicy } from "./selection.policy";
 import { resolveSelectionEngineConfig } from "./selection.config";
+import {
+  getSelectionSettingsForEngine,
+  settingsToSelectionConfig,
+  settingsToSelectionPolicy,
+} from "./selection.settings";
 import { createSelectionReason, selectionReasonCodes } from "./selection.explanations";
 import { getSelectionAgeGroup } from "./scoring/age-score";
 import { buildPriorTitleSet } from "./scoring/duplicate-score";
@@ -264,8 +269,15 @@ export async function suggestBooksForMember(input: {
   policy?: Partial<BookSelectionPolicy>;
   config?: Partial<SelectionEngineConfig>;
 }): Promise<SuggestBooksResult> {
-  const policy = resolveBookSelectionPolicy(input.policy);
-  const config = resolveSelectionEngineConfig(input.config);
+  const settings = await getSelectionSettingsForEngine();
+  const policy = resolveBookSelectionPolicy({
+    ...settingsToSelectionPolicy(settings.settings),
+    ...input.policy,
+  });
+  const config = resolveSelectionEngineConfig({
+    ...settingsToSelectionConfig(settings.settings),
+    ...input.config,
+  });
   const memberRes = await sbFetch(
     `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid,notes,books_per_box&limit=1`
   );
@@ -425,27 +437,41 @@ export async function suggestBooksForMember(input: {
   };
 }
 
+function getDiscoveryPickTarget(count: number, config: SelectionEngineConfig): number {
+  const percentageTarget = Math.round(
+    count * ((100 - config.curation.interestMatchTargetPercentage) / 100)
+  );
+  return Math.max(
+    0,
+    Math.min(count, Math.max(config.curation.discoveryPicksPerShipment, percentageTarget))
+  );
+}
+
 function markPippasSurprise(selected: Candidate[], candidates: Candidate[], config: SelectionEngineConfig) {
-  if (selected.length < 3 || selected.some(candidate => !candidate.isInterestMatch)) return;
-  const selectedIds = new Set(selected.map(candidate => candidate.copy.id));
-  const bestDiscovery = candidates
-    .filter(candidate => !selectedIds.has(candidate.copy.id) && !candidate.isInterestMatch)
-    .sort((a, b) => b.baseScore - a.baseScore)[0];
-  if (!bestDiscovery) return;
+  const target = getDiscoveryPickTarget(selected.length, config);
+  if (selected.length < 3 || target <= 0) return;
 
-  const replaceIndex = selected
-    .map((candidate, index) => ({ candidate, index }))
-    .filter(({ candidate }) => candidate.isInterestMatch && !candidate.isSeriesContinuation)
-    .sort((a, b) => a.candidate.finalScore - b.candidate.finalScore)[0]?.index;
-  if (replaceIndex === undefined) return;
+  while (selected.filter(candidate => !candidate.isInterestMatch).length < target) {
+    const selectedIds = new Set(selected.map(candidate => candidate.copy.id));
+    const bestDiscovery = candidates
+      .filter(candidate => !selectedIds.has(candidate.copy.id) && !candidate.isInterestMatch)
+      .sort((a, b) => b.baseScore - a.baseScore)[0];
+    if (!bestDiscovery) return;
 
-  const replaced = selected[replaceIndex];
-  if (replaced.finalScore - bestDiscovery.baseScore > config.diversity.pippasSurpriseMaxScoreGap) return;
+    const replaceIndex = selected
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => candidate.isInterestMatch && !candidate.isSeriesContinuation)
+      .sort((a, b) => a.candidate.finalScore - b.candidate.finalScore)[0]?.index;
+    if (replaceIndex === undefined) return;
 
-  bestDiscovery.finalScore = bestDiscovery.baseScore;
-  bestDiscovery.reasons = bestDiscovery.reasons.filter(reason => reason.code !== "theme_variety");
-  bestDiscovery.reasons.push(createSelectionReason("pippas_surprise"));
-  selected[replaceIndex] = bestDiscovery;
+    const replaced = selected[replaceIndex];
+    if (replaced.finalScore - bestDiscovery.baseScore > config.diversity.pippasSurpriseMaxScoreGap) return;
+
+    bestDiscovery.finalScore = bestDiscovery.baseScore;
+    bestDiscovery.reasons = bestDiscovery.reasons.filter(reason => reason.code !== "theme_variety");
+    bestDiscovery.reasons.push(createSelectionReason("pippas_surprise"));
+    selected[replaceIndex] = bestDiscovery;
+  }
 }
 
 function selectCuratedCandidates(
@@ -464,7 +490,7 @@ function selectCuratedCandidates(
   const selectedIds = new Set<string>();
   const selectedAuthors = new Set<string>();
   const selectedThemes = new Set<string>();
-  const selectedSeries = new Set<string>();
+  const selectedSeriesCounts = new Map<string, number>();
 
   while (selected.length < count && selected.length < candidates.length) {
     const remaining = candidates.filter(candidate => !selectedIds.has(candidate.copy.id));
@@ -491,7 +517,7 @@ function selectCuratedCandidates(
         }
         if (
           candidate.series?.key &&
-          selectedSeries.has(candidate.series.key) &&
+          (selectedSeriesCounts.get(candidate.series.key) ?? 0) >= config.curation.maximumSameSeriesPerShipment &&
           remaining.some(other => other.series?.key !== candidate.series?.key)
         ) {
           adjustedScore -= config.diversity.sameSeriesPenalty;
@@ -527,7 +553,9 @@ function selectCuratedCandidates(
     selectedIds.add(chosen.copy.id);
     selectedAuthors.add(chosen.authorKey);
     selectedThemes.add(normalizeTheme(chosen.theme));
-    if (chosen.series?.key) selectedSeries.add(chosen.series.key);
+    if (chosen.series?.key) {
+      selectedSeriesCounts.set(chosen.series.key, (selectedSeriesCounts.get(chosen.series.key) ?? 0) + 1);
+    }
   }
 
   markPippasSurprise(selected, candidates, config);
@@ -574,8 +602,15 @@ export async function selectBooksForPickingOrder(input: {
   policy?: Partial<BookSelectionPolicy>;
   config?: Partial<SelectionEngineConfig>;
 }): Promise<PickingSelectionResult> {
-  const policy = resolveBookSelectionPolicy(input.policy);
-  const config = resolveSelectionEngineConfig(input.config);
+  const settings = await getSelectionSettingsForEngine();
+  const policy = resolveBookSelectionPolicy({
+    ...settingsToSelectionPolicy(settings.settings),
+    ...input.policy,
+  });
+  const config = resolveSelectionEngineConfig({
+    ...settingsToSelectionConfig(settings.settings),
+    ...input.config,
+  });
   const member = input.member;
   const booksNeeded = getBookCount(member.tier, member.books_per_box);
   const memberAgeGroup = getSelectionAgeGroup(member.age_group);

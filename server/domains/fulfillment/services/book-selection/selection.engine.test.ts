@@ -39,6 +39,16 @@ describe("book selection policy", () => {
       seriesContinuation: 24,
       readingProgression: 5,
     });
+    expect(DEFAULT_SELECTION_ENGINE_CONFIG.diversity).toMatchObject({
+      repeatedAuthorPenalty: 12,
+      repeatedThemePenalty: 24,
+      sameSeriesPenalty: 100,
+    });
+    expect(DEFAULT_SELECTION_ENGINE_CONFIG.curation).toMatchObject({
+      discoveryPicksPerShipment: 1,
+      interestMatchTargetPercentage: 85,
+      maximumSameSeriesPerShipment: 1,
+    });
   });
 });
 
@@ -274,6 +284,29 @@ describe("selectBooksForPickingOrder", () => {
     expect(result.explanationsByCopyId.get("progress")?.map(reason => reason.code)).toContain("reading_progression");
   });
 
+  it("uses loaded settings to disable Pippa's Surprise", async () => {
+    mockPickingSelection({
+      settingsRows: [{
+        id: "settings-1",
+        active: true,
+        config: { discoveryPicksPerShipment: 0, interestMatchTargetPercentage: 100 },
+      }],
+      interests: [{ interest_category: "Adventure" }],
+      copies: [
+        copy("interest-1", "interest-title-1", "Interest One", "Adventure", "BIN", "Author A"),
+        copy("interest-2", "interest-title-2", "Interest Two", "Adventure", "BIN", "Author B"),
+        copy("interest-3", "interest-title-3", "Interest Three", "Adventure", "BIN", "Author C"),
+        copy("interest-4", "interest-title-4", "Interest Four", "Adventure", "BIN", "Author D"),
+        copy("interest-5", "interest-title-5", "Interest Five", "Adventure", "BIN", "Author E"),
+        copy("interest-6", "interest-title-6", "Interest Six", "Adventure", "BIN", "Author F"),
+        copy("surprise", "surprise-title", "Surprise One", "Discovery Den", "BIN", "Author G"),
+      ],
+    });
+
+    const result = await runPickingSelection(6);
+    expect(result.selectedCopies.map(copy => copy.id)).not.toContain("surprise");
+  });
+
   it("persists Pippa's Surprise when inventory allows one discovery pick", async () => {
     mockPickingSelection({
       interests: [{ interest_category: "Adventure" }],
@@ -362,6 +395,7 @@ type PickingFixture = {
   activeAssignments?: Array<{ book_copy_id: string | null }>;
   priorShipmentBooks?: Array<{ book_title_id: string | null }>;
   priorTitles?: Array<{ id: string; title: string | null; author: string | null; page_count?: number | null }>;
+  settingsRows?: Array<{ id: string; active: boolean; config: Record<string, unknown>; updated_at?: string | null }>;
   copies: ReturnType<typeof copy>[];
 };
 
@@ -370,6 +404,7 @@ let currentTopicsToAvoid: string[] = [];
 function mockPickingSelection(fixture: PickingFixture) {
   currentTopicsToAvoid = fixture.topicsToAvoid ?? [];
   mockedSbJson.mockImplementation(async (path: string) => {
+    if (path.startsWith("/selection_engine_settings?")) return fixture.settingsRows ?? [];
     if (path.startsWith("/member_interests?")) return fixture.interests ?? [];
     if (path.startsWith("/member_book_history?")) return fixture.priorHistory ?? [];
     if (path.startsWith("/shipments?member_id=")) return fixture.priorShipments ?? [];

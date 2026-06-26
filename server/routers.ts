@@ -28,6 +28,7 @@ import {
 import { returnsRouter } from "./domains/returns/router";
 import { donationsRouter } from "./domains/donations/router";
 import { supportRouter } from "./domains/support/router";
+import { selectionSettingsRouter } from "./domains/settings/router";
 import {
   signupsRouter,
   welcomeRouter,
@@ -52,6 +53,7 @@ export const appRouter = router({
   returns: returnsRouter,
   donations: donationsRouter,
   support: supportRouter,
+  selectionSettings: selectionSettingsRouter,
   // Compatibility routes deliberately isolated from internal ops domains.
   welcome: welcomeRouter,
   signups: signupsRouter,
