@@ -11,13 +11,12 @@ export type SelectionEngineConfig = {
   diversity: {
     repeatedAuthorPenalty: number;
     repeatedThemePenalty: number;
-    premiumClusterPenalty: number;
-    maxPremiumPerShipment: number;
+    sameSeriesPenalty: number;
+    pippasSurpriseMaxScoreGap: number;
   };
   thresholds: {
     healthyInventoryCount: number;
     veryHealthyInventoryCount: number;
-    premiumEstimatedValue: number;
     readingProgressionMaxPageDelta: number;
   };
 };
@@ -33,15 +32,14 @@ export const DEFAULT_SELECTION_ENGINE_CONFIG: SelectionEngineConfig = {
     readingProgression: 5,
   },
   diversity: {
-    repeatedAuthorPenalty: 24,
-    repeatedThemePenalty: 18,
-    premiumClusterPenalty: 28,
-    maxPremiumPerShipment: 1,
+    repeatedAuthorPenalty: 12,
+    repeatedThemePenalty: 24,
+    sameSeriesPenalty: 100,
+    pippasSurpriseMaxScoreGap: 35,
   },
   thresholds: {
     healthyInventoryCount: 3,
     veryHealthyInventoryCount: 5,
-    premiumEstimatedValue: 25,
     readingProgressionMaxPageDelta: 80,
   },
 };

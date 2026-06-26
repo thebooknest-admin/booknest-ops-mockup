@@ -16,7 +16,7 @@ export type SelectionReasonCode =
   | "series_order_blocked"
   | "inventory_health"
   | "reading_progression"
-  | "premium_balance";
+  | "pippas_surprise";
 
 export type SelectionReasonTone = "positive" | "neutral" | "warning" | "blocked";
 
@@ -61,8 +61,6 @@ export type AvailableCopyWithTitle = {
     tag_ids: string[] | null;
     suggested_age_tier?: string | null;
     page_count?: number | null;
-    premium_flag?: boolean | null;
-    estimated_market_value?: number | null;
   } | null;
 };
 
@@ -97,10 +95,40 @@ export type SuggestBooksResult = {
 
 export type SelectedPickingCopy = AvailableCopyWithTitle;
 
+export type SelectionMetadataExplanation = SelectionReason;
+
+export type SelectionMetadata = {
+  engine_version: string;
+  policy_version: string;
+  selected_at: string;
+  final_score: number;
+  score_breakdown: Record<string, number>;
+  explanation_codes: SelectionReasonCode[];
+  explanation_labels: string[];
+  explanations: SelectionMetadataExplanation[];
+  author_diversity_adjustment: number;
+  theme_diversity_adjustment: number;
+  series_continuation: {
+    series_key: string | null;
+    series_label: string | null;
+    book_number: number | null;
+    continued_existing_series: boolean;
+  };
+  series_order_validation: {
+    checked: boolean;
+    valid: boolean;
+    detail: string | null;
+  };
+  reading_progression_adjustment: number;
+  inventory_health_adjustment: number;
+  pippas_surprise: boolean;
+};
+
 export type PickingSelectionResult = {
   selectedCopies: SelectedPickingCopy[];
   noteMatchByCopyId: Map<string, { score: number; reasons: string[] }>;
   explanationsByCopyId: Map<string, SelectionReason[]>;
+  selectionMetadataByCopyId: Map<string, SelectionMetadata>;
   exclusions: SelectionExclusion[];
   booksNeeded: number;
 };

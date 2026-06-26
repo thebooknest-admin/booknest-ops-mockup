@@ -1,6 +1,7 @@
 import { formatInventoryLocation } from "@shared/booknest";
 import { sbFetch, sbJson, sbVoid } from "../../../supabase";
 import { isSeasonalBookAllowed } from "./book-selection";
+import type { SelectionMetadata } from "./book-selection";
 
 export type ShipmentPickListInput = {
   shipment_id: string;
@@ -13,6 +14,58 @@ export type SwapShipmentBookInput = {
   books_needed: number;
 };
 
+type ShipmentBookMetadataRow = {
+  id: string;
+  book_copy_id: string | null;
+  book_title_id: string | null;
+  selection_metadata?: SelectionMetadata | null;
+};
+
+function findSelectionMetadata(
+  row: any,
+  metadataRows: ShipmentBookMetadataRow[]
+): SelectionMetadata | null {
+  const byId = metadataRows.find(metadata => metadata.id && row.id && metadata.id === row.id);
+  const byCopy = metadataRows.find(metadata => metadata.book_copy_id && metadata.book_copy_id === row.book_copy_id);
+  const byTitle = metadataRows.find(metadata => metadata.book_title_id && metadata.book_title_id === row.book_title_id);
+  return byId?.selection_metadata ?? byCopy?.selection_metadata ?? byTitle?.selection_metadata ?? null;
+}
+
+function buildSwapSelectionMetadata(
+  replacement: any,
+  previousSelectionMetadata: SelectionMetadata | null | undefined
+) {
+  return {
+    engine_version: "book-selection-v2-swap",
+    policy_version: "2026-06-selection-v2",
+    selected_at: new Date().toISOString(),
+    final_score: typeof replacement.match_score === "number" ? replacement.match_score : 0,
+    score_breakdown: {
+      swap_candidate_score: typeof replacement.match_score === "number" ? replacement.match_score : 0,
+    },
+    explanation_codes: [],
+    explanation_labels: [],
+    explanations: [],
+    author_diversity_adjustment: 0,
+    theme_diversity_adjustment: 0,
+    series_continuation: {
+      series_key: null,
+      series_label: null,
+      book_number: null,
+      continued_existing_series: false,
+    },
+    series_order_validation: {
+      checked: false,
+      valid: true,
+      detail: null,
+    },
+    reading_progression_adjustment: 0,
+    inventory_health_adjustment: 0,
+    pippas_surprise: false,
+    source: "swap",
+    previous_selection_metadata: previousSelectionMetadata ?? null,
+  };
+}
 
 export async function getShipmentPickList(input: ShipmentPickListInput): Promise<any[]> {
   const res = await sbFetch(`/rpc/get_shipment_pick_list`, {
@@ -30,14 +83,20 @@ export async function getShipmentPickList(input: ShipmentPickListInput): Promise
   const copyIds = Array.from(
     new Set(rows.map(row => row.book_copy_id).filter(Boolean))
   );
-  if (copyIds.length === 0) return rows;
 
-  const copyRows = await sbJson<
-    { id: string; bin_id: string | null; section: string | null }[]
-  >(
-    `/book_copies?id=in.(${copyIds.join(",")})&select=id,bin_id,section&limit=200`
+  const copyMap = new Map<string, { id: string; bin_id: string | null; section: string | null }>();
+  if (copyIds.length > 0) {
+    const copyRows = await sbJson<
+      { id: string; bin_id: string | null; section: string | null }[]
+    >(
+      `/book_copies?id=in.(${copyIds.join(",")})&select=id,bin_id,section&limit=200`
+    );
+    for (const copy of copyRows) copyMap.set(copy.id, copy);
+  }
+
+  const metadataRows = await sbJson<ShipmentBookMetadataRow[]>(
+    `/shipment_books?shipment_id=eq.${input.shipment_id}&select=id,book_copy_id,book_title_id,selection_metadata&limit=200`
   );
-  const copyMap = new Map(copyRows.map(copy => [copy.id, copy]));
 
   return rows.map(row => {
     const copy = copyMap.get(row.book_copy_id);
@@ -50,15 +109,16 @@ export async function getShipmentPickList(input: ShipmentPickListInput): Promise
       bin_id: location ?? row.bin_id,
       section: copy?.section ?? null,
       location,
+      selection_metadata: findSelectionMetadata(row, metadataRows),
     };
   });
 }
 
 export async function swapShipmentBook(input: SwapShipmentBookInput): Promise<any> {
   const assignedRows = await sbJson<
-    { id: string; book_copy_id: string | null; book_title_id: string | null }[]
+    { id: string; book_copy_id: string | null; book_title_id: string | null; selection_metadata?: SelectionMetadata | null }[]
   >(
-    `/shipment_books?shipment_id=eq.${input.shipment_id}&select=id,book_copy_id,book_title_id&limit=100`
+    `/shipment_books?shipment_id=eq.${input.shipment_id}&select=id,book_copy_id,book_title_id,selection_metadata&limit=100`
   );
   const assignedCopyIds = new Set(
     assignedRows.map((row) => row.book_copy_id).filter(Boolean)
@@ -106,6 +166,7 @@ export async function swapShipmentBook(input: SwapShipmentBookInput): Promise<an
         book_title_id: replacement.book_title_id,
         status: "ready_for_picking",
         match_score: replacement.match_score,
+        selection_metadata: buildSwapSelectionMetadata(replacement, oldShipmentBook.selection_metadata),
         picked_at: null,
         scanned_at: null,
       }),

@@ -229,7 +229,7 @@ async function createPickingOrderForMember(input: {
     throw new Error("Member must complete the welcome form before creating a new bundle.");
   }
 
-  const { selectedCopies, noteMatchByCopyId, booksNeeded } =
+  const { selectedCopies, noteMatchByCopyId, selectionMetadataByCopyId, booksNeeded } =
     await selectBooksForPickingOrder({ member });
   if (selectedCopies.length < booksNeeded) {
     throw new Error(
@@ -300,6 +300,7 @@ async function createPickingOrderForMember(input: {
             noteMatchByCopyId.get(copy.id)?.reasons.join("; ") ||
             (index === 0 ? input.source ?? "manual" : "matched"),
           match_score: noteMatchByCopyId.get(copy.id)?.score ?? null,
+          selection_metadata: selectionMetadataByCopyId.get(copy.id) ?? null,
           created_at: now,
         }))
       ),

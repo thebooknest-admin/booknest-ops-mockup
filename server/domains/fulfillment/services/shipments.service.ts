@@ -36,7 +36,7 @@ export async function getShipmentDetail(input: { id: string }) {
     const titles: { id: string; title: string; author: string; cover_url: string | null }[] = await res.json();
     titleMap = Object.fromEntries(titles.map(t => [t.id, t]));
   }
-  return { ...shipment, member, address, books: books.map(b => ({ ...b, book_title: titleMap[b.book_title_id] ?? null })) };
+  return { ...shipment, member, address, books: books.map(b => ({ ...b, selection_metadata: b.selection_metadata ?? null, book_title: titleMap[b.book_title_id] ?? null })) };
 }
 
 export async function updateShipmentTracking(input: { id: string; tracking_number: string; carrier?: string }) {

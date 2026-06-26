@@ -22,7 +22,9 @@ describe("getShipmentPickList", () => {
     mockedSbFetch.mockResolvedValueOnce(
       new Response(JSON.stringify([{ book_copy_id: "copy-1", bin_id: "LEGACY-BIN", extra: "value" }]), { status: 200 })
     );
-    mockedSbJson.mockResolvedValueOnce([{ id: "copy-1", bin_id: "SOAR-ADV-01", section: "B" }]);
+    mockedSbJson
+      .mockResolvedValueOnce([{ id: "copy-1", bin_id: "SOAR-ADV-01", section: "B" }])
+      .mockResolvedValueOnce([{ id: "shipment-book-1", book_copy_id: "copy-1", book_title_id: "title-1", selection_metadata: { engine_version: "book-selection-v2" } }]);
 
     await expect(getShipmentPickList({ shipment_id: "shipment-1" })).resolves.toEqual([
       {
@@ -31,17 +33,37 @@ describe("getShipmentPickList", () => {
         section: "B",
         location: "SOAR-ADV-B",
         extra: "value",
+        selection_metadata: { engine_version: "book-selection-v2" },
       },
     ]);
     expect(mockedSbFetch).toHaveBeenCalledWith("/rpc/get_shipment_pick_list", {
       method: "POST",
       body: JSON.stringify({ p_shipment_id: "shipment-1" }),
     });
-    expect(mockedSbJson).toHaveBeenCalledWith(
+    expect(mockedSbJson).toHaveBeenNthCalledWith(1,
       "/book_copies?id=in.(copy-1)&select=id,bin_id,section&limit=200"
+    );
+    expect(mockedSbJson).toHaveBeenNthCalledWith(2,
+      "/shipment_books?shipment_id=eq.shipment-1&select=id,book_copy_id,book_title_id,selection_metadata&limit=200"
     );
   });
 
+  it("returns null metadata for legacy pick-list rows", async () => {
+    mockedSbFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify([{ book_copy_id: null, bin_id: "LEGACY-BIN" }]), { status: 200 })
+    );
+    mockedSbJson.mockResolvedValueOnce([]);
+
+    await expect(getShipmentPickList({ shipment_id: "shipment-legacy" })).resolves.toEqual([
+      {
+        book_copy_id: null,
+        bin_id: "LEGACY-BIN",
+        section: null,
+        location: "LEGACY-BIN",
+        selection_metadata: null,
+      },
+    ]);
+  });
   it("preserves the RPC error text", async () => {
     mockedSbFetch.mockResolvedValueOnce(new Response("rpc failure", { status: 500 }));
     await expect(getShipmentPickList({ shipment_id: "shipment-1" })).rejects.toThrow(
@@ -53,7 +75,7 @@ describe("getShipmentPickList", () => {
 describe("swapShipmentBook", () => {
   it("preserves the candidate RPC payload and direct update sequence", async () => {
     mockedSbJson.mockResolvedValueOnce([
-      { id: "shipment-book-1", book_copy_id: "old-copy", book_title_id: "old-title" },
+      { id: "shipment-book-1", book_copy_id: "old-copy", book_title_id: "old-title", selection_metadata: { engine_version: "book-selection-v2", final_score: 70 } },
     ]);
     mockedSbFetch
       .mockResolvedValueOnce(new Response(JSON.stringify([
@@ -78,17 +100,20 @@ describe("swapShipmentBook", () => {
         p_books_needed: 6,
       }),
     });
-    expect(mockedSbFetch).toHaveBeenNthCalledWith(2, "/shipment_books?id=eq.shipment-book-1", {
-      method: "PATCH",
-      body: JSON.stringify({
-        book_copy_id: "new-copy",
-        book_title_id: "new-title",
-        status: "ready_for_picking",
-        match_score: 88,
-        picked_at: null,
-        scanned_at: null,
-      }),
-      headers: { Prefer: "return=representation" },
+    expect(mockedSbFetch.mock.calls[1][0]).toBe("/shipment_books?id=eq.shipment-book-1");
+    const patchBody = JSON.parse(String((mockedSbFetch.mock.calls[1][1] as RequestInit).body));
+    expect(patchBody).toMatchObject({
+      book_copy_id: "new-copy",
+      book_title_id: "new-title",
+      status: "ready_for_picking",
+      match_score: 88,
+      selection_metadata: {
+        engine_version: "book-selection-v2-swap",
+        source: "swap",
+        previous_selection_metadata: { engine_version: "book-selection-v2", final_score: 70 },
+      },
+      picked_at: null,
+      scanned_at: null,
     });
     expect(mockedSbVoid).toHaveBeenCalledTimes(3);
     expect(mockedSbVoid.mock.calls.map(([path]) => path)).toEqual([
@@ -102,7 +127,7 @@ describe("swapShipmentBook", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-24T12:00:00.000Z"));
     mockedSbJson.mockResolvedValueOnce([
-      { id: "shipment-book-1", book_copy_id: "old-copy", book_title_id: "old-title" },
+      { id: "shipment-book-1", book_copy_id: "old-copy", book_title_id: "old-title", selection_metadata: { engine_version: "book-selection-v2", final_score: 70 } },
     ]);
     mockedSbFetch
       .mockResolvedValueOnce(new Response(JSON.stringify([

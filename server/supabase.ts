@@ -359,6 +359,7 @@ export interface ShipmentBook {
   scanned_at: string | null;
   selection_reason: string | null;
   match_score: number | null;
+  selection_metadata?: unknown | null;
   created_at: string;
 }
 

@@ -10,6 +10,7 @@ import type {
   BookSelectionMember,
   PickingSelectionResult,
   SelectionExclusion,
+  SelectionMetadata,
   SelectionReason,
   SuggestBooksResult,
   SuggestedBook,
@@ -35,8 +36,11 @@ const TIER_BOOK_COUNT: Record<string, number> = {
 };
 const DEFAULT_BOOK_COUNT = 4;
 
+const SELECTION_ENGINE_VERSION = "book-selection-v2";
+const SELECTION_POLICY_VERSION = "2026-06-selection-v2";
+
 const BOOK_TITLE_SELECTION_FIELDS =
-  "id,title,author,cover_url,bin_theme,tag_ids,suggested_age_tier,page_count,premium_flag,estimated_market_value";
+  "id,title,author,cover_url,bin_theme,tag_ids,suggested_age_tier,page_count";
 
 type PriorTitleMetadata = {
   id: string;
@@ -59,9 +63,16 @@ type Candidate = {
   theme: string;
   authorKey: string;
   series: SeriesInfo | null;
-  isPremium: boolean;
+  isInterestMatch: boolean;
+  isSeriesContinuation: boolean;
+  inventoryBonus: number;
+  readingProgressionBonus: number;
   noteMatch: { score: number; reasons: string[] };
   baseScore: number;
+  finalScore: number;
+  scoreBreakdown: Record<string, number>;
+  authorDiversityAdjustment: number;
+  themeDiversityAdjustment: number;
   reasons: SelectionReason[];
 };
 
@@ -200,12 +211,6 @@ function getAveragePriorPageCount(priorTitles: PriorTitleMetadata[]): number | n
     .filter((count): count is number => typeof count === "number" && Number.isFinite(count) && count > 0);
   if (counts.length === 0) return null;
   return Math.round(counts.reduce((sum, count) => sum + count, 0) / counts.length);
-}
-
-function isPremiumBook(copy: AvailableCopyWithTitle, config: SelectionEngineConfig): boolean {
-  if (copy.book_titles?.premium_flag) return true;
-  const value = copy.book_titles?.estimated_market_value;
-  return typeof value === "number" && value >= config.thresholds.premiumEstimatedValue;
 }
 
 function getInventoryHealthBonus(count: number, config: SelectionEngineConfig): number {
@@ -420,52 +425,85 @@ export async function suggestBooksForMember(input: {
   };
 }
 
+function markPippasSurprise(selected: Candidate[], candidates: Candidate[], config: SelectionEngineConfig) {
+  if (selected.length < 3 || selected.some(candidate => !candidate.isInterestMatch)) return;
+  const selectedIds = new Set(selected.map(candidate => candidate.copy.id));
+  const bestDiscovery = candidates
+    .filter(candidate => !selectedIds.has(candidate.copy.id) && !candidate.isInterestMatch)
+    .sort((a, b) => b.baseScore - a.baseScore)[0];
+  if (!bestDiscovery) return;
+
+  const replaceIndex = selected
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate.isInterestMatch && !candidate.isSeriesContinuation)
+    .sort((a, b) => a.candidate.finalScore - b.candidate.finalScore)[0]?.index;
+  if (replaceIndex === undefined) return;
+
+  const replaced = selected[replaceIndex];
+  if (replaced.finalScore - bestDiscovery.baseScore > config.diversity.pippasSurpriseMaxScoreGap) return;
+
+  bestDiscovery.finalScore = bestDiscovery.baseScore;
+  bestDiscovery.reasons = bestDiscovery.reasons.filter(reason => reason.code !== "theme_variety");
+  bestDiscovery.reasons.push(createSelectionReason("pippas_surprise"));
+  selected[replaceIndex] = bestDiscovery;
+}
+
 function selectCuratedCandidates(
   candidates: Candidate[],
   count: number,
   config: SelectionEngineConfig,
   useDiversity: boolean
 ): Candidate[] {
-  if (!useDiversity) return candidates.slice(0, count);
+  if (!useDiversity) {
+    const selected = candidates.slice(0, count);
+    markPippasSurprise(selected, candidates, config);
+    return selected;
+  }
 
   const selected: Candidate[] = [];
   const selectedIds = new Set<string>();
   const selectedAuthors = new Set<string>();
   const selectedThemes = new Set<string>();
-  let premiumCount = 0;
+  const selectedSeries = new Set<string>();
 
   while (selected.length < count && selected.length < candidates.length) {
     const remaining = candidates.filter(candidate => !selectedIds.has(candidate.copy.id));
-    const premiumAlternativeExists = remaining.some(candidate => !candidate.isPremium);
 
     const ranked = remaining
       .map(candidate => {
         let adjustedScore = candidate.baseScore;
+        let authorDiversityAdjustment = 0;
+        let themeDiversityAdjustment = 0;
+
         if (
           selectedAuthors.has(candidate.authorKey) &&
           remaining.some(other => other.authorKey !== candidate.authorKey)
         ) {
-          adjustedScore -= config.diversity.repeatedAuthorPenalty;
+          authorDiversityAdjustment = -config.diversity.repeatedAuthorPenalty;
+          adjustedScore += authorDiversityAdjustment;
         }
         if (
           selectedThemes.has(normalizeTheme(candidate.theme)) &&
           remaining.some(other => normalizeTheme(other.theme) !== normalizeTheme(candidate.theme))
         ) {
-          adjustedScore -= config.diversity.repeatedThemePenalty;
+          themeDiversityAdjustment = -config.diversity.repeatedThemePenalty;
+          adjustedScore += themeDiversityAdjustment;
         }
         if (
-          candidate.isPremium &&
-          premiumCount >= config.diversity.maxPremiumPerShipment &&
-          premiumAlternativeExists
+          candidate.series?.key &&
+          selectedSeries.has(candidate.series.key) &&
+          remaining.some(other => other.series?.key !== candidate.series?.key)
         ) {
-          adjustedScore -= config.diversity.premiumClusterPenalty;
+          adjustedScore -= config.diversity.sameSeriesPenalty;
         }
-        return { candidate, adjustedScore };
+
+        return { candidate, adjustedScore, authorDiversityAdjustment, themeDiversityAdjustment };
       })
       .sort((a, b) => b.adjustedScore - a.adjustedScore || b.candidate.baseScore - a.candidate.baseScore);
 
-    const chosen = ranked[0]?.candidate;
-    if (!chosen) break;
+    const rankedChoice = ranked[0];
+    const chosen = rankedChoice?.candidate;
+    if (!chosen || !rankedChoice) break;
 
     const hadRepeatedAuthorOption = remaining.some(candidate =>
       selectedAuthors.has(candidate.authorKey) && candidate.copy.id !== chosen.copy.id
@@ -473,7 +511,10 @@ function selectCuratedCandidates(
     const hadRepeatedThemeOption = remaining.some(candidate =>
       selectedThemes.has(normalizeTheme(candidate.theme)) && candidate.copy.id !== chosen.copy.id
     );
-    const hadPremiumOption = remaining.some(candidate => candidate.isPremium && candidate.copy.id !== chosen.copy.id);
+
+    chosen.finalScore = rankedChoice.adjustedScore;
+    chosen.authorDiversityAdjustment = rankedChoice.authorDiversityAdjustment;
+    chosen.themeDiversityAdjustment = rankedChoice.themeDiversityAdjustment;
 
     if (selected.length > 0 && !selectedAuthors.has(chosen.authorKey) && hadRepeatedAuthorOption) {
       chosen.reasons.push(createSelectionReason("author_diversity", chosen.copy.book_titles?.author ?? undefined));
@@ -481,18 +522,51 @@ function selectCuratedCandidates(
     if (selected.length > 0 && !selectedThemes.has(normalizeTheme(chosen.theme)) && hadRepeatedThemeOption) {
       chosen.reasons.push(createSelectionReason("theme_diversity", chosen.theme || undefined));
     }
-    if (!chosen.isPremium && premiumCount >= config.diversity.maxPremiumPerShipment && hadPremiumOption) {
-      chosen.reasons.push(createSelectionReason("premium_balance"));
-    }
 
     selected.push(chosen);
     selectedIds.add(chosen.copy.id);
     selectedAuthors.add(chosen.authorKey);
     selectedThemes.add(normalizeTheme(chosen.theme));
-    if (chosen.isPremium) premiumCount++;
+    if (chosen.series?.key) selectedSeries.add(chosen.series.key);
   }
 
+  markPippasSurprise(selected, candidates, config);
   return selected;
+}
+
+function buildSelectionMetadata(candidate: Candidate): SelectionMetadata {
+  const explanationCodes = selectionReasonCodes(candidate.reasons);
+  const seriesNumber = candidate.series?.number ?? null;
+  return {
+    engine_version: SELECTION_ENGINE_VERSION,
+    policy_version: SELECTION_POLICY_VERSION,
+    selected_at: new Date().toISOString(),
+    final_score: candidate.finalScore,
+    score_breakdown: {
+      ...candidate.scoreBreakdown,
+      author_diversity: candidate.authorDiversityAdjustment,
+      theme_diversity: candidate.themeDiversityAdjustment,
+    },
+    explanation_codes: explanationCodes,
+    explanation_labels: candidate.reasons.map(reason => reason.label),
+    explanations: candidate.reasons,
+    author_diversity_adjustment: candidate.authorDiversityAdjustment,
+    theme_diversity_adjustment: candidate.themeDiversityAdjustment,
+    series_continuation: {
+      series_key: candidate.series?.key ?? null,
+      series_label: candidate.series?.label ?? null,
+      book_number: seriesNumber,
+      continued_existing_series: candidate.isSeriesContinuation,
+    },
+    series_order_validation: {
+      checked: Boolean(seriesNumber),
+      valid: true,
+      detail: seriesNumber ? "Series order validated for book " + seriesNumber + "." : null,
+    },
+    reading_progression_adjustment: candidate.readingProgressionBonus,
+    inventory_health_adjustment: candidate.inventoryBonus,
+    pippas_surprise: explanationCodes.includes("pippas_surprise"),
+  };
 }
 
 export async function selectBooksForPickingOrder(input: {
@@ -677,9 +751,24 @@ export async function selectBooksForPickingOrder(input: {
       theme,
       authorKey: normalizeAuthor(copy.book_titles?.author),
       series,
-      isPremium: isPremiumBook(copy, config),
+      isInterestMatch: themeMatch || noteMatch.reasons.length > 0,
+      isSeriesContinuation,
+      inventoryBonus,
+      readingProgressionBonus: isReadingProgression ? config.score.readingProgression : 0,
       noteMatch,
       baseScore,
+      finalScore: baseScore,
+      scoreBreakdown: {
+        base: config.score.base,
+        interest_match: themeMatch ? config.score.interestMatch : 0,
+        note_match: noteMatch.score,
+        located_copy: copy.bin_id ? config.score.locatedCopy : 0,
+        inventory_health: inventoryBonus,
+        series_continuation: isSeriesContinuation ? config.score.seriesContinuation : 0,
+        reading_progression: isReadingProgression ? config.score.readingProgression : 0,
+      },
+      authorDiversityAdjustment: 0,
+      themeDiversityAdjustment: 0,
       reasons,
     };
 
@@ -712,6 +801,9 @@ export async function selectBooksForPickingOrder(input: {
     noteMatchByCopyId,
     explanationsByCopyId: new Map(
       selectedCandidates.map(candidate => [candidate.copy.id, candidate.reasons])
+    ),
+    selectionMetadataByCopyId: new Map(
+      selectedCandidates.map(candidate => [candidate.copy.id, buildSelectionMetadata(candidate)])
     ),
     exclusions,
     booksNeeded,

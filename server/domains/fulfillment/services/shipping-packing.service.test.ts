@@ -87,7 +87,7 @@ describe("packing and shipping service extraction", () => {
 
   it("preserves shipments.byId response assembly", async () => {
     vi.mocked(getShipmentById).mockResolvedValue({ id: "shipment-1", member_id: "member-1", address_id: null } as any);
-    vi.mocked(getShipmentBooks).mockResolvedValue([{ book_title_id: "title-1" }] as any);
+    vi.mocked(getShipmentBooks).mockResolvedValue([{ book_title_id: "title-1", selection_metadata: { engine_version: "book-selection-v2" } }] as any);
     vi.mocked(getMemberById).mockResolvedValue({ id: "member-1", name: "Member" } as any);
     vi.mocked(getMemberAddress).mockResolvedValue({ id: "address-1" } as any);
     mockedSbFetch.mockResolvedValueOnce(new Response(JSON.stringify([{ id: "title-1", title: "Book", author: "Author", cover_url: null }]), { status: 200 }));
@@ -96,10 +96,22 @@ describe("packing and shipping service extraction", () => {
       id: "shipment-1",
       member: { id: "member-1" },
       address: { id: "address-1" },
-      books: [{ book_title: { title: "Book" } }],
+      books: [{ book_title: { title: "Book" }, selection_metadata: { engine_version: "book-selection-v2" } }],
     });
   });
 
+
+  it("returns null selection metadata for legacy shipment detail rows", async () => {
+    vi.mocked(getShipmentById).mockResolvedValue({ id: "shipment-legacy", member_id: "member-1", address_id: null } as any);
+    vi.mocked(getShipmentBooks).mockResolvedValue([{ book_title_id: "title-1" }] as any);
+    vi.mocked(getMemberById).mockResolvedValue({ id: "member-1", name: "Member" } as any);
+    vi.mocked(getMemberAddress).mockResolvedValue({ id: "address-1" } as any);
+    mockedSbFetch.mockResolvedValueOnce(new Response(JSON.stringify([{ id: "title-1", title: "Book", author: "Author", cover_url: null }]), { status: 200 }));
+
+    await expect(getShipmentDetail({ id: "shipment-legacy" })).resolves.toMatchObject({
+      books: [{ selection_metadata: null }],
+    });
+  });
   it("preserves shipment tracking and non-shipped status update behavior", async () => {
     mockedSbFetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(updateShipmentTracking({ id: "shipment-1", tracking_number: "TRACK-1" })).resolves.toEqual({ success: true });

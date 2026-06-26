@@ -25,6 +25,7 @@ import {
   Shuffle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SelectionExplanationCard } from "@/components/SelectionExplanationCard";
 import { toast } from "sonner";
 
 const TIER_LABELS: Record<string, string> = {
@@ -101,6 +102,7 @@ author: "",
   cover_url: book.cover_url ?? null,
   bin_id: book.bin_id,
   match_reason: book.instruction,
+  selection_metadata: book.selection_metadata ?? null,
 })) ?? [];
  const booksNeeded = pickList?.length ?? order.books_needed;
 
@@ -357,6 +359,8 @@ author: "",
                         )}
                       </div>
                     </div>
+
+                    <SelectionExplanationCard metadata={book.selection_metadata} />
 
                     {/* Location + SKU */}
                     <div className="flex items-center gap-4 mt-2">

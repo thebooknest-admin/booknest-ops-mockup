@@ -18,7 +18,7 @@ const REASON_LABELS: Record<SelectionReasonCode, string> = {
   series_order_blocked: "Series Order Blocked",
   inventory_health: "Inventory Healthy",
   reading_progression: "Reading Progression",
-  premium_balance: "Premium Balance",
+  pippas_surprise: "Pippa's Surprise",
 };
 
 const REASON_TONES: Record<SelectionReasonCode, SelectionReasonTone> = {
@@ -39,7 +39,7 @@ const REASON_TONES: Record<SelectionReasonCode, SelectionReasonTone> = {
   series_order_blocked: "blocked",
   inventory_health: "neutral",
   reading_progression: "positive",
-  premium_balance: "positive",
+  pippas_surprise: "positive",
 };
 
 export function createSelectionReason(

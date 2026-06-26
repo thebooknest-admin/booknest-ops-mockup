@@ -19,6 +19,7 @@ export type {
   PickingSelectionResult,
   SelectedPickingCopy,
   SelectionExclusion,
+  SelectionMetadata,
   SelectionReason,
   SelectionReasonCode,
   SelectionReasonTone,

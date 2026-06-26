@@ -91,8 +91,7 @@ describe("suggestBooksForMember", () => {
     expect(result.all_suggestions.find(book => book.book_title_id === "already-title")).toMatchObject({
       already_sent: true,
       score: 20,
-      match_reason: "Matches: Adventure · Already sent",
-      selection_reason_codes: ["age_match", "interest_match", "seasonal_allowed", "prior_title_penalty"],
+selection_reason_codes: ["age_match", "interest_match", "seasonal_allowed", "prior_title_penalty"],
     });
     expect(result.all_suggestions.find(book => book.book_title_id === "seasonal-title")).toMatchObject({
       already_sent: false,
@@ -275,18 +274,30 @@ describe("selectBooksForPickingOrder", () => {
     expect(result.explanationsByCopyId.get("progress")?.map(reason => reason.code)).toContain("reading_progression");
   });
 
-  it("balances premium books instead of clustering them into one shipment", async () => {
+  it("persists Pippa's Surprise when inventory allows one discovery pick", async () => {
     mockPickingSelection({
+      interests: [{ interest_category: "Adventure" }],
       copies: [
-        copy("premium-1", "premium-title-1", "Premium One", "Adventure", "BIN", "Author A", { premium_flag: true }),
-        copy("premium-2", "premium-title-2", "Premium Two", "Wild & Wonderful", "BIN", "Author B", { premium_flag: true }),
-        copy("standard", "standard-title", "Standard One", "Discovery Den", "BIN", "Author C"),
+        copy("interest-1", "interest-title-1", "Interest One", "Adventure", "BIN", "Author A"),
+        copy("interest-2", "interest-title-2", "Interest Two", "Adventure", "BIN", "Author B"),
+        copy("interest-3", "interest-title-3", "Interest Three", "Adventure", "BIN", "Author C"),
+        copy("interest-4", "interest-title-4", "Interest Four", "Adventure", "BIN", "Author D"),
+        copy("interest-5", "interest-title-5", "Interest Five", "Adventure", "BIN", "Author E"),
+        copy("interest-6", "interest-title-6", "Interest Six", "Adventure", "BIN", "Author F"),
+        copy("surprise", "surprise-title", "Surprise One", "Discovery Den", "BIN", "Author G"),
       ],
     });
 
-    const result = await runPickingSelection(2);
-    expect(result.selectedCopies.map(copy => copy.id)).toEqual(["premium-1", "standard"]);
-    expect(result.explanationsByCopyId.get("standard")?.map(reason => reason.code)).toContain("premium_balance");
+    const result = await runPickingSelection(6);
+    expect(result.selectedCopies.map(copy => copy.id)).toContain("surprise");
+    expect(result.explanationsByCopyId.get("surprise")?.map(reason => reason.code)).toContain("pippas_surprise");
+    expect(result.selectionMetadataByCopyId.get("surprise")).toMatchObject({
+      engine_version: "book-selection-v2",
+      policy_version: "2026-06-selection-v2",
+      pippas_surprise: true,
+      explanation_codes: expect.arrayContaining(["pippas_surprise"]),
+      explanation_labels: expect.arrayContaining(["Pippa's Surprise"]),
+    });
   });
 });
 

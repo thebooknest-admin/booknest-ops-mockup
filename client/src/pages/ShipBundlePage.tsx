@@ -11,6 +11,7 @@ import {
   Truck,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { SelectionExplanationCard } from "@/components/SelectionExplanationCard";
 import { cn } from "@/lib/utils";
 
 // Status flow: picking → packing → packed → shipped
@@ -389,6 +390,7 @@ export default function ShipBundlePage() {
                   <p className="text-xs text-muted-foreground">
                     {b.book_title?.author ?? ""}
                   </p>
+                  <SelectionExplanationCard metadata={b.selection_metadata} />
                 </div>
                 <span className="text-xs font-mono text-muted-foreground">
                   {b.sku ?? "—"}
