@@ -1,3 +1,33 @@
+export type SelectionReasonCode =
+  | "age_match"
+  | "interest_match"
+  | "note_match"
+  | "theme_variety"
+  | "seasonal_allowed"
+  | "seasonal_blocked"
+  | "prior_title_penalty"
+  | "active_copy_excluded"
+  | "duplicate_title_excluded"
+  | "avoided_topic_excluded"
+  | "fallback_pick";
+
+export type SelectionReasonTone = "positive" | "neutral" | "warning" | "blocked";
+
+export type SelectionReason = {
+  code: SelectionReasonCode;
+  label: string;
+  detail?: string;
+  tone: SelectionReasonTone;
+};
+
+export type SelectionExclusion = {
+  code: SelectionReasonCode;
+  copy_id?: string | null;
+  book_title_id?: string | null;
+  title?: string | null;
+  detail?: string;
+};
+
 export type BookSelectionMember = {
   id: string;
   name: string | null;
@@ -39,6 +69,8 @@ export type SuggestedBook = {
   score: number;
   already_sent: boolean;
   match_reason: string;
+  selection_reasons: SelectionReason[];
+  selection_reason_codes: SelectionReasonCode[];
 };
 
 export type SuggestBooksResult = {
@@ -57,5 +89,7 @@ export type SelectedPickingCopy = AvailableCopyWithTitle;
 export type PickingSelectionResult = {
   selectedCopies: SelectedPickingCopy[];
   noteMatchByCopyId: Map<string, { score: number; reasons: string[] }>;
+  explanationsByCopyId: Map<string, SelectionReason[]>;
+  exclusions: SelectionExclusion[];
   booksNeeded: number;
 };

@@ -9,9 +9,14 @@ import type {
   AvailableCopyWithTitle,
   BookSelectionMember,
   PickingSelectionResult,
+  SelectionExclusion,
+  SelectionReason,
   SuggestBooksResult,
   SuggestedBook,
 } from "./selection.types";
+import type { BookSelectionPolicy } from "./selection.policy";
+import { resolveBookSelectionPolicy } from "./selection.policy";
+import { createSelectionReason, selectionReasonCodes } from "./selection.explanations";
 import { getSelectionAgeGroup } from "./scoring/age-score";
 import { buildPriorTitleSet } from "./scoring/duplicate-score";
 import {
@@ -60,6 +65,21 @@ function getCopyTags(copy: AvailableCopyWithTitle, tagMap: Record<string, string
     .filter(Boolean);
 }
 
+function addExclusion(
+  exclusions: SelectionExclusion[],
+  code: SelectionExclusion["code"],
+  copy: AvailableCopyWithTitle,
+  detail?: string
+) {
+  exclusions.push({
+    code,
+    copy_id: copy.id,
+    book_title_id: copy.book_title_id,
+    title: copy.book_titles?.title ?? null,
+    detail,
+  });
+}
+
 async function getSentTitleIdsFromShipments(memberId: string): Promise<Set<string>> {
   const sentRes = await sbFetch(
     `/shipments?member_id=eq.${memberId}&select=id&limit=200`
@@ -81,10 +101,43 @@ async function getSentTitleIdsFromShipments(memberId: string): Promise<Set<strin
   return sentBookTitleIds;
 }
 
+function buildVisibleReasons(input: {
+  ageMatched: boolean;
+  themeMatch: boolean;
+  matchedCategories?: string[];
+  noteReasons: string[];
+  alreadySent?: boolean;
+  seasonalAllowed?: boolean;
+  seasonalFilteringActive?: boolean;
+  varietyPick?: boolean;
+}): SelectionReason[] {
+  const reasons: SelectionReason[] = [];
+  if (input.ageMatched) reasons.push(createSelectionReason("age_match"));
+  if (input.themeMatch) {
+    reasons.push(createSelectionReason(
+      "interest_match",
+      input.matchedCategories?.length ? input.matchedCategories.join(", ") : undefined
+    ));
+  }
+  if (input.noteReasons.length > 0) {
+    reasons.push(createSelectionReason("note_match", input.noteReasons.join("; ")));
+  }
+  if (input.seasonalFilteringActive) {
+    reasons.push(createSelectionReason(
+      input.seasonalAllowed ? "seasonal_allowed" : "seasonal_blocked"
+    ));
+  }
+  if (input.alreadySent) reasons.push(createSelectionReason("prior_title_penalty"));
+  if (input.varietyPick) reasons.push(createSelectionReason("theme_variety"));
+  return reasons;
+}
+
 export async function suggestBooksForMember(input: {
   member_id: string;
   count?: number;
+  policy?: Partial<BookSelectionPolicy>;
 }): Promise<SuggestBooksResult> {
+  const policy = resolveBookSelectionPolicy(input.policy);
   const memberRes = await sbFetch(
     `/members?id=eq.${input.member_id}&select=id,name,tier,age_group,topics_to_avoid,notes,books_per_box&limit=1`
   );
@@ -158,6 +211,11 @@ export async function suggestBooksForMember(input: {
       });
       return !noteMatch.excluded;
     })
+    .filter((b) => {
+      if (!policy.seasonalFilteringInSuggestions) return true;
+      return isSeasonalBookAllowed({ title: b.title, tags: b.tags });
+    })
+    .filter((b) => policy.allowPreviouslySentInSuggestions || !sentBookTitleIds.has(b.book_title_id))
     .map((b) => {
       const alreadySent = sentBookTitleIds.has(b.book_title_id);
       const themeMatch = matchThemes.has(b.bin_theme ?? "");
@@ -169,6 +227,7 @@ export async function suggestBooksForMember(input: {
         theme: b.bin_theme,
         tags: b.tags,
       });
+      const seasonalAllowed = isSeasonalBookAllowed({ title: b.title, tags: b.tags });
 
       let score = 40;
       if (themeMatch) score += 30;
@@ -177,16 +236,27 @@ export async function suggestBooksForMember(input: {
       score += noteMatch.score;
 
       const reasons: string[] = [];
-      if (themeMatch) {
-        const matchedCats = getMatchedInterestCategories({
+      const matchedCats = themeMatch
+        ? getMatchedInterestCategories({
           interests: memberInterests,
           theme: b.bin_theme,
-        });
-        if (matchedCats.length > 0) reasons.push(`Matches: ${matchedCats.join(", ")}`);
-      }
+        })
+        : [];
+      if (matchedCats.length > 0) reasons.push(`Matches: ${matchedCats.join(", ")}`);
       reasons.push(...noteMatch.reasons);
       if (alreadySent) reasons.push("Already sent");
       if (!themeMatch && !alreadySent) reasons.push("Variety pick");
+
+      const selectionReasons = buildVisibleReasons({
+        ageMatched: true,
+        themeMatch,
+        matchedCategories: matchedCats,
+        noteReasons: noteMatch.reasons,
+        alreadySent,
+        seasonalAllowed,
+        seasonalFilteringActive: true,
+        varietyPick: !themeMatch && !alreadySent,
+      });
 
       return {
         book_title_id: b.book_title_id,
@@ -202,6 +272,8 @@ export async function suggestBooksForMember(input: {
         score,
         already_sent: alreadySent,
         match_reason: reasons.join(" · "),
+        selection_reasons: selectionReasons,
+        selection_reason_codes: selectionReasonCodes(selectionReasons),
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -224,7 +296,9 @@ export async function suggestBooksForMember(input: {
 
 export async function selectBooksForPickingOrder(input: {
   member: BookSelectionMember;
+  policy?: Partial<BookSelectionPolicy>;
 }): Promise<PickingSelectionResult> {
+  const policy = resolveBookSelectionPolicy(input.policy);
   const member = input.member;
   const booksNeeded = getBookCount(member.tier, member.books_per_box);
   const memberAgeGroup = getSelectionAgeGroup(member.age_group);
@@ -286,19 +360,43 @@ export async function selectBooksForPickingOrder(input: {
 
   const tagMap = await fetchTagMap(availableCopies);
   const bestCopyByTitle = new Map<string, AvailableCopyWithTitle>();
+  const candidateReasonsByCopyId = new Map<string, SelectionReason[]>();
+  const exclusions: SelectionExclusion[] = [];
+
   for (const copy of availableCopies) {
-    if (activeAssignedCopyIds.has(copy.id)) continue;
-    if (!copy.book_title_id || priorTitleIds.has(copy.book_title_id)) continue;
-    const theme = copy.book_titles?.bin_theme ?? "";
-    if (avoidThemes.has(theme)) continue;
     const tags = getCopyTags(copy, tagMap);
+    const theme = copy.book_titles?.bin_theme ?? "";
+    const seasonalAllowed = isSeasonalBookAllowed({
+      title: copy.book_titles?.title,
+      tags,
+      referenceDate: new Date(),
+    });
+
+    if (policy.excludeActiveAssignedCopies && activeAssignedCopyIds.has(copy.id)) {
+      addExclusion(exclusions, "active_copy_excluded", copy, "Copy is already assigned to an active picking/packing/packed shipment.");
+      continue;
+    }
+    if (
+      policy.excludePreviouslySentFromBundleCreation &&
+      (!copy.book_title_id || priorTitleIds.has(copy.book_title_id))
+    ) {
+      addExclusion(exclusions, "duplicate_title_excluded", copy, "Title already appears in this member's history or prior shipments.");
+      continue;
+    }
+    if (avoidThemes.has(theme)) {
+      addExclusion(exclusions, "avoided_topic_excluded", copy, "Theme matched an avoided topic.");
+      continue;
+    }
     const avoidMatches = getAvoidMatches(member.topics_to_avoid, {
       title: copy.book_titles?.title,
       author: copy.book_titles?.author,
       theme,
       tags,
     });
-    if (avoidMatches.length > 0) continue;
+    if (avoidMatches.length > 0) {
+      addExclusion(exclusions, "avoided_topic_excluded", copy, avoidMatches.join(", "));
+      continue;
+    }
     const noteMatch = scoreNoteMatch({
       profile: noteProfile,
       title: copy.book_titles?.title,
@@ -306,16 +404,30 @@ export async function selectBooksForPickingOrder(input: {
       theme,
       tags,
     });
-    if (noteMatch.excluded) continue;
-    if (
-      !isSeasonalBookAllowed({
-        title: copy.book_titles?.title,
-        tags,
-        referenceDate: new Date(),
-      })
-    ) {
+    if (noteMatch.excluded) {
+      addExclusion(exclusions, "avoided_topic_excluded", copy, noteMatch.reasons.join("; "));
       continue;
     }
+    if (policy.seasonalFiltering && !seasonalAllowed) {
+      addExclusion(exclusions, "seasonal_blocked", copy, "Holiday/seasonal title is outside its picking window.");
+      continue;
+    }
+
+    const themeMatch = matchThemes.has(theme);
+    const matchedCats = themeMatch
+      ? getMatchedInterestCategories({ interests: memberInterests, theme })
+      : [];
+    const reasons = buildVisibleReasons({
+      ageMatched: true,
+      themeMatch,
+      matchedCategories: matchedCats,
+      noteReasons: noteMatch.reasons,
+      seasonalAllowed,
+      seasonalFilteringActive: policy.seasonalFiltering,
+      varietyPick: !themeMatch && noteMatch.reasons.length === 0,
+    });
+    candidateReasonsByCopyId.set(copy.id, reasons);
+
     if (!bestCopyByTitle.has(copy.book_title_id)) {
       bestCopyByTitle.set(copy.book_title_id, copy);
     }
@@ -349,9 +461,17 @@ export async function selectBooksForPickingOrder(input: {
     })
     .sort((a, b) => b.score - a.score);
 
+  const selectedCopies = policy.themeVariety
+    ? selectWithThemeVariety(scoredCopies, booksNeeded)
+    : scoredCopies.slice(0, booksNeeded).map(row => row.item);
+
   return {
-    selectedCopies: selectWithThemeVariety(scoredCopies, booksNeeded),
+    selectedCopies,
     noteMatchByCopyId,
+    explanationsByCopyId: new Map(
+      selectedCopies.map(copy => [copy.id, candidateReasonsByCopyId.get(copy.id) ?? []])
+    ),
+    exclusions,
     booksNeeded,
   };
 }
