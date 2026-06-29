@@ -3,22 +3,20 @@
  * URL: https://booknest-ops-mockup-production.up.railway.app/webhooks/easypost-tracking
  */
 
-import type {Request, Response} from 'express';
-
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
-
-const sbHeaders = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  'Content-Type': 'application/json',
-  Prefer: 'return=representation',
-};
+import type { Request, Response } from 'express';
+import { assertSupabaseResponse, getSupabaseRestConfig } from '../supabase';
 
 async function sbFetch(path: string, options: RequestInit = {}) {
-  return fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+  const config = getSupabaseRestConfig();
+  return fetch(`${config.url}/rest/v1${path}`, {
     ...options,
-    headers: {...sbHeaders, ...(options.headers ?? {})},
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      ...(options.headers ?? {}),
+    },
   });
 }
 
@@ -67,9 +65,9 @@ export async function easypostTrackingWebhook(req: Request, res: Response) {
       return res.status(200).json({ ok: true, skipped: true });
     }
 
-    const returnRes = await sbFetch(
-      `/returns?return_tracking_number=eq.${encodeURIComponent(trackingNumber)}&select=id,member_id,status&limit=1`
-    );
+    const returnPath = `/returns?return_tracking_number=eq.${encodeURIComponent(trackingNumber)}&select=id,member_id,status&limit=1`;
+    const returnRes = await sbFetch(returnPath);
+    await assertSupabaseResponse(returnRes, returnPath);
     const returnData: any[] = await returnRes.json();
     const returnRecord = returnData[0];
 
@@ -77,11 +75,13 @@ export async function easypostTrackingWebhook(req: Request, res: Response) {
       return res.status(200).json({ ok: true, skipped: true });
     }
 
-    await sbFetch(`/returns?id=eq.${returnRecord.id}`, {
+    const updatePath = `/returns?id=eq.${returnRecord.id}`;
+    const updateRes = await sbFetch(updatePath, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'in_transit', updated_at: new Date().toISOString() }),
       headers: { Prefer: 'return=minimal' },
     });
+    await assertSupabaseResponse(updateRes, updatePath);
 
     return res.status(200).json({ ok: true, return_updated: true, shipment_created: false });
 

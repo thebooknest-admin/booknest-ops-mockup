@@ -41,6 +41,10 @@ describe("ops authorization boundary", () => {
       code: "UNAUTHORIZED",
       message: UNAUTHED_ERR_MSG,
     });
+    await expect(caller.system.supabaseDebug()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      message: UNAUTHED_ERR_MSG,
+    });
   });
 
   it("rejects unauthenticated ops mutations before hitting a domain handler", async () => {

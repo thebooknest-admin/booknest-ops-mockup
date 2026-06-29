@@ -1,29 +1,151 @@
 /**
- * Supabase REST API client for BookNest Ops
- * Uses the anon key for read/write operations allowed by RLS policies.
- * All calls are server-side to keep the key secure.
+ * Supabase REST API client for BookNest Ops.
+ *
+ * All calls are server-side. Prefer the service role key when it is available
+ * for internal operator workflows; fall back to anon only for environments that
+ * have not been given a service key yet.
  */
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
+const SUPABASE_URL_ENV_NAMES = [
+  "SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "VITE_SUPABASE_URL",
+] as const;
 
-const BASE_HEADERS = {
-  apikey: SUPABASE_ANON_KEY,
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation",
-};
+const SUPABASE_KEY_ENV_NAMES = [
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+] as const;
 
+type SupabaseKeySource = "service_role" | "anon" | "none";
+
+function readEnv(names: readonly string[]): { name: string; value: string } | null {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return { name, value };
+  }
+  return null;
+}
+
+function getSupabaseUrlEnv() {
+  return readEnv(SUPABASE_URL_ENV_NAMES);
+}
+
+function getSupabaseKeyEnv(): { name: string; value: string; source: SupabaseKeySource } | null {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (serviceRoleKey) {
+    return {
+      name: "SUPABASE_SERVICE_ROLE_KEY",
+      value: serviceRoleKey,
+      source: "service_role",
+    };
+  }
+
+  const anonKey = readEnv(["SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]);
+  if (anonKey) {
+    return {
+      ...anonKey,
+      source: "anon",
+    };
+  }
+
+  return null;
+}
+
+function parseSupabaseProjectRef(url: string | null): string | null {
+  if (!url) return null;
+
+  try {
+    const host = new URL(url).hostname;
+    const match = host.match(/^([a-z0-9-]+)\.supabase\.co$/i);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getSupabaseEnvDiagnostics() {
+  const urlEnv = getSupabaseUrlEnv();
+  const keyEnv = getSupabaseKeyEnv();
+
+  return {
+    supabase_url_present: Boolean(urlEnv),
+    supabase_url_source: urlEnv?.name ?? null,
+    supabase_anon_key_present: Boolean(
+      process.env.SUPABASE_ANON_KEY?.trim() ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+    ),
+    supabase_service_role_key_present: Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+    ),
+    effective_key_present: Boolean(keyEnv),
+    effective_key_source: (keyEnv?.source ?? "none") as SupabaseKeySource,
+    effective_key_env: keyEnv?.name ?? null,
+    project_ref: parseSupabaseProjectRef(urlEnv?.value ?? null),
+    expected_url_env_vars: [...SUPABASE_URL_ENV_NAMES],
+    expected_key_env_vars: [...SUPABASE_KEY_ENV_NAMES],
+  };
+}
+
+export function getSupabaseRestConfig() {
+  const urlEnv = getSupabaseUrlEnv();
+  const keyEnv = getSupabaseKeyEnv();
+
+  if (!urlEnv || !keyEnv) {
+    const diagnostics = getSupabaseEnvDiagnostics();
+    throw new Error(
+      [
+        "Supabase is not configured for server-side ops data access.",
+        `URL present: ${diagnostics.supabase_url_present}.`,
+        `Anon key present: ${diagnostics.supabase_anon_key_present}.`,
+        `Service role key present: ${diagnostics.supabase_service_role_key_present}.`,
+        "Set SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL, plus SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.",
+      ].join(" ")
+    );
+  }
+
+  return {
+    url: urlEnv.value.replace(/\/+$/, ""),
+    urlEnv: urlEnv.name,
+    key: keyEnv.value,
+    keyEnv: keyEnv.name,
+    keySource: keyEnv.source,
+    projectRef: parseSupabaseProjectRef(urlEnv.value),
+  };
+}
+
+function getBaseHeaders() {
+  const config = getSupabaseRestConfig();
+  return {
+    apikey: config.key,
+    Authorization: `Bearer ${config.key}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+  };
+}
+
+export async function assertSupabaseResponse(
+  res: Response,
+  path: string
+): Promise<void> {
+  if (res.ok) return;
+
+  throw new Error(
+    `Supabase request failed for ${path}: ${res.status} ${res.statusText} - ${await res.text()}`
+  );
+}
 export async function sbFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const url = `${SUPABASE_URL}/rest/v1${path}`;
+  const config = getSupabaseRestConfig();
+  const url = `${config.url}/rest/v1${path}`;
 
   return fetch(url, {
     ...options,
     headers: {
-      ...BASE_HEADERS,
+      ...getBaseHeaders(),
       ...(options.headers ?? {}),
     },
   });
@@ -35,11 +157,7 @@ export async function sbJson<T>(
 ): Promise<T> {
   const res = await sbFetch(path, options);
 
-  if (!res.ok) {
-    throw new Error(
-      `Supabase request failed for ${path}: ${res.status} ${res.statusText} - ${await res.text()}`
-    );
-  }
+  await assertSupabaseResponse(res, path);
 
   return (await res.json()) as T;
 }
@@ -50,11 +168,7 @@ export async function sbVoid(
 ): Promise<void> {
   const res = await sbFetch(path, options);
 
-  if (!res.ok) {
-    throw new Error(
-      `Supabase request failed for ${path}: ${res.status} ${res.statusText} - ${await res.text()}`
-    );
-  }
+  await assertSupabaseResponse(res, path);
 }
 
 // ─── Members ──────────────────────────────────────────────────────────────────
@@ -87,13 +201,17 @@ export async function getMembers(): Promise<{ data: Member[]; total: number }> {
     10
   );
 
+  await assertSupabaseResponse(res, "/members?order=name.asc&limit=200");
+
   const data: Member[] = await res.json();
 
   return { data, total };
 }
 
 export async function getMemberById(id: string): Promise<Member | null> {
-  const res = await sbFetch(`/members?id=eq.${id}&limit=1`);
+  const path = `/members?id=eq.${id}&limit=1`;
+  const res = await sbFetch(path);
+  await assertSupabaseResponse(res, path);
   const data: Member[] = await res.json();
 
   return data[0] ?? null;
@@ -162,6 +280,8 @@ export async function getBookTitles(params?: {
     10
   );
 
+  await assertSupabaseResponse(res, `/book_titles${qs}`);
+
   const data: BookTitle[] = await res.json();
 
   return { data, total };
@@ -211,6 +331,8 @@ export async function getBookCopies(params?: {
     10
   );
 
+  await assertSupabaseResponse(res, `/book_copies${qs}`);
+
   const data: BookCopy[] = await res.json();
 
   return { data, total };
@@ -230,6 +352,11 @@ export async function getInventorySummary(): Promise<{
     {
       headers: { Prefer: "count=exact" },
     }
+  );
+
+  await assertSupabaseResponse(
+    res,
+    "/book_copies?select=status,age_group,bin_id,section&limit=2000"
   );
 
   const copies: {
@@ -319,13 +446,17 @@ export async function getShipments(params?: {
     10
   );
 
+  await assertSupabaseResponse(res, `/shipments${qs}`);
+
   const data: Shipment[] = await res.json();
 
   return { data, total };
 }
 
 export async function getShipmentById(id: string): Promise<Shipment | null> {
-  const res = await sbFetch(`/shipments?id=eq.${id}&limit=1`);
+  const path = `/shipments?id=eq.${id}&limit=1`;
+  const res = await sbFetch(path);
+  await assertSupabaseResponse(res, path);
   const data: Shipment[] = await res.json();
 
   return data[0] ?? null;
@@ -366,9 +497,9 @@ export interface ShipmentBook {
 export async function getShipmentBooks(
   shipment_id: string
 ): Promise<ShipmentBook[]> {
-  const res = await sbFetch(
-    `/shipment_books?shipment_id=eq.${shipment_id}&limit=20`
-  );
+  const path = `/shipment_books?shipment_id=eq.${shipment_id}&limit=20`;
+  const res = await sbFetch(path);
+  await assertSupabaseResponse(res, path);
 
   return res.json();
 }
@@ -391,9 +522,9 @@ export interface MemberAddress {
 export async function getMemberAddress(
   member_id: string
 ): Promise<MemberAddress | null> {
-  const res = await sbFetch(
-    `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&limit=1`
-  );
+  const path = `/member_addresses?member_id=eq.${member_id}&is_default=eq.true&limit=1`;
+  const res = await sbFetch(path);
+  await assertSupabaseResponse(res, path);
 
   const data: MemberAddress[] = await res.json();
 
@@ -411,9 +542,9 @@ export interface BinConfig {
 }
 
 export async function getBinConfigs(): Promise<BinConfig[]> {
-  const res = await sbFetch(
-    "/bin_floor_config?active=eq.true&order=bin_code.asc&limit=100"
-  );
+  const path = "/bin_floor_config?active=eq.true&order=bin_code.asc&limit=100";
+  const res = await sbFetch(path);
+  await assertSupabaseResponse(res, path);
 
   return res.json();
 }
@@ -470,24 +601,22 @@ export async function getBookTitlesWithCopies(params?: {
   for (let i = 0; i < titleIds.length; i += BATCH_SIZE) {
     const batch = titleIds.slice(i, i + BATCH_SIZE);
 
-    const copiesRes = await sbFetch(
-      `/book_copies?book_title_id=in.(${batch.join(
-        ","
-      )})&select=book_title_id,status,label_status,bin_id,section,sku&limit=2000`
-    );
+    const copiesPath = `/book_copies?book_title_id=in.(${batch.join(
+      ","
+    )})&select=book_title_id,status,label_status,bin_id,section,sku&limit=2000`;
+    const copiesRes = await sbFetch(copiesPath);
+    await assertSupabaseResponse(copiesRes, copiesPath);
 
-    if (copiesRes.ok) {
-      const batchCopies: {
-        book_title_id: string;
-        status: string;
-        label_status: string | null;
-        bin_id: string | null;
-        section: string | null;
-        sku: string | null;
-      }[] = await copiesRes.json();
+    const batchCopies: {
+      book_title_id: string;
+      status: string;
+      label_status: string | null;
+      bin_id: string | null;
+      section: string | null;
+      sku: string | null;
+    }[] = await copiesRes.json();
 
-      allCopies.push(...batchCopies);
-    }
+    allCopies.push(...batchCopies);
   }
 
   const nonInventoryStatuses = new Set([
@@ -574,17 +703,14 @@ export async function getBookTitlesWithCopies(params?: {
   let tagMap: Record<string, BookTag> = {};
 
   if (allTagIds.length > 0) {
-    const tagRes = await sbFetch(
-      `/book_sorting_tags?id=in.(${allTagIds.join(
-        ","
-      )})&select=id,bin_theme,tag&limit=1000`
-    );
+    const tagsPath = `/book_sorting_tags?id=in.(${allTagIds.join(
+      ","
+    )})&select=id,bin_theme,tag&limit=1000`;
+    const tagRes = await sbFetch(tagsPath);
+    await assertSupabaseResponse(tagRes, tagsPath);
+    const tags: BookTag[] = await tagRes.json();
 
-    if (tagRes.ok) {
-      const tags: BookTag[] = await tagRes.json();
-
-      tagMap = Object.fromEntries(tags.map(tag => [tag.id, tag]));
-    }
+    tagMap = Object.fromEntries(tags.map(tag => [tag.id, tag]));
   }
 
   const data: BookTitleWithCopies[] = titlesResult.data.map(title => {
@@ -651,6 +777,24 @@ export async function getDashboardStats() {
     sbFetch("/book_copies?status=eq.pending_stock&select=id", {
       headers: { Prefer: "count=exact", Range: "0-0" },
     }),
+  ]);
+
+  await Promise.all([
+    assertSupabaseResponse(membersRes, "/members?select=id,subscription_status&limit=500"),
+    assertSupabaseResponse(
+      shipmentsRes,
+      "/shipments?shipment_type=eq.outbound&select=id,status,scheduled_ship_date,actual_ship_date&limit=500"
+    ),
+    assertSupabaseResponse(
+      returnsRes,
+      "/returns?select=id&status=in.(requested,in_transit,receiving)"
+    ),
+    assertSupabaseResponse(qcRes, "/book_copies?status=eq.pending_qc&select=id"),
+    assertSupabaseResponse(
+      labelsRes,
+      "/book_copies?label_status=eq.pending&status=in.(in_house,pending_label)&select=id"
+    ),
+    assertSupabaseResponse(stockRes, "/book_copies?status=eq.pending_stock&select=id"),
   ]);
 
   const getCount = (res: Response) =>
