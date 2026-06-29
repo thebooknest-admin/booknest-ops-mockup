@@ -1,10 +1,10 @@
-// BookNest Ops — PIN Gate Lock Screen
+// BookNest Ops PIN Gate Lock Screen
+import { trpc } from "@/lib/trpc";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { BookOpen, Lock, Eye, EyeOff } from "lucide-react";
 
 const SESSION_KEY = "booknest_ops_unlocked";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
-const CORRECT_PIN = import.meta.env.VITE_APP_PIN as string;
 
 function isSessionValid(): boolean {
   try {
@@ -26,7 +26,7 @@ interface PinGateProps {
 }
 
 export default function PinGate({ children }: PinGateProps) {
-  const [unlocked, setUnlocked] = useState(() => isSessionValid());
+  const [unlocked, setUnlocked] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [showPin, setShowPin] = useState(false);
@@ -35,6 +35,35 @@ export default function PinGate({ children }: PinGateProps) {
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const utils = trpc.useUtils();
+  const meQuery = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const pinLogin = trpc.auth.pinLogin.useMutation({
+    onSuccess: async (result) => {
+      setSession();
+      utils.auth.me.setData(undefined, result.user);
+      await utils.auth.me.invalidate();
+      setUnlocked(true);
+      setError("");
+      setAttempts(0);
+      setPin("");
+    },
+  });
+
+  useEffect(() => {
+    if (meQuery.isLoading) return;
+
+    if (meQuery.data?.role === "admin") {
+      if (!isSessionValid()) setSession();
+      setUnlocked(true);
+      return;
+    }
+
+    setUnlocked(false);
+  }, [meQuery.data, meQuery.isLoading]);
 
   // Countdown timer for lockout
   useEffect(() => {
@@ -54,27 +83,25 @@ export default function PinGate({ children }: PinGateProps) {
 
   // Auto-focus input
   useEffect(() => {
-    if (!unlocked) {
+    if (!unlocked && !meQuery.isLoading) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [unlocked]);
+  }, [unlocked, meQuery.isLoading]);
 
   const triggerShake = useCallback(() => {
     setShake(true);
     setTimeout(() => setShake(false), 600);
   }, []);
 
-  const handleSubmit = useCallback((e?: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
 
     if (lockedUntil && Date.now() < lockedUntil) return;
+    if (pinLogin.isPending) return;
 
-    if (pin === CORRECT_PIN) {
-      setSession();
-      setUnlocked(true);
-      setError("");
-      setAttempts(0);
-    } else {
+    try {
+      await pinLogin.mutateAsync({ pin });
+    } catch {
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
       setPin("");
@@ -88,15 +115,16 @@ export default function PinGate({ children }: PinGateProps) {
         setError(`Incorrect PIN. ${5 - newAttempts} attempt${5 - newAttempts === 1 ? "" : "s"} remaining.`);
       }
     }
-  }, [pin, attempts, lockedUntil, triggerShake]);
+  }, [pin, attempts, lockedUntil, triggerShake, pinLogin]);
 
   // Auto-submit when 6 digits entered
   useEffect(() => {
     if (pin.length === 6) {
-      handleSubmit();
+      void handleSubmit();
     }
   }, [pin, handleSubmit]);
 
+  if (meQuery.isLoading) return null;
   if (unlocked) return <>{children}</>;
 
   const isLocked = lockedUntil && Date.now() < lockedUntil;
@@ -195,8 +223,8 @@ export default function PinGate({ children }: PinGateProps) {
                     setPin(val);
                     if (error) setError("");
                   }}
-                  disabled={!!isLocked}
-                  placeholder="······"
+                  disabled={!!isLocked || pinLogin.isPending}
+                  placeholder="......"
                   className="w-full text-center text-2xl tracking-[0.5em] font-mono py-3 px-4 rounded-xl border transition-all focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{
                     borderColor: error ? "oklch(0.60 0.20 25)" : "oklch(0.85 0.04 75)",
@@ -222,17 +250,17 @@ export default function PinGate({ children }: PinGateProps) {
                   className="text-xs font-medium text-center"
                   style={{ color: "oklch(0.50 0.20 25)" }}
                 >
-                  {isLocked ? `Locked — try again in ${timeLeft}s` : error}
+                  {isLocked ? `Locked - try again in ${timeLeft}s` : error}
                 </p>
               )}
 
               <button
                 type="submit"
-                disabled={pin.length === 0 || !!isLocked}
+                disabled={pin.length === 0 || !!isLocked || pinLogin.isPending}
                 className="w-full py-3 rounded-xl text-white font-semibold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ backgroundColor: "oklch(0.42 0.11 155)" }}
               >
-                Unlock Dashboard
+                {pinLogin.isPending ? "Unlocking..." : "Unlock Dashboard"}
               </button>
             </form>
           </div>

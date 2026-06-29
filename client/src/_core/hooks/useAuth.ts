@@ -20,6 +20,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
+      sessionStorage.removeItem("booknest_ops_unlocked");
       utils.auth.me.setData(undefined, null);
     },
   });
@@ -36,6 +37,7 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
+      sessionStorage.removeItem("booknest_ops_unlocked");
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }

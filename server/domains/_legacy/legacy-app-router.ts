@@ -16,8 +16,10 @@ import {
   requiresShelvingSection,
   sectionIndexToLabel,
 } from "@shared/booknest";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "../../_core/cookies";
+import { clearPinSessionCookie, setPinSessionCookie, verifyPin } from "../../_core/pinSession";
 import { systemRouter } from "../../_core/systemRouter";
 import { operatorProcedure, publicProcedure, router } from "../../_core/trpc";
 import { pickingRouter } from "../fulfillment/picking.router";
@@ -343,9 +345,20 @@ export const legacyAppRouter = router({
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    pinLogin: publicProcedure
+      .input(z.object({ pin: z.string().min(1).max(32) }))
+      .mutation(async ({ input, ctx }) => {
+        if (!verifyPin(input.pin)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid PIN" });
+        }
+
+        const user = await setPinSessionCookie(ctx.req, ctx.res);
+        return { success: true, user } as const;
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      clearPinSessionCookie(ctx.req, ctx.res);
       return { success: true } as const;
     }),
   }),
